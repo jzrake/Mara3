@@ -1,0 +1,16 @@
+{
+    "folders":
+    [
+        {
+            "path": ".",
+            "file_exclude_patterns": ["mara3", "*.h5", "*.d"],
+            // "folder_exclude_patterns": ["misc"]
+        },
+    ],
+    "settings":
+    {
+    },
+    "build_systems":
+    [
+    ]
+}
