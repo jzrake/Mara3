@@ -35,10 +35,11 @@
 
 
 //=============================================================================
-namespace config
+namespace mara
 {
-    using parameter_t = std::variant<int, double, std::string>;
-    using parameter_map_t = std::map<std::string, parameter_t>;
+    using config_parameter_t = std::variant<int, double, std::string>;
+    using config_parameter_map_t = std::map<std::string, config_parameter_t>;
+    using config_string_map_t = std::map<std::string, std::string>;
 
     //=========================================================================
     class config_t;
@@ -56,13 +57,13 @@ namespace config
 
 
 //=============================================================================
-class config::config_t
+class mara::config_t
 {
 public:
 
     //=========================================================================
     config_t() {}
-    config_t(parameter_map_t template_items, parameter_map_t parameters)
+    config_t(config_parameter_map_t template_items, config_parameter_map_t parameters)
     : parameters(parameters)
     , template_items(template_items) {}
 
@@ -96,14 +97,14 @@ public:
         }
         switch (template_items.at(key).index())
         {
-            case 0: return std::move(*this).set(key, parameter_t(std::stoi(value)));
-            case 1: return std::move(*this).set(key, parameter_t(std::stod(value)));
-            case 2: return std::move(*this).set(key, parameter_t(value));
+            case 0: return std::move(*this).set(key, config_parameter_t(std::stoi(value)));
+            case 1: return std::move(*this).set(key, config_parameter_t(std::stod(value)));
+            case 2: return std::move(*this).set(key, config_parameter_t(value));
         }
         return *this;
     }
 
-    config_t set(std::string key, parameter_t value) &&
+    config_t set(std::string key, config_parameter_t value) &&
     {
         if (! template_items.count(key))
         {
@@ -123,21 +124,21 @@ public:
 
 private:
     //=========================================================================
-    parameter_map_t parameters;
-    parameter_map_t template_items;
+    config_parameter_map_t parameters;
+    config_parameter_map_t template_items;
 };
 
 
 
 
 //=============================================================================
-class config::config_template_t
+class mara::config_template_t
 {
 public:
 
     //=========================================================================
     config_template_t() {}
-    config_template_t(parameter_map_t&& parameters) : parameters(std::move(parameters)) {}
+    config_template_t(config_parameter_map_t&& parameters) : parameters(std::move(parameters)) {}
 
     template<typename ValueType>
     config_template_t item(const char* key, ValueType default_value) const
@@ -154,20 +155,20 @@ public:
 
 private:
     //=========================================================================
-    parameter_map_t parameters;
+    config_parameter_map_t parameters;
 };
 
 
 
 
 //=============================================================================
-auto config::make_config_template()
+auto mara::make_config_template()
 {
     return config_template_t();
 }
 
 template<typename Mapping>
-void config::pretty_print(std::ostream& os, std::string header, const Mapping& parameters)
+void mara::pretty_print(std::ostream& os, std::string header, const Mapping& parameters)
 {
     using std::left;
     using std::setw;
@@ -192,9 +193,9 @@ void config::pretty_print(std::ostream& os, std::string header, const Mapping& p
     os.copyfmt(orig);
 }
 
-auto config::argv_to_string_map(int argc, const char* argv[])
+auto mara::argv_to_string_map(int argc, const char* argv[])
 {
-    std::map<std::string, std::string> items;
+    config_string_map_t items;
 
     for (int n = 0; n < argc; ++n)
     {

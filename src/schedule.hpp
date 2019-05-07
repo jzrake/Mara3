@@ -35,14 +35,14 @@
 //=============================================================================
 namespace mara
 {
-    class task_schedule_t;
+    class schedule_t;
 }
 
 
 
 
 //=============================================================================
-class mara::task_schedule_t
+class mara::schedule_t
 {
 public:
 
@@ -52,38 +52,8 @@ public:
         std::string name;
         int num_times_performed = 0;
         double last_performed = 0.0;
+        bool is_due = false;
     };
-
-    void create(std::string name, double last_performed=0.0)
-    {
-        tasks[name] = {name, 0, last_performed};
-    }
-
-    int num_times_performed(std::string task_name) const
-    {
-        throw_unless_task_exists(task_name);
-        return tasks.at(task_name).num_times_performed;
-    }
-
-    double last_performed(std::string task_name) const
-    {
-        throw_unless_task_exists(task_name);
-        return tasks.at(task_name).last_performed;
-    }
-
-    auto increment(std::string task_name, double interval=0.0) const
-    {
-        auto result = *this;
-        result.increment(task_name, interval);
-        return result;
-    }
-
-    void increment(std::string task_name, double interval=0.0)
-    {
-        throw_unless_task_exists(task_name);
-        tasks.at(task_name).num_times_performed += 1;
-        tasks.at(task_name).last_performed += interval;
-    }
 
     auto size() const { return tasks.size(); }
     auto begin() const { return tasks.begin(); }
@@ -92,18 +62,59 @@ public:
 
     const auto& at(std::string task_name) const
     {
-        throw_unless_task_exists(task_name);
-        return tasks.at(task_name);
-    }
-
-private:
-    //=========================================================================
-    void throw_unless_task_exists(std::string task_name) const
-    {
-        if (! count(task_name))
+        try {
+            return tasks.at(task_name);
+        }
+        catch (const std::out_of_range&)
         {
             throw std::out_of_range("no task scheduled with the name " + task_name);
         }
     }
+
+    int num_times_performed(std::string task_name) const
+    {
+        return at(task_name).num_times_performed;
+    }
+
+    double last_performed(std::string task_name) const
+    {
+        return at(task_name).last_performed;
+    }
+
+    bool is_due(std::string task_name) const
+    {
+        return at(task_name).is_due;
+    }
+
+    auto& at(std::string task_name)
+    {
+        try {
+            return tasks.at(task_name);
+        }
+        catch (const std::out_of_range&)
+        {
+            throw std::out_of_range("no task scheduled with the name " + task_name);
+        }        
+    }
+
+    void create(std::string name, double last_performed=0.0)
+    {
+        tasks[name] = {name, 0, last_performed, false};
+    }
+
+    void mark_as_due(std::string task_name, double amount_to_increase_last_performed_by=0.0)
+    {
+        at(task_name).is_due = true;
+        at(task_name).last_performed += amount_to_increase_last_performed_by;
+    }
+
+    void mark_as_completed(std::string task_name)
+    {
+        at(task_name).is_due = false;        
+        at(task_name).num_times_performed += 1;
+    }
+
+private:
+    //=========================================================================
     std::map<std::string, task_t> tasks;
 };

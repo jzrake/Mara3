@@ -29,41 +29,41 @@
 #include <variant>
 #include "ndh5.hpp"
 #include "ndarray.hpp"
+#include "config.hpp"
 
 
 
 
 //=============================================================================
-namespace serialize
+namespace mara
 {
-
-    using parameter_t = std::variant<int, double, std::string>;
-
-    //=========================================================================
     template<typename Writable, typename Serializable>
     auto write_struct_providing_keyval_tuples(Writable& location, Serializable&& instance);
+}
 
-    //=========================================================================    
-    namespace detail
-    {
-        template<typename Function, typename Tuple, std::size_t... Is>
-        void foreach_tuple_impl(Function&& fn, Tuple&& t, std::index_sequence<Is...>);
 
-        template<typename Function, typename Tuple>
-        void foreach_tuple(Function&& fn, Tuple&& t);
 
-        template<typename Function, typename Tuple1, typename Tuple2, std::size_t... Is>
-        void foreach_tuple_impl(Function&& fn, Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>);
 
-        template<typename Function, typename Tuple1, typename Tuple2>
-        void foreach_tuple(Function&& fn, Tuple1&& t1, Tuple2&& t2);
+//=============================================================================
+namespace mara::serialize::detail
+{
+    template<typename Function, typename Tuple, std::size_t... Is>
+    void foreach_tuple_impl(Function&& fn, Tuple&& t, std::index_sequence<Is...>);
 
-        template<typename Tuple1, typename Tuple2, std::size_t... Is>
-        auto tuple_pair_impl(Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>);
+    template<typename Function, typename Tuple>
+    void foreach_tuple(Function&& fn, Tuple&& t);
 
-        template<typename Tuple1, typename Tuple2>
-        auto tuple_pair(Tuple1&& t1, Tuple2&& t2);
-    }
+    template<typename Function, typename Tuple1, typename Tuple2, std::size_t... Is>
+    void foreach_tuple_impl(Function&& fn, Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>);
+
+    template<typename Function, typename Tuple1, typename Tuple2>
+    void foreach_tuple(Function&& fn, Tuple1&& t1, Tuple2&& t2);
+
+    template<typename Tuple1, typename Tuple2, std::size_t... Is>
+    auto tuple_pair_impl(Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>);
+
+    template<typename Tuple1, typename Tuple2>
+    auto tuple_pair(Tuple1&& t1, Tuple2&& t2);
 };
 
 
@@ -96,9 +96,9 @@ struct h5::hdf5_type_info<nd::unique_array<ValueType, Rank>>
 
 //=============================================================================
 template<>
-struct h5::hdf5_type_info<serialize::parameter_t>
+struct h5::hdf5_type_info<mara::config_parameter_t>
 {
-    static auto make_dataspace_for(const serialize::parameter_t& value)
+    static auto make_dataspace_for(const mara::config_parameter_t& value)
     {
         switch (value.index())
         {
@@ -110,12 +110,12 @@ struct h5::hdf5_type_info<serialize::parameter_t>
     }
     static auto prepare(const Datatype& dtype, const Dataspace& space)
     {
-        if (dtype == Datatype::native_double()) return serialize::parameter_t(h5::prepare<int>        (dtype, space));
-        if (dtype == Datatype::native_int())    return serialize::parameter_t(h5::prepare<double>     (dtype, space));
-        if (dtype == Datatype::c_s1())          return serialize::parameter_t(h5::prepare<std::string>(dtype, space));
+        if (dtype == Datatype::native_double()) return mara::config_parameter_t(h5::prepare<int>        (dtype, space));
+        if (dtype == Datatype::native_int())    return mara::config_parameter_t(h5::prepare<double>     (dtype, space));
+        if (dtype == Datatype::c_s1())          return mara::config_parameter_t(h5::prepare<std::string>(dtype, space));
         throw std::invalid_argument("invalid hdf5 type for parameter variant");
     }
-    static auto make_datatype_for(const serialize::parameter_t& value)
+    static auto make_datatype_for(const mara::config_parameter_t& value)
     {
         switch (value.index())
         {
@@ -125,7 +125,7 @@ struct h5::hdf5_type_info<serialize::parameter_t>
         }
         throw;
     }
-    static auto get_address(serialize::parameter_t& value)
+    static auto get_address(mara::config_parameter_t& value)
     {
         switch (value.index())
         {
@@ -135,7 +135,7 @@ struct h5::hdf5_type_info<serialize::parameter_t>
         }
         throw;
     }
-    static auto get_address(const serialize::parameter_t& value)
+    static auto get_address(const mara::config_parameter_t& value)
     {
         switch (value.index())
         {
@@ -152,13 +152,13 @@ struct h5::hdf5_type_info<serialize::parameter_t>
 
 //=============================================================================
 template<typename Writable, typename Serializable>
-auto serialize::write_struct_providing_keyval_tuples(Writable& location, Serializable&& instance)
+auto mara::write_struct_providing_keyval_tuples(Writable& location, Serializable&& instance)
 {
     auto f = [&] (auto&& name, auto&& value)
     {
         location.write(name, value);
     };
-    detail::foreach_tuple(f, instance.keys(), instance.values());
+    mara::serialize::detail::foreach_tuple(f, instance.keys(), instance.values());
 }
 
 
@@ -166,13 +166,13 @@ auto serialize::write_struct_providing_keyval_tuples(Writable& location, Seriali
 
 //=============================================================================
 template<typename Function, typename Tuple, std::size_t... Is>
-void serialize::detail::foreach_tuple_impl(Function&& fn, Tuple&& t, std::index_sequence<Is...>)
+void mara::serialize::detail::foreach_tuple_impl(Function&& fn, Tuple&& t, std::index_sequence<Is...>)
 {
     (fn(std::get<Is>(t)), ...);
 }
 
 template<typename Function, typename Tuple>
-void serialize::detail::foreach_tuple(Function&& fn, Tuple&& t)
+void mara::serialize::detail::foreach_tuple(Function&& fn, Tuple&& t)
 {
     return foreach_tuple_impl(
         std::forward<Function>(fn),
@@ -181,13 +181,13 @@ void serialize::detail::foreach_tuple(Function&& fn, Tuple&& t)
 }
 
 template<typename Function, typename Tuple1, typename Tuple2, std::size_t... Is>
-void serialize::detail::foreach_tuple_impl(Function&& fn, Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>)
+void mara::serialize::detail::foreach_tuple_impl(Function&& fn, Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>)
 {
     (fn(std::get<Is>(t1), std::get<Is>(t2)), ...);
 }
 
 template<typename Function, typename Tuple1, typename Tuple2>
-void serialize::detail::foreach_tuple(Function&& fn, Tuple1&& t1, Tuple2&& t2)
+void mara::serialize::detail::foreach_tuple(Function&& fn, Tuple1&& t1, Tuple2&& t2)
 {
     return foreach_tuple_impl(
         std::forward<Function>(fn),
@@ -197,13 +197,13 @@ void serialize::detail::foreach_tuple(Function&& fn, Tuple1&& t1, Tuple2&& t2)
 }
 
 template<typename Tuple1, typename Tuple2, std::size_t... Is>
-auto serialize::detail::tuple_pair_impl(Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>)
+auto mara::serialize::detail::tuple_pair_impl(Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>)
 {
     return std::make_tuple(std::make_pair(std::get<Is>(t1), std::get<Is>(t2))...);
 }
 
 template<typename Tuple1, typename Tuple2>
-auto serialize::detail::tuple_pair(Tuple1&& t1, Tuple2&& t2)
+auto mara::serialize::detail::tuple_pair(Tuple1&& t1, Tuple2&& t2)
 {
     return tuple_pair_impl(
         std::forward<Tuple1>(t1),

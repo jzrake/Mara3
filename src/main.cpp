@@ -12,101 +12,38 @@
 
 
 //=============================================================================
-struct state_t
+struct solution_state_t
 {
     double time = 0.0;
     int iteration = 0;
     nd::shared_array<double, 1> vertices;
     nd::shared_array<double, 1> solution;
-    mara::task_schedule_t schedule;
 };
 
 
 
 
 //=============================================================================
-state_t initial_state(const config::config_t& cfg)
+solution_state_t new_solution_state(const mara::config_t& cfg)
 {
     auto initial_u = [] (auto x) { return std::sin(2 * M_PI * x); };
     auto nx = cfg.template get<int>("N");
     auto xv = nd::linspace(0, 1, nx + 1);
     auto xc = xv | nd::midpoint_on_axis(0);
 
-    state_t state;
+    solution_state_t state;
     state.vertices = xv.shared();
     state.solution = (xc | nd::transform(initial_u)).shared();
 
-    state.schedule.create("write_checkpoint");
-
-    return state;
+    return state;    
 }
 
-
-
-
-//=============================================================================
-class side_effects_t
+solution_state_t create_solution_state(const mara::config_t& cfg)
 {
-public:
+    return new_solution_state(cfg);
+}
 
-    //=========================================================================
-    side_effects_t(config::config_t run_config) : run_config(run_config) {}
-
-    state_t operator()(state_t state, mara::perf_diagnostics_t diagnostics) const
-    {
-        state.schedule = print_run_loop_message(state, diagnostics);
-        state.schedule = write_checkpoint(state, diagnostics);
-        return state;
-    }
-
-    mara::task_schedule_t write_checkpoint(const state_t& state, mara::perf_diagnostics_t diagnostics) const
-    {
-        double cpi = state.iteration == 0 ? 0.0 : run_config.get<double>("cpi");
-
-        if (state.time - state.schedule.last_performed("write_checkpoint") >= cpi)
-        {
-            char filename[1024];
-
-            std::snprintf(filename, 1024, "chkpt.%04d.h5", state.schedule.num_times_performed("write_checkpoint"));
-            std::printf("write checkpoint: %s\n", filename);
-
-            auto file = h5::File(filename, "w");
-
-            file.write("time", state.time);
-            file.write("vertices", state.vertices);
-            file.write("solution", state.solution);
-
-            auto cfg_group = file.require_group("run_config");
-
-            for (auto item : run_config)
-            {
-                cfg_group.write(item.first, item.second);
-            }
-            return state.schedule.increment("write_checkpoint", cpi);
-        }
-        return state.schedule;
-    }
-
-    mara::task_schedule_t print_run_loop_message(const state_t& state, mara::perf_diagnostics_t diagnostics) const
-    {
-        if (state.iteration > 0)
-        {
-            auto kzps = state.vertices.size() / diagnostics.execution_time_ms;
-            std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n", state.iteration, state.time, kzps);
-        }
-        return state.schedule;
-    }
-
-private:
-    //=========================================================================
-    config::config_t run_config;
-};
-
-
-
-
-//=============================================================================
-state_t next(const state_t& state)
+solution_state_t next_solution(const solution_state_t& state)
 {
     auto xv = state.vertices;
     auto u0 = state.solution;
@@ -122,31 +59,155 @@ state_t next(const state_t& state)
     auto t1 = state.time + dt;
     auto i1 = state.iteration + 1;
 
-    return { t1, i1, xv, u1.shared(), state.schedule };
+    return { t1, i1, xv, u1.shared() };
 }
 
 
 
 
 //=============================================================================
-template<typename StringMapping>
-auto read_restart_config(const StringMapping& mapping)
+mara::schedule_t create_schedule(const mara::config_t& run_config)
 {
-    // if (mapping.count("restart") && ! mapping.at("restart").empty())
-    // {
-    //     auto file = h5::File(mapping.at("restart"), "r");
-    //     auto cfg_group = file.open_group("run_config");
-
-    //     config::parameter_map_t run_config;
-
-    //     for (auto key : cfg_group)
-    //     {
-    //         auto dset = cfg_group.open_dataset(key);
-    //     }
-    // }
-
-    return config::parameter_map_t();
+    mara::schedule_t schedule;
+    schedule.create("write_checkpoint");
+    schedule.mark_as_due("write_checkpoint");
+    return schedule;
 }
+
+mara::schedule_t next_schedule(const mara::schedule_t& schedule, const mara::config_t& run_config, double time)
+{
+    auto next_schedule = schedule;
+    auto cpi = run_config.get<double>("cpi");
+
+    if (time - schedule.last_performed("write_checkpoint") >= cpi)
+    {
+        next_schedule.mark_as_due("write_checkpoint", cpi);
+    }
+    return next_schedule;
+}
+
+
+
+
+//=============================================================================
+auto read_restart_config(const mara::config_string_map_t& mapping)
+{
+    return mara::config_parameter_map_t();
+}
+
+
+
+
+//=============================================================================
+struct app_state_t
+{
+    solution_state_t solution_state;
+    mara::schedule_t schedule;
+    mara::config_t run_config;
+};
+
+
+
+
+//=============================================================================
+void write_checkpoint(const app_state_t& state)
+{
+    char filename[1024];
+
+    std::snprintf(filename, 1024, "chkpt.%04d.h5", state.schedule.num_times_performed("write_checkpoint"));
+    std::printf("write checkpoint: %s\n", filename);
+
+    auto file = h5::File(filename, "w");
+
+    file.write("time", state.solution_state.time);
+    file.write("vertices", state.solution_state.vertices);
+    file.write("solution", state.solution_state.solution);
+
+    auto cfg_group = file.require_group("run_config");
+
+    for (auto item : state.run_config)
+    {
+        cfg_group.write(item.first, item.second);
+    }
+}
+
+void print_run_loop_message(const solution_state_t& solution, mara::perf_diagnostics_t perf)
+{
+    auto kzps = solution.vertices.size() / perf.execution_time_ms;
+    std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n", solution.iteration, solution.time, kzps);
+}
+
+
+
+
+//=============================================================================
+auto create_app_state(mara::config_t run_config)
+{
+    auto state = app_state_t();
+    state.run_config = run_config;
+    state.solution_state = create_solution_state(run_config);
+    state.schedule = create_schedule(run_config);
+    return state;
+}
+
+auto simulation_should_continue(const app_state_t& state)
+{
+    auto time = state.solution_state.time;
+    auto tfinal = state.run_config.get<double>("tfinal");
+    return time < tfinal;
+}
+
+auto next(const app_state_t& state)
+{
+    auto next_state = state;
+
+    next_state.solution_state = next_solution(state.solution_state);
+    next_state.schedule = next_schedule(state.schedule, state.run_config, state.solution_state.time);
+
+    return next_state;
+}
+
+auto run_tasks(const app_state_t& state)
+{
+    auto next_state = state;
+
+    if (state.schedule.is_due("write_checkpoint"))
+    {
+        write_checkpoint(state);
+        next_state.schedule.mark_as_completed("write_checkpoint");
+    }
+    return next_state;
+}
+
+
+
+
+//=============================================================================
+auto create_run_config(int argc, const char* argv[])
+{
+    auto args = mara::argv_to_string_map(argc, argv);
+
+    return mara::make_config_template()
+    .item("restart", std::string())
+    .item("cpi", 1.0)
+    .item("tfinal", 1.0)
+    .item("N", 256)
+    .create()
+    .update(read_restart_config(args))
+    .update(args);
+}
+
+
+
+
+template<typename F, typename G>
+auto compose(F f, G g)
+{
+    return [f, g] (auto&&... args)
+    {
+        return f(g(std::forward<decltype(args)>(args)...));
+    };
+};
 
 
 
@@ -154,29 +215,18 @@ auto read_restart_config(const StringMapping& mapping)
 //=============================================================================
 int main(int argc, const char* argv[])
 {
-    auto config_template = config::make_config_template()
-    .item("restart", std::string())
-    .item("cpi", 1.0)
-    .item("tfinal", 1.0)
-    .item("N", 256);
+    auto run_config = create_run_config(argc, argv);
+    mara::pretty_print(std::cout, "config", run_config);
 
-    auto args = config::argv_to_string_map(argc, argv);
-    auto run_config = config_template.create().update(read_restart_config(args)).update(args);
+    auto perf = mara::perf_diagnostics_t();
+    auto state = run_tasks(create_app_state(run_config));
 
-
-    config::pretty_print(std::cout, "config", run_config);
-
-
-    auto side_effects = side_effects_t(run_config);
-    auto [state, diagnostics] = mara::time_execution(initial_state, run_config);
-    state = side_effects(state, diagnostics);
-
-
-    while (state.time < run_config.get<double>("tfinal"))
+    while (simulation_should_continue(state))
     {
-        std::tie(state, diagnostics) = mara::time_execution(next, state);
-        state = side_effects(state, diagnostics);
+        std::tie(state, perf) = mara::time_execution(compose(run_tasks, next), state);
+        print_run_loop_message(state.solution_state, perf);
     }
 
+    run_tasks(next(state));
 	return 0;
 }
