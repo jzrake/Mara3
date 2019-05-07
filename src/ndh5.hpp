@@ -307,7 +307,7 @@ struct h5::hdf5_type_info<double>
 template<>
 struct h5::hdf5_type_info<std::string>
 {
-    static auto make_datatype_for(const std::string& value) { return Datatype::c_s1().with_size(value.size()); }
+    static auto make_datatype_for(const std::string& value) { return Datatype::c_s1().with_size(std::max(std::size_t(1), value.size())); }
     static auto make_dataspace_for(const std::string&) { return Dataspace::scalar(); }
     static auto prepare(const Datatype& type, const Dataspace&) { return std::string(type.size(), 0); }
     static auto get_address(std::string& value) { return value.data(); }

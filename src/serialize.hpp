@@ -26,6 +26,7 @@
 
 
 #pragma once
+#include <variant>
 #include "ndh5.hpp"
 #include "ndarray.hpp"
 
@@ -35,6 +36,8 @@
 //=============================================================================
 namespace serialize
 {
+
+    using parameter_t = std::variant<int, double, std::string>;
 
     //=========================================================================
     template<typename Writable, typename Serializable>
@@ -86,6 +89,62 @@ struct h5::hdf5_type_info<nd::unique_array<ValueType, Rank>>
     static auto make_dataspace_for(const nd::unique_array<ValueType, Rank>& value) { return Dataspace::simple(value.shape()); }
     static auto prepare(const Datatype&, const Dataspace& space) { return nd::make_unique_array<ValueType>(nd::shape_t<Rank>::from_range(space.extent())); }
     static auto get_address(nd::unique_array<ValueType, Rank>& value) { return value.data(); }
+};
+
+
+
+
+//=============================================================================
+template<>
+struct h5::hdf5_type_info<serialize::parameter_t>
+{
+    static auto make_dataspace_for(const serialize::parameter_t& value)
+    {
+        switch (value.index())
+        {
+            case 0: return h5::make_dataspace_for(std::get<0>(value));
+            case 1: return h5::make_dataspace_for(std::get<1>(value));
+            case 2: return h5::make_dataspace_for(std::get<2>(value));
+        }
+        throw;
+    }
+    static auto prepare(const Datatype& dtype, const Dataspace& space)
+    {
+        if (dtype == Datatype::native_double()) return serialize::parameter_t(h5::prepare<int>        (dtype, space));
+        if (dtype == Datatype::native_int())    return serialize::parameter_t(h5::prepare<double>     (dtype, space));
+        if (dtype == Datatype::c_s1())          return serialize::parameter_t(h5::prepare<std::string>(dtype, space));
+        throw std::invalid_argument("invalid hdf5 type for parameter variant");
+    }
+    static auto make_datatype_for(const serialize::parameter_t& value)
+    {
+        switch (value.index())
+        {
+            case 0: return h5::make_datatype_for(std::get<0>(value));
+            case 1: return h5::make_datatype_for(std::get<1>(value));
+            case 2: return h5::make_datatype_for(std::get<2>(value));
+        }
+        throw;
+    }
+    static auto get_address(serialize::parameter_t& value)
+    {
+        switch (value.index())
+        {
+            case 0: return static_cast<void*>(h5::get_address(std::get<0>(value)));
+            case 1: return static_cast<void*>(h5::get_address(std::get<1>(value)));
+            case 2: return static_cast<void*>(h5::get_address(std::get<2>(value)));
+        }
+        throw;
+    }
+    static auto get_address(const serialize::parameter_t& value)
+    {
+        switch (value.index())
+        {
+            case 0: return static_cast<const void*>(h5::get_address(std::get<0>(value)));
+            case 1: return static_cast<const void*>(h5::get_address(std::get<1>(value)));
+            case 2: return static_cast<const void*>(h5::get_address(std::get<2>(value)));
+        }
+        throw;
+    }
 };
 
 

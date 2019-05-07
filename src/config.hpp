@@ -69,6 +69,10 @@ public:
     template<typename ValueType>
     const ValueType& get(std::string key) const
     {
+        if (! template_items.count(key))
+        {
+            throw std::invalid_argument("config has no option " + key);
+        }
         return std::get<ValueType>(parameters.at(key));
     }
 

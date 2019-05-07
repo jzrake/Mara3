@@ -2,3 +2,4 @@ mara3
 misc
 *.o
 *.d
+*.h5
