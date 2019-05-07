@@ -86,6 +86,17 @@ mara::schedule_t next_schedule(const mara::schedule_t& schedule, const mara::con
     return next_schedule;
 }
 
+void write_schedule(h5::Group&& group, const mara::schedule_t& schedule)
+{
+    for (auto task : schedule)
+    {
+        auto h5_task = group.require_group(task.first);
+        h5_task.write("name", task.second.name);
+        h5_task.write("num_times_performed", task.second.num_times_performed + 1);
+        h5_task.write("last_performed", task.second.last_performed);
+    }
+}
+
 
 
 
@@ -93,6 +104,28 @@ mara::schedule_t next_schedule(const mara::schedule_t& schedule, const mara::con
 auto read_restart_config(const mara::config_string_map_t& mapping)
 {
     return mara::config_parameter_map_t();
+}
+
+auto create_run_config(int argc, const char* argv[])
+{
+    auto args = mara::argv_to_string_map(argc, argv);
+
+    return mara::make_config_template()
+    .item("restart", std::string())
+    .item("cpi", 1.0)
+    .item("tfinal", 1.0)
+    .item("N", 256)
+    .create()
+    .update(read_restart_config(args))
+    .update(args);
+}
+
+void write_config(h5::Group&& group, mara::config_t run_config)
+{
+    for (auto item : run_config)
+    {
+        group.write(item.first, item.second);
+    }
 }
 
 
@@ -122,13 +155,8 @@ void write_checkpoint(const app_state_t& state)
     file.write("time", state.solution_state.time);
     file.write("vertices", state.solution_state.vertices);
     file.write("solution", state.solution_state.solution);
-
-    auto cfg_group = file.require_group("run_config");
-
-    for (auto item : state.run_config)
-    {
-        cfg_group.write(item.first, item.second);
-    }
+    write_config(file.require_group("run_config"), state.run_config);
+    write_schedule(file.require_group("schedule"), state.schedule);
 }
 
 void print_run_loop_message(const solution_state_t& solution, mara::perf_diagnostics_t perf)
@@ -177,24 +205,6 @@ auto run_tasks(const app_state_t& state)
         next_state.schedule.mark_as_completed("write_checkpoint");
     }
     return next_state;
-}
-
-
-
-
-//=============================================================================
-auto create_run_config(int argc, const char* argv[])
-{
-    auto args = mara::argv_to_string_map(argc, argv);
-
-    return mara::make_config_template()
-    .item("restart", std::string())
-    .item("cpi", 1.0)
-    .item("tfinal", 1.0)
-    .item("N", 256)
-    .create()
-    .update(read_restart_config(args))
-    .update(args);
 }
 
 
