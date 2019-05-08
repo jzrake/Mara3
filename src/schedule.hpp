@@ -97,9 +97,14 @@ public:
         }        
     }
 
-    void create(std::string name, double last_performed=0.0)
+    void insert(task_t task)
     {
-        tasks[name] = {name, 0, last_performed, false};
+        tasks[task.name] = task;
+    }
+
+    void create(std::string task_name)
+    {
+        tasks[task_name] = {task_name, 0, 0.0, false};
     }
 
     void mark_as_due(std::string task_name, double amount_to_increase_last_performed_by=0.0)

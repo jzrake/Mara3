@@ -110,8 +110,8 @@ struct h5::hdf5_type_info<mara::config_parameter_t>
     }
     static auto prepare(const Datatype& dtype, const Dataspace& space)
     {
-        if (dtype == Datatype::native_double()) return mara::config_parameter_t(h5::prepare<int>        (dtype, space));
-        if (dtype == Datatype::native_int())    return mara::config_parameter_t(h5::prepare<double>     (dtype, space));
+        if (dtype == Datatype::native_int())    return mara::config_parameter_t(h5::prepare<int>        (dtype, space));
+        if (dtype == Datatype::native_double()) return mara::config_parameter_t(h5::prepare<double>     (dtype, space));
         if (dtype == Datatype::c_s1())          return mara::config_parameter_t(h5::prepare<std::string>(dtype, space));
         throw std::invalid_argument("invalid hdf5 type for parameter variant");
     }
