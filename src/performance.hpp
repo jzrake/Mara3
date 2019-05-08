@@ -19,6 +19,7 @@
  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
+
  ==============================================================================
 */
 
@@ -38,6 +39,17 @@ namespace mara
 
     template<typename Function, typename... Args>
     auto time_execution(Function&& func, Args&&... args);
+
+    // This function does not really belong here... move it to functools or
+    // something when that's written.
+    template<typename F, typename G>
+    auto compose(F f, G g)
+    {
+        return [f, g] (auto&&... args)
+        {
+            return f(g(std::forward<decltype(args)>(args)...));
+        };
+    };
 }
 
 

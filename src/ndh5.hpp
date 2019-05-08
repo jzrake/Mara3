@@ -19,6 +19,7 @@
  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
+ 
  ==============================================================================
 */
 
@@ -771,6 +772,17 @@ public:
         if (intent == H5F_ACC_RDONLY)     return Intent::rdonly;
 
         throw;
+    }
+
+    std::string filename() const
+    {
+        char result[2048];
+
+        if (H5Fget_name(link.id, result, 2048) > 2048)
+        {
+            throw std::invalid_argument("the HDF5 filename is too long");
+        }
+        return result;
     }
 
 private:

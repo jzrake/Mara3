@@ -18,15 +18,16 @@
 
 # Build configuration
 # =====================================================================
-#
-# If a Makefile.in exists in this directory, then use it.
-#
+
+
+# Default build macros
+CXX      = mpicxx
+CXXFLAGS = -std=c++17 -Wall -O0 -MMD -MP
+LDFLAGS  = -lhdf5
+
+
+# If a Makefile.in exists in this directory, then use it
 -include Makefile.in
-#
-# Any macros that are omitted receive these default values:
-CXX      ?= g++
-CXXFLAGS ?= -std=c++17 -Wall -O0 -MMD -MP
-LDFLAGS  ?= -lhdf5
 
 
 # Build macros
