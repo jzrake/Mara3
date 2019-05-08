@@ -41,6 +41,7 @@
 namespace mara
 {
     template<std::size_t Rank> auto to_string(const nd::index_t<Rank>& index);
+    template<std::size_t Rank> auto to_string(const nd::shape_t<Rank>& index);
     template<std::size_t Rank> auto to_string(const nd::access_pattern_t<Rank>& region);
     template<std::size_t Rank, typename ValueType, typename DerivedType> auto to_string(const mara::arithmetic_sequence_t<Rank, ValueType, DerivedType>&);
 
@@ -95,6 +96,18 @@ auto mara::to_string(const nd::index_t<Rank>& index)
         result += std::to_string(index[axis]) + " ";
     }
     return result + "]";
+}
+
+template<std::size_t Rank>
+auto mara::to_string(const nd::shape_t<Rank>& index)
+{
+    auto result = std::string("< ");
+
+    for (std::size_t axis = 0; axis < Rank; ++axis)
+    {
+        result += std::to_string(index[axis]) + " ";
+    }
+    return result + ">";
 }
 
 template<std::size_t Rank>

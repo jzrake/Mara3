@@ -50,11 +50,28 @@ public:
     using value_type = ValueType;
 
     //=========================================================================
+    template<typename Container>
+    static DerivedType from_range(Container container)
+    {
+        DerivedType result;
+        std::size_t n = 0;
+
+        if (container.size() != Rank)
+        {
+            throw std::invalid_argument("size of container does not match rank");
+        }
+        for (auto item : container)
+        {
+            result.memory[n++] = item;
+        }
+        return result;
+    }
+
     static DerivedType uniform(ValueType arg)
     {
         DerivedType result;
 
-        for (auto n : nd::range(Rank))
+        for (std::size_t n = 0; n < Rank; ++n)
         {
             result.memory[n] = arg;
         }
@@ -73,7 +90,7 @@ public:
     {
         if (args.size() != Rank)
         {
-            throw std::logic_error("size of initializer list does not match rank");
+            throw std::invalid_argument("size of initializer list does not match rank");
         }
         std::size_t n = 0;
 
@@ -83,8 +100,8 @@ public:
         }
     }
 
-    bool operator==(const DerivedType& other) const { return std::memcmp(memory, other.memory, Rank * sizeof(ValueType)) == 0; }
-    bool operator!=(const DerivedType& other) const { return std::memcmp(memory, other.memory, Rank * sizeof(ValueType)) != 0; }
+    bool operator==(const DerivedType& other) const { for (std::size_t n = 0; n < Rank; ++n) { if (memory[n] != other[n]) return false; } return true; }
+    bool operator!=(const DerivedType& other) const { for (std::size_t n = 0; n < Rank; ++n) { if (memory[n] != other[n]) return true; } return false; }
     DerivedType operator+(const DerivedType& other) const { return binary_op(other, std::plus<>()); }
     DerivedType operator-(const DerivedType& other) const { return binary_op(other, std::minus<>()); }
     DerivedType operator*(const DerivedType& other) const { return binary_op(other, std::multiplies<>()); }
