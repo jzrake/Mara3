@@ -1,23 +1,37 @@
 #include <iostream>
-#include "ndmpi.hpp"
 #include "ndh5.hpp"
 #include "ndarray.hpp"
-#include "ndarray_ops.hpp"
 #include "config.hpp"
 #include "serialize.hpp"
-#include "schedule.hpp"
-#include "performance.hpp"
 #include "subprogram.hpp"
 #include "parallel.hpp"
+#include "datatypes.hpp"
 
 
 
 
+//=============================================================================
 static auto config_template()
 {
     return mara::make_config_template()
     .item("N", 256)
     .item("procs", 256);
+}
+
+
+
+
+//=============================================================================
+template<std::size_t Rank>
+auto make_vertex_coordinate_array(nd::access_pattern_t<Rank> cells_region)
+{
+    auto vertices_shape = cells_region.shape();
+
+    auto mapping = [] (auto index)
+    {
+        return mara::spatial_coordinate_t<Rank>();
+    };
+    return nd::make_array(mapping, vertices_shape);
 }
 
 
@@ -41,12 +55,22 @@ public:
             std::cout << mara::to_string(index) << " ... " << mara::to_string(blocks(index)) << std::endl;
         }
 
+        auto arrays = blocks | nd::transform([] (auto region)
+        {
+            return make_vertex_coordinate_array(region);
+        });
 
+
+        auto x = mara::spatial_coordinate_t<3> {1, 2, 3};
+        std::cout << mara::to_string(x + x) << std::endl;
+        std::cout << mara::to_string(x * 2) << std::endl;
+
+
+        //auto x = spatial_coordinate_t<3>(blocks_shape);
 
         // auto space = h5::Dataspace::simple(domain_shape);
         // auto file = h5::File("test.h5", "w");
         // file.require_dataset("data", h5::Datatype::native_double(), space);
-
 
 
         return 0;

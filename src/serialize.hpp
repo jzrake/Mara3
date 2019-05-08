@@ -32,6 +32,7 @@
 #include "ndarray.hpp"
 #include "config.hpp"
 #include "schedule.hpp"
+#include "datatypes.hpp"
 
 
 
@@ -39,8 +40,9 @@
 //=============================================================================
 namespace mara
 {
-    template<std::size_t Rank> auto to_string(nd::index_t<Rank> index);
-    template<std::size_t Rank> auto to_string(nd::access_pattern_t<Rank> region);
+    template<std::size_t Rank> auto to_string(const nd::index_t<Rank>& index);
+    template<std::size_t Rank> auto to_string(const nd::access_pattern_t<Rank>& region);
+    template<std::size_t Rank, typename ValueType, typename DerivedType> auto to_string(const mara::arithmetic_sequence_t<Rank, ValueType, DerivedType>&);
 
     inline void write_schedule(h5::Group&& group, const mara::schedule_t& schedule);
     inline auto read_schedule(h5::Group&& group);
@@ -84,7 +86,7 @@ namespace mara::serialize::detail
 
 //=============================================================================
 template<std::size_t Rank>
-auto mara::to_string(nd::index_t<Rank> index)
+auto mara::to_string(const nd::index_t<Rank>& index)
 {
     auto result = std::string("[ ");
 
@@ -95,11 +97,22 @@ auto mara::to_string(nd::index_t<Rank> index)
     return result + "]";
 }
 
-
 template<std::size_t Rank>
-auto mara::to_string(nd::access_pattern_t<Rank> region)
+auto mara::to_string(const nd::access_pattern_t<Rank>& region)
 {
     return to_string(region.start) + " -> " + to_string(region.final);
+}
+
+template<std::size_t Rank, typename ValueType, typename DerivedType>
+auto mara::to_string(const mara::arithmetic_sequence_t<Rank, ValueType, DerivedType>& sequence)
+{
+    auto result = std::string("( ");
+
+    for (std::size_t axis = 0; axis < Rank; ++axis)
+    {
+        result += std::to_string(sequence[axis]) + " ";
+    }
+    return result + ")";
 }
 
 
