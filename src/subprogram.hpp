@@ -19,50 +19,29 @@
  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
- 
+
  ==============================================================================
 */
 
 
 
 
-#include <map>
-#include <iostream>
-#include "subprogram.hpp"
+#pragma once
+#include <string>
 
 
 
 
 //=============================================================================
-std::unique_ptr<mara::sub_program_t> make_subprog_boilerlate();
-std::unique_ptr<mara::sub_program_t> make_subprog_partdom();
-
-
-
-
-//=============================================================================
-int main(int argc, const char* argv[])
+namespace mara
 {
-    auto programs = std::map<std::string, std::unique_ptr<mara::sub_program_t>>();
 
-    programs["boilerplate"] = make_subprog_boilerlate();
-    programs["partdom"] = make_subprog_partdom();
-
-    if (argc == 1)
+    //=========================================================================
+    class sub_program_t
     {
-       std::cout << "usages: \n";
-
-       for (auto& prog : programs)
-       {
-           std::cout << "    mara " << prog.first << std::endl;
-       }
-       return 0;
-    }
-    else if (programs.count(argv[1]))
-    {
-       return programs.at(argv[1])->main(argc - 1, argv + 1);
-    }
-
-    std::cout << "invalid sub-program '" << argv[1] << "'\n";
-    return 0;
-}
+    public:
+        virtual ~sub_program_t() {}
+        virtual int main(int argc, const char* argv[]) = 0;
+        virtual std::string name() const = 0;
+    };
+};

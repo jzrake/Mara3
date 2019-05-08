@@ -46,12 +46,12 @@ namespace nd
     // array support structs
     //=========================================================================
     template<std::size_t Rank, typename ValueType, typename DerivedType> class short_sequence_t;
-    template<std::size_t Rank, typename ValueType> class basic_sequence_t;
     template<std::size_t Rank> class shape_t;
     template<std::size_t Rank> class index_t;
     template<std::size_t Rank> class jumps_t;
     template<std::size_t Rank> class memory_strides_t;
     template<std::size_t Rank> class access_pattern_t;
+    template<typename ValueType, std::size_t Rank> class basic_sequence_t;
     template<typename Provider> class array_t;
     template<typename ValueType> class buffer_t;
 
@@ -143,7 +143,7 @@ namespace nd
     template<typename... Args> auto replace_from(Args... args);
     template<std::size_t Rank> auto read_index(index_t<Rank>);
     template<typename... Args> auto read_index(Args... args);
-    template<typename Function> auto transform(Function function);
+    template<typename Function> auto map(Function function);
     template<typename Function> auto binary_op(Function function);
 
 
@@ -167,6 +167,7 @@ namespace nd
     template<typename ValueType> class range_container_t;
     template<typename ValueType, typename ContainerTuple> class zipped_container_t;
     template<typename ContainerType, typename Function> class transformed_container_t;
+    template<typename ContainerType> class divvy_container_t;
 
 
     // std::algorithm wrappers for ranges
@@ -177,7 +178,9 @@ namespace nd
     template<typename Range> auto distance(Range&& rng);
     template<typename Range> auto enumerate(Range&& rng);
     template<typename ValueType> auto range(ValueType count);
+    template<typename Function> auto transform(Function fn);
     template<typename... ContainerTypes> auto zip(ContainerTypes&&... containers);
+    inline auto divvy(std::size_t num_groups);
 
 
     // helper functions
@@ -228,6 +231,7 @@ public:
         using reference = value_type&;
 
         iterator& operator++() { ++current; return *this; }
+        iterator operator+(std::size_t difference) const { return { ValueType(current + difference), start, final }; }
         bool operator==(const iterator& other) const { return current == other.current; }
         bool operator!=(const iterator& other) const { return current != other.current; }
         const ValueType& operator*() const { return current; }
@@ -238,14 +242,10 @@ public:
 
     //=========================================================================
     range_container_t(ValueType start, ValueType final) : start(start), final(final) {}
+    std::size_t size() const { return final - start; }
     iterator begin() const { return { 0, start, final }; }
     iterator end() const { return { final, start, final }; }
-
-    template<typename Function>
-    auto operator|(Function&& fn) const
-    {
-        return transformed_container_t<range_container_t, Function>(*this, fn);
-    }
+    template<typename Function> auto operator|(Function&& fn) const { return fn(*this); }
 
 private:
     //=========================================================================
@@ -292,7 +292,7 @@ public:
     auto begin() const
     {
         auto res = detail::transform_tuple([] (const auto& x) { return std::begin(x); }, containers);
-         return iterator<decltype(res)>{res};
+        return iterator<decltype(res)>{res};
     }
 
     auto end() const
@@ -300,12 +300,7 @@ public:
         auto res = detail::transform_tuple([] (const auto& x) { return std::end(x); }, containers);
         return iterator<decltype(res)>{res};
     }
-
-    template<typename Function>
-    auto operator|(Function&& fn) const
-    {
-        return transformed_container_t<zipped_container_t, Function>(*this, fn);
-    }
+    template<typename Function> auto operator|(Function&& fn) const { return fn(*this); }
 
 private:
     //=========================================================================
@@ -342,17 +337,83 @@ public:
     };
 
     //=========================================================================
-    transformed_container_t(const ContainerType& container, const Function& function)
+    transformed_container_t(ContainerType container, Function function)
     : container(container)
     , function(function) {}
 
+    auto size() const { return container.size(); }
     auto begin() const { return iterator<decltype(container.begin())> {container.begin(), function}; }
     auto end() const { return iterator<decltype(container.end())> {container.end(), function}; }
 
 private:
     //=========================================================================
-    const ContainerType& container;
-    const Function& function;
+    ContainerType container;
+    Function function;
+};
+
+
+
+
+//=============================================================================
+template<typename ContainerType>
+class nd::divvy_container_t
+{
+public:
+
+    //=============================================================================
+    template<typename IteratorType>
+    class divvy_group_t
+    {
+    public:
+        divvy_group_t() {}
+        divvy_group_t(IteratorType start, IteratorType final) : start(start), final(final) {}
+        std::size_t size() { return std::distance(start, final); }
+        auto begin() const { return start; }
+        auto end() const { return final; }
+    private:
+        IteratorType start;
+        IteratorType final;
+    };
+
+    using value_type = divvy_group_t<typename ContainerType::iterator>;
+
+    //=========================================================================
+    struct iterator
+    {
+        using iterator_category = std::input_iterator_tag;
+        using value_type = divvy_container_t::value_type;
+        using difference_type = std::ptrdiff_t;
+        using pointer = value_type*;
+        using reference = value_type&;
+
+        iterator& operator++() { ++current; return *this; }
+        bool operator==(const iterator& other) const { return current == other.current; }
+        bool operator!=(const iterator& other) const { return current != other.current; }
+        auto operator*() const
+        {
+            std::size_t start = current * container.size() / num_groups;
+            std::size_t final = current == num_groups - 1 ? container.size() : (current + 1) * container.size() / num_groups;
+            return divvy_group_t<decltype(container.begin())>(container.begin() + start, container.begin() + final);
+        }
+        std::size_t current;
+        std::size_t num_groups;
+        ContainerType container;
+    };
+
+    //=========================================================================
+    divvy_container_t(ContainerType container, std::size_t num_groups)
+    : container(container)
+    , num_groups(num_groups) {}
+    
+    std::size_t size() const { return num_groups; }
+    iterator begin() const { return { 0, num_groups, container }; }
+    iterator end() const { return { num_groups, num_groups, container }; }
+    template<typename Function> auto operator|(Function&& fn) const { return fn(*this); }
+
+private:
+    //=========================================================================
+    ContainerType container;
+    std::size_t num_groups;
 };
 
 
@@ -401,6 +462,23 @@ auto nd::zip(ContainerTypes&&... containers)
     using ValueType = std::tuple<typename std::remove_reference_t<ContainerTypes>::value_type...>;
     using ContainerTuple = std::tuple<ContainerTypes...>;
     return nd::zipped_container_t<ValueType, ContainerTuple>(std::forward_as_tuple(containers...));
+}
+
+template<typename Function>
+auto nd::transform(Function fn)
+{
+    return [fn] (auto container)
+    {
+        return transformed_container_t<decltype(container), Function>(container, fn);
+    };
+}
+
+auto nd::divvy(std::size_t num_groups)
+{
+    return [num_groups] (auto container)
+    {
+        return divvy_container_t<decltype(container)>(container, num_groups);
+    };
 }
 
 
@@ -487,8 +565,8 @@ private:
 
 
 //=============================================================================
-template<std::size_t Size, typename ValueType>
-class nd::basic_sequence_t : public nd::short_sequence_t<Size, ValueType, basic_sequence_t<Size, ValueType>>
+template<typename ValueType, std::size_t Size>
+class nd::basic_sequence_t : public nd::short_sequence_t<Size, ValueType, basic_sequence_t<ValueType, Size>>
 {
 };
 
@@ -638,7 +716,7 @@ public:
     std::size_t compute_offset(const index_t<Rank>& index) const
     {
         auto mul_tuple = [] (auto t) { return std::get<0>(t) * std::get<1>(t); };
-        return accumulate(zip(index, *this) | mul_tuple, 0, std::plus<>());
+        return accumulate(zip(index, *this) | transform(mul_tuple), 0, std::plus<>());
     }
 
     template<typename... Args>
@@ -916,7 +994,7 @@ auto nd::partition_shape(shape_t<Rank> shape)
 {
     // Note: this function should handle remainders better
     constexpr std::size_t D = 0;
-    auto result = basic_sequence_t<NumPartitions, access_pattern_t<Rank>>();
+    auto result = basic_sequence_t<access_pattern_t<Rank>, NumPartitions>();
     auto chunk_size = shape[D] / NumPartitions;
 
     for (std::size_t n = 0; n < NumPartitions; ++n)
@@ -2206,17 +2284,19 @@ auto nd::read_index(Args... args)
 
 
 /**
- * @brief      Return an operator that transforms the values of an array using
- *             the given function object.
+ * @brief      Return an operator that maps the values of an array using the
+ *             given function object.
  *
  * @param      function  The function
  *
  * @tparam     Function  The type of the function object
  *
  * @return     The operator
+ * 
+ * @note       This is the N-dimensional version of the transform operator
  */
 template<typename Function>
-auto nd::transform(Function function)
+auto nd::map(Function function)
 {
     return [function] (auto array)
     {
@@ -2279,7 +2359,7 @@ auto nd::binary_op(Function function)
 template<typename ArrayType>
 auto nd::where(ArrayType array)
 {
-    auto bool_array = array | transform([] (auto x) { return bool(x); });
+    auto bool_array = array | map([] (auto x) { return bool(x); });
     auto index_list = make_unique_array<index_t<rank(bool_array)>>(bool_array | sum());
 
     std::size_t n = 0;

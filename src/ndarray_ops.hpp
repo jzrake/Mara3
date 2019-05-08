@@ -35,13 +35,13 @@
 //=============================================================================
 namespace nd
 {
-    auto linspace(double x0, double x1, std::size_t count);
-    auto midpoint_on_axis(std::size_t axis);
-    auto select_first(std::size_t count, std::size_t axis);
-    auto select_final(std::size_t count, std::size_t axis);
-    auto difference_on_axis(std::size_t axis);
-    auto intercell_flux_on_axis(std::size_t axis);
-    auto extend_periodic_on_axis(std::size_t axis);
+    inline auto linspace(double x0, double x1, std::size_t count);
+    inline auto midpoint_on_axis(std::size_t axis);
+    inline auto select_first(std::size_t count, std::size_t axis);
+    inline auto select_final(std::size_t count, std::size_t axis);
+    inline auto difference_on_axis(std::size_t axis);
+    inline auto intercell_flux_on_axis(std::size_t axis);
+    inline auto extend_periodic_on_axis(std::size_t axis);
 }
 
 

@@ -8,7 +8,8 @@
 
 
 // ============================================================================
-namespace mpi {
+namespace mpi
+{
     class Session;
     class Communicator;
     class Request;
@@ -18,14 +19,7 @@ namespace mpi {
     constexpr int any_tag = MPI_ANY_TAG;
     constexpr int any_source = MPI_ANY_SOURCE;
 
-    namespace detail {
-        // template <typename T> inline int make_datatype_for(const T&);
-    }
-    namespace ext {
-        class log;
-    }
-
-    bool is_master()
+    inline bool is_master()
     {
         int rank;
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -41,7 +35,7 @@ namespace mpi {
         }
     }
 
-    std::ostream& master_cout()
+    inline std::ostream& master_cout()
     {
         if (is_master())
         {
@@ -812,86 +806,3 @@ mpi::Communicator mpi::comm_world()
     return res;
 }
 
-
-
-
-// ============================================================================
-#include <sstream>
-
-class mpi::ext::log
-{
-public:
-
-
-    // ========================================================================
-    using char_type    = std::stringstream::char_type;
-    using traits_type  = std::stringstream::traits_type;
-    using ostream_type = std::basic_ostream<char_type, traits_type>;
-
-
-    // ========================================================================
-    log(const Communicator& comm, std::ostream& stream)
-    : comm(comm)
-    , stream(stream)
-    {
-    }
-
-    log(const log& other)
-    : comm(other.comm)
-    , stream(other.stream)
-    {
-    }
-
-    ~log()
-    {
-        flush();
-    }
-
-    log only(int rank) const
-    {
-        auto res = *this;
-        res.active_rank = rank;
-        return res;
-    }
-
-    log& operator<<(ostream_type& os(ostream_type&))
-    {
-        buffer << os;
-        return *this;
-    }
-
-    template <typename T>
-    log& operator<<(const T& value)
-    {
-        buffer << value;
-        return *this;
-    }
-
-    log& flush()
-    {
-        if (active_rank == -1)
-        {
-            for (int n = 0; n < comm.size(); ++n)
-            {
-                if (n == comm.rank())
-                {
-                    stream << buffer.str();
-                }
-                comm.barrier();
-            }
-        }
-        else if (comm.rank() == active_rank)
-        {
-            stream << buffer.str();
-        }
-        stream.clear();
-        return *this;
-    }
-
-private:
-    // ========================================================================
-    const Communicator& comm;
-    std::ostream& stream;
-    std::stringstream buffer;
-    int active_rank = -1;
-};
