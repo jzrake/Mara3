@@ -22,12 +22,17 @@ namespace mara::srhd
     using conserved_density_t = dimensional_sequence_t<intrinsic_t, 5>;
     using conserved_t         = dimensional_sequence_t<extrinsic_t, 5>;
     using flux_vector_t       = dimensional_sequence_t<flux_t, 5>;
+    using flow_vector_t       = dimensional_sequence_t<flow_rate_t, 5>;
     using area_element_t      = dimensional_sequence_t<area_t, 3>;
 
-    inline auto make_time_delta(double value) { return volume_t   {value}; }
-    inline auto make_area      (double value) { return area_t     {value}; }
-    inline auto make_volume    (double value) { return volume_t   {value}; }
-    inline auto make_velocity  (double value) { return velocity_t {value}; }
+    inline auto make_time_delta(double value) { return time_delta_t{value}; }
+    inline auto make_area      (double value) { return area_t      {value}; }
+    inline auto make_volume    (double value) { return volume_t    {value}; }
+    inline auto make_velocity  (double value) { return velocity_t  {value}; }
+    inline auto make_area_element(double da1, double da2, double da3)
+    {
+        return area_element_t {{ make_area(da1), make_area(da2), make_area(da3) }};
+    };
 
     extrinsic_t operator*(intrinsic_t i, volume_t v) { return { i.value * v.value }; }
     intrinsic_t operator/(extrinsic_t e, volume_t v) { return { e.value / v.value }; }

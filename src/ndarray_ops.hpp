@@ -35,6 +35,7 @@
 //=============================================================================
 namespace nd
 {
+    template<typename Function> auto apply(Function fn);
     inline auto linspace(double x0, double x1, std::size_t count);
     inline auto midpoint_on_axis(std::size_t axis);
     inline auto select_first(std::size_t count, std::size_t axis);
@@ -48,15 +49,6 @@ namespace nd
 
 
 //=============================================================================
-auto nd::linspace(double x0, double x1, std::size_t count)
-{
-    auto mapping = [x0, x1, count] (auto index)
-    {
-        return x0 + (x1 - x0) * index[0] / (count - 1);
-    };
-    return make_array(mapping, nd::make_shape(count));
-}
-
 auto nd::midpoint_on_axis(std::size_t axis)
 {
     return [axis] (auto array)
