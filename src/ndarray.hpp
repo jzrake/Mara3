@@ -2126,7 +2126,7 @@ auto nd::freeze_axis(std::size_t axis_to_freeze)
 template<typename OperatorType>
 auto nd::collect(OperatorType reduction)
 {
-    return axis_reducer_t<OperatorType>(0, std::forward<OperatorType>(reduction));
+    return axis_reducer_t<OperatorType>(0, reduction);
 }
 
 
@@ -2148,7 +2148,7 @@ auto nd::collect(OperatorType reduction)
 template<typename ArrayType>
 auto nd::concat(ArrayType array_to_concat)
 {
-    return concatenator_t<ArrayType>(0, std::forward<ArrayType>(array_to_concat));
+    return concatenator_t<ArrayType>(0, array_to_concat);
 }
 
 

@@ -178,6 +178,12 @@ public:
         return other;
     }
 
+    Datatype as_array(std::size_t size) const
+    {
+        hsize_t dims = size;
+        return H5Tarray_create(id, 1, &dims);
+    }
+
 private:
     //=========================================================================
     friend class Link;

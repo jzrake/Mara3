@@ -43,8 +43,6 @@ namespace mara
     template<std::size_t Rank> auto to_string(const nd::index_t<Rank>& index);
     template<std::size_t Rank> auto to_string(const nd::shape_t<Rank>& index);
     template<std::size_t Rank> auto to_string(const nd::access_pattern_t<Rank>& region);
-    template<std::size_t Rank, typename ValueType, typename DerivedType>
-    auto to_string(const mara::arithmetic_sequence_t<Rank, ValueType, DerivedType>&);
 
     inline void write_schedule(h5::Group&& group, const mara::schedule_t& schedule);
     inline auto read_schedule(h5::Group&& group);
@@ -115,18 +113,6 @@ template<std::size_t Rank>
 auto mara::to_string(const nd::access_pattern_t<Rank>& region)
 {
     return to_string(region.start) + " -> " + to_string(region.final);
-}
-
-template<std::size_t Rank, typename ValueType, typename DerivedType>
-auto mara::to_string(const mara::arithmetic_sequence_t<Rank, ValueType, DerivedType>& sequence)
-{
-    auto result = std::string("( ");
-
-    for (std::size_t axis = 0; axis < Rank; ++axis)
-    {
-        result += std::to_string(sequence[axis]) + " ";
-    }
-    return result + ")";
 }
 
 
@@ -293,6 +279,21 @@ struct h5::hdf5_type_info<nd::unique_array<ValueType, Rank>>
     static auto make_dataspace_for(const nd::unique_array<ValueType, Rank>& value) { return Dataspace::simple(value.shape()); }
     static auto prepare(const Datatype&, const Dataspace& space) { return nd::make_unique_array<ValueType>(nd::shape_t<Rank>::from_range(space.extent())); }
     static auto get_address(nd::unique_array<ValueType, Rank>& value) { return value.data(); }
+};
+
+
+
+
+//=============================================================================
+template<typename ValueType, std::size_t Rank>
+struct h5::hdf5_type_info<mara::dimensional_sequence_t<ValueType, Rank>>
+{
+    using native_type = mara::dimensional_sequence_t<ValueType, Rank>;
+    static auto make_datatype_for(const native_type& value) { return h5::make_datatype_for(value[0].value).as_array(Rank); }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto get_address(const native_type& value) { return &value[0].value; }
+    static auto get_address(native_type& value) { return &value[0].value; }
 };
 
 

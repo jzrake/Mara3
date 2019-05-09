@@ -9,6 +9,8 @@
 #include "schedule.hpp"
 #include "performance.hpp"
 #include "subprogram.hpp"
+#include "physics_srhd.hpp"
+#define gamma_law_index (4. / 3)
 
 
 
@@ -32,7 +34,7 @@ struct solution_state_t
     double time = 0.0;
     int iteration = 0;
     nd::shared_array<double, 1> vertices;
-    nd::shared_array<double, 1> solution;
+    nd::shared_array<mara::srhd::conserved_t, 1> solution;
 };
 
 static void write_solution(h5::Group&& group, const solution_state_t& state)
@@ -40,7 +42,7 @@ static void write_solution(h5::Group&& group, const solution_state_t& state)
     group.write("time", state.time);
     group.write("iteration", state.iteration);
     group.write("vertices", state.vertices);
-    group.write("solution", state.solution);
+    group.write("conserved", state.solution);
 }
 
 static auto read_solution(h5::Group&& group)
@@ -49,20 +51,30 @@ static auto read_solution(h5::Group&& group)
     state.time = group.read<double>("time");
     state.iteration = group.read<int>("iteration");
     state.vertices = group.read<nd::unique_array<double, 1>>("vertices").shared();
-    state.solution = group.read<nd::unique_array<double, 1>>("solution").shared();
+    state.solution = group.read<nd::unique_array<mara::srhd::conserved_t, 1>>("solution").shared();
     return state;
 }
 
 static auto new_solution(const mara::config_t& cfg)
 {
-    auto initial_u = [] (auto x) { return std::sin(2 * M_PI * x); };
+    auto initial_p = [] (auto x)
+    {
+        return mara::srhd::primitive_t()
+        .mass_density(x < 0.5 ? 1.0 : 0.100)
+        .gas_pressure(x < 0.5 ? 1.0 : 0.125);
+    };
+    auto to_conserved = [] (auto p)
+    {
+        return p.to_conserved_density(gamma_law_index) * mara::srhd::make_volume(1.0);
+    };
+
     auto nx = cfg.template get<int>("N");
     auto xv = nd::linspace(0, 1, nx + 1);
     auto xc = xv | nd::midpoint_on_axis(0);
     auto state = solution_state_t();
 
     state.vertices = xv.shared();
-    state.solution = (xc | nd::map(initial_u)).shared();
+    state.solution = (xc | nd::map(initial_p) | nd::map(to_conserved)).shared();
 
     return state;
 }
@@ -77,19 +89,20 @@ static auto create_solution(const mara::config_t& run_config)
 
 static auto next_solution(const solution_state_t& state)
 {
-    auto xv = state.vertices;
-    auto u0 = state.solution;
-    auto nx = xv.shape(0);
-    auto dt = 0.25 / nx;
-    auto xc = xv | nd::midpoint_on_axis(0);          // nx
-    auto dx = xv | nd::difference_on_axis(0);        // nx
-    auto ue = u0 | nd::extend_periodic_on_axis(0);   // nx + 2
-    auto fc = ue | nd::intercell_flux_on_axis(0);    // nx + 1
-    auto lc = (fc | nd::difference_on_axis(0)) / dx; // nx / nx
-    auto u1 = u0 - lc * dt;
-    auto t1 = state.time + dt;
-    auto i1 = state.iteration + 1;
-    return solution_state_t { t1, i1, xv, u1.shared() };
+    return state;
+    // auto xv = state.vertices;
+    // auto u0 = state.solution;
+    // auto nx = xv.shape(0);
+    // auto dt = 0.25 / nx;
+    // auto xc = xv | nd::midpoint_on_axis(0);          // nx
+    // auto dx = xv | nd::difference_on_axis(0);        // nx
+    // auto ue = u0 | nd::extend_periodic_on_axis(0);   // nx + 2
+    // auto fc = ue | nd::intercell_flux_on_axis(0);    // nx + 1
+    // auto lc = (fc | nd::difference_on_axis(0)) / dx; // nx / nx
+    // auto u1 = u0 - lc * dt;
+    // auto t1 = state.time + dt;
+    // auto i1 = state.iteration + 1;
+    // return solution_state_t { t1, i1, xv, u1.shared() };
 }
 
 
@@ -216,14 +229,13 @@ static void print_run_loop_message(const solution_state_t& solution, mara::perf_
 
 
 //=============================================================================
-class subprog_boilerlate : public mara::sub_program_t
+class subprog_shockwave : public mara::sub_program_t
 {
 public:
 
     int main(int argc, const char* argv[]) override
     {
         mpi::Session mpi_session;
-
         mpi::master_printf("initialized on %d mpi processes\n", mpi::comm_world().size());
 
         auto run_config = create_run_config(argc, argv);
@@ -249,7 +261,7 @@ public:
     }
 };
 
-std::unique_ptr<mara::sub_program_t> make_subprog_boilerlate()
+std::unique_ptr<mara::sub_program_t> make_subprog_shockwave()
 {
-    return std::make_unique<subprog_boilerlate>();
+    return std::make_unique<subprog_shockwave>();
 }

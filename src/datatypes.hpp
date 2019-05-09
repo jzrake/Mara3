@@ -27,6 +27,7 @@
 
 
 #pragma once
+#include <string>
 
 
 
@@ -34,11 +35,47 @@
 //=============================================================================
 namespace mara
 {
-    template<std::size_t Rank, typename ValueType, typename DerivedType> class fixed_length_sequence_t;
-    template<std::size_t Rank, typename ValueType, typename DerivedType> class arithmetic_sequence_t;
-    template<std::size_t Rank, typename ValueType> class dimensional_sequence_t;
+
+    template<typename DerivedType> struct dimensional_t;
+
+    template<typename ValueType, std::size_t Rank, typename DerivedType> class fixed_length_sequence_t;
+    template<typename ValueType, std::size_t Rank, typename DerivedType> class arithmetic_sequence_t;
+    template<typename ValueType, std::size_t Rank> class dimensional_sequence_t;
     template<std::size_t Rank> class spatial_coordinate_t;
+
+    template<typename ValueType, std::size_t Rank, typename DerivedType>
+    auto to_string(const mara::fixed_length_sequence_t<ValueType, Rank, DerivedType>&);
+
+    template<typename DerivedType>
+    auto to_string(const mara::dimensional_t<DerivedType>&);
 }
+
+
+
+
+/**
+ * @brief      A data structure intended to help constrain arithmetic operations
+ *             on double-precision floating point numbers, which correspond to
+ *             physical quantities like time, mass, energy, etc.
+ *
+ * @tparam     DerivedType  The CRTP class (google 'curiously recurring template
+ *                          pattern')
+ */
+template<typename DerivedType>
+struct mara::dimensional_t
+{
+    dimensional_t() {}
+    dimensional_t(double value) : value(value) {}
+
+    DerivedType operator+(dimensional_t v) const { return {{ value + v.value }}; }
+    DerivedType operator-(dimensional_t v) const { return {{ value - v.value }}; }
+    DerivedType operator*(double s) const { return {{ value * s }}; }
+    DerivedType operator/(double s) const { return {{ value / s }}; }
+    double operator/(DerivedType s) const { return value / s.value; }
+
+    double value = 0.0;
+};
+
 
 
 
@@ -53,7 +90,7 @@ namespace mara
  * @tparam     ValueType    The underlying value type
  * @tparam     DerivedType  The CRTP class (google 'curiously recurring template pattern')
  */
-template<std::size_t Rank, typename ValueType, typename DerivedType>
+template<typename ValueType, std::size_t Rank, typename DerivedType>
 class mara::fixed_length_sequence_t
 {
 public:
@@ -130,8 +167,8 @@ private:
  *             class (different derived classes with the same rank and value
  *             type are not considered equal by the compiler).
  */
-template<std::size_t Rank, typename ValueType, typename DerivedType>
-class mara::arithmetic_sequence_t : public fixed_length_sequence_t<Rank, ValueType, DerivedType>
+template<typename ValueType, std::size_t Rank, typename DerivedType>
+class mara::arithmetic_sequence_t : public fixed_length_sequence_t<ValueType, Rank, DerivedType>
 {
 public:
 
@@ -199,8 +236,8 @@ private:
  *             identity is defined by the rank and the identity of the value
  *             type.
  */
-template<std::size_t Rank, typename ValueType>
-class mara::dimensional_sequence_t final : public fixed_length_sequence_t<Rank, ValueType, dimensional_sequence_t<Rank, ValueType>>
+template<typename ValueType, std::size_t Rank>
+class mara::dimensional_sequence_t final : public fixed_length_sequence_t<ValueType, Rank, dimensional_sequence_t<ValueType, Rank>>
 {
 public:
 
@@ -229,7 +266,7 @@ private:
     auto binary_op(const T& a, Function&& fn) const
     {
         const auto& _ = *this;
-        auto result = dimensional_sequence_t<Rank, std::invoke_result_t<Function, ValueType, T>>();
+        auto result = dimensional_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>();
 
         for (std::size_t n = 0; n < Rank; ++n)
             result[n] = fn(_[n], a);
@@ -241,7 +278,7 @@ private:
     auto unary_op(Function&& fn) const
     {
         const auto& _ = *this;
-        auto result = dimensional_sequence_t<Rank, std::invoke_result_t<Function, ValueType>>();
+        auto result = dimensional_sequence_t<std::invoke_result_t<Function, ValueType>, Rank>();
 
         for (std::size_t n = 0; n < Rank; ++n)
             result[n] = fn(_[n]);
@@ -255,8 +292,37 @@ private:
 
 //=============================================================================
 template<std::size_t Rank>
-class mara::spatial_coordinate_t : public arithmetic_sequence_t<Rank, double, spatial_coordinate_t<Rank>>
+class mara::spatial_coordinate_t : public arithmetic_sequence_t<double, Rank, spatial_coordinate_t<Rank>>
 {
 public:
-    using arithmetic_sequence_t<Rank, double, spatial_coordinate_t<Rank>>::arithmetic_sequence_t;
+    using arithmetic_sequence_t<double, Rank, spatial_coordinate_t<Rank>>::arithmetic_sequence_t;
 };
+
+
+
+
+//=============================================================================
+template<typename ValueType, std::size_t Rank, typename DerivedType>
+auto mara::to_string(const mara::fixed_length_sequence_t<ValueType, Rank, DerivedType>& sequence)
+{
+    auto result = std::string("( ");
+
+    for (std::size_t axis = 0; axis < Rank; ++axis)
+    {
+        if constexpr (std::is_same<ValueType, double>::value)
+        {
+            result += std::to_string(sequence[axis]) + " ";
+        }
+        else
+        {
+            result += mara::to_string(sequence[axis]) + " ";            
+        }
+    }
+    return result + ")";
+}
+
+template<typename DerivedType>
+auto mara::to_string(const mara::dimensional_t<DerivedType>& x)
+{
+    return std::to_string(x.value);
+}
