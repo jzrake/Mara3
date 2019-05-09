@@ -90,14 +90,14 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<5, double, p
         return gamma_law_index * gas_pressure() / (mass_density() * specific_enthalpy(gamma_law_index));
     }
 
-    conserved_t to_conserved(double gamma_law_index) const
+    conserved_density_t to_conserved(double gamma_law_index) const
     {
         const auto& _ = *this;
         auto W = lorentz_factor();
         auto h = specific_enthalpy(gamma_law_index);
         auto D = mass_density() * W;
         auto p = gas_pressure();
-        auto U = conserved_t();
+        auto U = conserved_density_t();
         U[0].value = D;
         U[1].value = D * _[1] * h;
         U[2].value = D * _[2] * h;
