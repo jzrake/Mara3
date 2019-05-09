@@ -45,6 +45,7 @@ namespace h5
     class Dataset;
     class Datatype;
     class Dataspace;
+    struct hyperslab_t;
 
     enum class Intent { rdwr, rdonly, swmr_write, swmr_read };
     enum class Object { file, group, dataset };
@@ -91,6 +92,31 @@ T h5::detail::check(T result)
     }
     return result;
 }
+
+
+
+
+// ============================================================================
+struct h5::hyperslab_t
+{
+    hyperslab_t() {}
+
+    void check_valid(hsize_t rank) const
+    {
+        if (start.size() != rank ||
+            skips.size() != rank ||
+            count.size() != rank ||
+            block.size() != rank)
+        {
+            throw std::invalid_argument("inconsistent selection sizes");
+        }
+    }
+
+    std::vector<hsize_t> start;
+    std::vector<hsize_t> count;
+    std::vector<hsize_t> skips;
+    std::vector<hsize_t> block;
+};
 
 
 
@@ -259,6 +285,17 @@ public:
     Dataspace& select_none()
     {
         detail::check(H5Sselect_none(id));
+        return *this;
+    }
+
+    Dataspace& select(const hyperslab_t& selection)
+    {
+        selection.check_valid(rank());
+        detail::check(H5Sselect_hyperslab(id, H5S_SELECT_SET,
+            selection.start.data(),
+            selection.skips.data(),
+            selection.count.data(),
+            selection.block.data()));
         return *this;
     }
 
@@ -473,9 +510,6 @@ private:
     {
         return iterator(id, size());
     }
-
-
-
 
     //=========================================================================
     template <class GroupType, class DatasetType>

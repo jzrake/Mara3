@@ -43,13 +43,14 @@ namespace mara
     template<std::size_t Rank> auto to_string(const nd::index_t<Rank>& index);
     template<std::size_t Rank> auto to_string(const nd::shape_t<Rank>& index);
     template<std::size_t Rank> auto to_string(const nd::access_pattern_t<Rank>& region);
-    template<std::size_t Rank, typename ValueType, typename DerivedType> auto to_string(const mara::arithmetic_sequence_t<Rank, ValueType, DerivedType>&);
+    template<std::size_t Rank, typename ValueType, typename DerivedType>
+    auto to_string(const mara::arithmetic_sequence_t<Rank, ValueType, DerivedType>&);
 
     inline void write_schedule(h5::Group&& group, const mara::schedule_t& schedule);
     inline auto read_schedule(h5::Group&& group);
-
     inline void write_config(h5::Group&& group, mara::config_t run_config);
     inline auto read_config(h5::Group&& group);
+    template<std::size_t Rank> auto make_hdf5_hyperslab(const nd::access_pattern_t<Rank>& sel);
 
     inline std::string create_numbered_filename(std::string prefix, int count, std::string extension);
 
@@ -180,6 +181,18 @@ auto mara::read_config(h5::Group&& group)
         config[item_name] = group.read<mara::config_parameter_t>(item_name);
     }
     return config;
+}
+
+template<std::size_t Rank>
+auto mara::make_hdf5_hyperslab(const nd::access_pattern_t<Rank>& sel)
+{
+    auto sel_shape = sel.shape();
+    auto result = h5::hyperslab_t();
+    result.start = std::vector<hsize_t>(sel.start.begin(), sel.start.end());
+    result.skips = std::vector<hsize_t>(sel.jumps.begin(), sel.jumps.end());
+    result.count = std::vector<hsize_t>(sel_shape.begin(), sel_shape.end());
+    result.block = std::vector<hsize_t>(sel.rank, 1);
+    return result;
 }
 
 
