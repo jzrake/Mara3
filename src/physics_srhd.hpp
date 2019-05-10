@@ -8,46 +8,22 @@
 //=============================================================================
 namespace mara::srhd
 {
-    struct time_delta_t : dimensional_t<time_delta_t> {};
-    struct area_t       : dimensional_t<area_t> {};
-    struct volume_t     : dimensional_t<volume_t> {};
-    struct velocity_t   : dimensional_t<velocity_t> {};
-    struct intrinsic_t  : dimensional_t<intrinsic_t> {}; // e.g. energy / volume
-    struct extrinsic_t  : dimensional_t<extrinsic_t> {}; // intrinsic * volume
-    struct flow_rate_t  : dimensional_t<flow_rate_t> {}; // extrinsic / time
-    struct flux_t       : dimensional_t<flux_t> {};      // flow_rate_t / area
-    struct primitive_t;
-    struct wavespeeds_t { double p; double m; };
-
     using conserved_density_t = dimensional_sequence_t<intrinsic_t, 5>;
     using conserved_t         = dimensional_sequence_t<extrinsic_t, 5>;
     using flux_vector_t       = dimensional_sequence_t<flux_t, 5>;
     using flow_vector_t       = dimensional_sequence_t<flow_rate_t, 5>;
-    using area_element_t      = dimensional_sequence_t<area_t, 3>;
 
-    inline auto make_time_delta(double value) { return time_delta_t{value}; }
-    inline auto make_area      (double value) { return area_t      {value}; }
-    inline auto make_volume    (double value) { return volume_t    {value}; }
-    inline auto make_velocity  (double value) { return velocity_t  {value}; }
-    inline auto make_area_element(double da1, double da2, double da3)
-    {
-        return area_element_t {{ make_area(da1), make_area(da2), make_area(da3) }};
-    };
+    struct primitive_t;
+    struct wavespeeds_t { double p; double m; };
 
-    extrinsic_t operator*(intrinsic_t i, volume_t v) { return { i.value * v.value }; }
-    intrinsic_t operator/(extrinsic_t e, volume_t v) { return { e.value / v.value }; }
-    extrinsic_t operator*(flow_rate_t e, time_delta_t t) { return { e.value * t.value }; }
-    flow_rate_t operator/(extrinsic_t e, time_delta_t t) { return { e.value / t.value }; }
-    flow_rate_t operator*(flux_t f, area_t a) { return { f.value * a.value }; }
-    flux_t operator/(flow_rate_t r, area_t a) { return { r.value / a.value }; }
-    flux_t operator*(intrinsic_t i, velocity_t v) { return { i.value * v.value }; }
-    intrinsic_t operator/(flux_t f, velocity_t v) { return { f.value / v.value }; }
+    inline primitive_t recover_primitive(
+        const conserved_density_t& U,
+        double gamma_law_index);
 
-    primitive_t recover_primitive(const conserved_density_t& U, double gamma_law_index);
-    flux_vector_t riemann_hlle(
+    inline flux_vector_t riemann_hlle(
         const primitive_t& Pl,
         const primitive_t& Pr,
-        const area_element_t& dA,
+        const unit_vector_t& nhat,
         double gamma_law_index);
 };
 
@@ -62,12 +38,6 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
     const double& gamma_beta_2() const { return operator[](2); }
     const double& gamma_beta_3() const { return operator[](3); }
     const double& gas_pressure() const { return operator[](4); }
-
-    double& mass_density() { return operator[](0); }
-    double& gamma_beta_1() { return operator[](1); }
-    double& gamma_beta_2() { return operator[](2); }
-    double& gamma_beta_3() { return operator[](3); }
-    double& gas_pressure() { return operator[](4); }
 
     primitive_t mass_density(double v) { auto res = *this; res[0] = v; return res; }
     primitive_t gamma_beta_1(double v) { auto res = *this; res[1] = v; return res; }
@@ -93,10 +63,16 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
         return std::sqrt(1.0 + gamma_beta_squared());
     }
 
-    double beta_along(const area_element_t& dA) const
+    area_t beta_along(const area_element_t& dA) const
     {
         const auto&_ = *this;
-        return (dA[0] * _[1] + dA[1] * _[2] + dA[2] * _[3]).value / lorentz_factor();
+        return (dA[0] * _[1] + dA[1] * _[2] + dA[2] * _[3]) / lorentz_factor();
+    }
+
+    double beta_along(const unit_vector_t& nhat) const
+    {
+        const auto&_ = *this;
+        return nhat.project(_[1], _[2], _[3]) / lorentz_factor();
     }
 
     double sound_speed_squared(double gamma_law_index) const
@@ -120,28 +96,28 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
         return U;
     }
 
-    flux_vector_t flux(const area_element_t& dA, double gamma_law_index) const
+    flux_vector_t flux(const unit_vector_t& nhat, double gamma_law_index) const
     {
-        return flux(dA, to_conserved_density(gamma_law_index));
+        return flux(nhat, to_conserved_density(gamma_law_index));
     }
 
-    flux_vector_t flux(const area_element_t& dA, const conserved_density_t& U) const
+    flux_vector_t flux(const unit_vector_t& nhat, const conserved_density_t& U) const
     {
-        auto v = beta_along(dA);
+        auto v = beta_along(nhat);
         auto p = gas_pressure();
         auto F = flux_vector_t();
         F[0].value = v * U[0].value;
-        F[1].value = v * U[1].value + p * dA[0].value;
-        F[2].value = v * U[2].value + p * dA[1].value;
-        F[3].value = v * U[3].value + p * dA[2].value;
+        F[1].value = v * U[1].value + p * nhat.get_n1();
+        F[2].value = v * U[2].value + p * nhat.get_n2();
+        F[3].value = v * U[3].value + p * nhat.get_n3();
         F[4].value = v * U[4].value + p * v;
         return F;
     }
 
-    wavespeeds_t wavespeeds(const area_element_t& dA, double gamma_law_index) const
+    wavespeeds_t wavespeeds(const unit_vector_t& nhat, double gamma_law_index) const
     {
         auto c2 = sound_speed_squared(gamma_law_index);
-        auto vn = beta_along(dA);
+        auto vn = beta_along(nhat);
         auto uu = gamma_beta_squared();
         auto vv = uu / (1 + uu);
         auto v2 = vn * vn;
@@ -157,9 +133,11 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
 
 
 //=============================================================================
-mara::srhd::primitive_t mara::srhd::recover_primitive(const conserved_density_t& U, double gamma_law_index)
+mara::srhd::primitive_t mara::srhd::recover_primitive(
+    const conserved_density_t& U,
+    double gamma_law_index)
 {
-    constexpr bool allowNegativePressure = true;
+    constexpr bool allowNegativePressure = false;
     constexpr int newtonIterMax          = 50;
     constexpr double errorTolerance      = 1e-10;
 
@@ -176,7 +154,10 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(const conserved_density_t&
     const double gm  = gamma_law_index;
     const double D   = U[DDD].value;
     const double tau = U[TAU].value;
-    const double SS  = U[S11].value * U[S11].value + U[S22].value * U[S22].value + U[S33].value * U[S33].value;
+    const double SS  =
+    U[S11].value * U[S11].value +
+    U[S22].value * U[S22].value +
+    U[S33].value * U[S33].value;
 
     bool solution_found = 0;
     int iteration = 0;
@@ -208,30 +189,31 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(const conserved_density_t&
 
     auto P = primitive_t();
 
-    P.mass_density() = D / W0;
-    P.gas_pressure() = p;
-    P.gamma_beta_1() = W0 * U[S11].value / (tau + D + p);
-    P.gamma_beta_2() = W0 * U[S22].value / (tau + D + p);
-    P.gamma_beta_3() = W0 * U[S33].value / (tau + D + p);
+    P[0] = D / W0;
+    P[1] = W0 * U[S11].value / (tau + D + p);
+    P[2] = W0 * U[S22].value / (tau + D + p);
+    P[3] = W0 * U[S33].value / (tau + D + p);
+    P[4] = p;
 
     if (! solution_found)
     {
         throw std::invalid_argument("mara::srhd::recover_primitive failure: "
-            "root finder not converging\n"
-            "U=" + to_string(U) + "\n"
-            "error=" + std::to_string(f));
+            "root finder not converging U=" + to_string(U));
     }
     if (P.gas_pressure() < 0.0 && ! allowNegativePressure)
     {
-        throw std::invalid_argument("mara::srhd::recover_primitive failure: negative pressure U=" + mara::to_string(U));
+        throw std::invalid_argument("mara::srhd::recover_primitive failure: "
+            "negative pressure U=" + mara::to_string(U));
     }
     if (P.mass_density() < 0.0)
     {
-        throw std::invalid_argument("mara::srhd::recover_primitive failure: negative density U=" + mara::to_string(U));
+        throw std::invalid_argument("mara::srhd::recover_primitive failure: "
+            "negative density U=" + mara::to_string(U));
     }
     if (std::isnan(W0))
     {
-        throw std::invalid_argument("mara::srhd::recover_primitive failure: nan W U=" + mara::to_string(U));
+        throw std::invalid_argument("mara::srhd::recover_primitive failure: "
+            "nan W U=" + mara::to_string(U));
     }
     return P;
 }
@@ -243,15 +225,15 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(const conserved_density_t&
 mara::srhd::flux_vector_t mara::srhd::riemann_hlle(
     const primitive_t& Pl,
     const primitive_t& Pr,
-    const area_element_t& dA,
+    const unit_vector_t& nhat,
     double gamma_law_index)
 {
     auto Ul = Pl.to_conserved_density(gamma_law_index);
     auto Ur = Pr.to_conserved_density(gamma_law_index);
-    auto Al = Pl.wavespeeds(dA, gamma_law_index);
-    auto Ar = Pr.wavespeeds(dA, gamma_law_index);
-    auto Fl = Pl.flux(dA, Ul);
-    auto Fr = Pr.flux(dA, Ur);
+    auto Al = Pl.wavespeeds(nhat, gamma_law_index);
+    auto Ar = Pr.wavespeeds(nhat, gamma_law_index);
+    auto Fl = Pl.flux(nhat, Ul);
+    auto Fr = Pr.flux(nhat, Ur);
 
     auto epl = std::max(Al.m, Al.p);
     auto eml = std::min(Al.m, Al.p);

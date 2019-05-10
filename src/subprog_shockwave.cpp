@@ -10,7 +10,9 @@
 #include "performance.hpp"
 #include "subprogram.hpp"
 #include "physics_srhd.hpp"
+#include "dimensional.hpp"
 #define gamma_law_index (4. / 3)
+
 
 
 
@@ -35,7 +37,7 @@ auto intercell_flux(std::size_t axis)
         using namespace std::placeholders;
         auto L = array | nd::select_axis(axis).from(0).to(1).from_the_end();
         auto R = array | nd::select_axis(axis).from(1).to(0).from_the_end();
-        auto dA = mara::srhd::make_area_element(1, 0, 0);
+        auto dA = mara::make_area_element(1, 0, 0);
         auto LR = nd::zip_arrays(L, R);
         auto riemann = std::bind(mara::srhd::riemann_hlle, _1, _2, dA, gamma_law_index);
         return (nd::zip_arrays(L, R) | nd::apply(riemann)) * dA[0];
@@ -82,7 +84,7 @@ static auto new_solution(const mara::config_t& cfg)
     };
     auto to_conserved = [] (auto p)
     {
-        return p.to_conserved_density(gamma_law_index) * mara::srhd::make_volume(1.0);
+        return p.to_conserved_density(gamma_law_index) * mara::make_volume(1.0);
     };
 
     auto nx = cfg.template get<int>("N");
@@ -110,14 +112,14 @@ static auto next_solution(const solution_state_t& state)
     auto xv = state.vertices;
     auto u0 = state.solution;
     auto nx = xv.shape(0);
-    auto dt = mara::srhd::make_time_delta(0.25 / nx);
+    auto dt = mara::make_time_delta(0.25 / nx);
     auto xc = xv | nd::midpoint_on_axis(0);                                                      // nx
-    auto dv = xv | nd::difference_on_axis(0) | nd::map(mara::srhd::make_volume);                 // nx
+    auto dv = xv | nd::difference_on_axis(0) | nd::map(mara::make_volume);                       // nx
     auto p0 = u0 / dv | nd::map(std::bind(mara::srhd::recover_primitive, _1, gamma_law_index));  // nx
-    auto pe = p0 | nd::extend_periodic_on_axis(0);                                               // nx + 2
-    auto fc = pe | intercell_flux(0);                                                            // nx + 1
-    auto lc = fc | nd::difference_on_axis(0);                                                    // nx
-    auto u1 = u0 - lc * dt;
+    // auto pe = p0 | nd::extend_periodic_on_axis(0);                                               // nx + 2
+    // auto fc = pe | intercell_flux(0);                                                            // nx + 1
+    // auto lc = fc | nd::difference_on_axis(0);                                                    // nx
+    auto u1 = u0;// - lc * dt;
     auto t1 = state.time + dt.value;
     auto i1 = state.iteration + 1;
     return solution_state_t { t1, i1, xv, u1.shared() };
