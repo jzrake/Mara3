@@ -36,11 +36,31 @@
 namespace mara
 {
     template<int C, int G, int S, typename T> struct dimensional_value_t;
-    template<int C, int G, int S, typename T> auto to_string(dimensional_value_t<C, G, S, T> x);
     template<int C, int G, int S, typename T> auto make_dimensional(T value);
+
+    template<typename T> using unit_scalar       = dimensional_value_t< 0, 0, 0, T>;
+    template<typename T> using unit_length       = dimensional_value_t< 1, 0, 0, T>;
+    template<typename T> using unit_mass         = dimensional_value_t< 0, 1, 0, T>;
+    template<typename T> using unit_time         = dimensional_value_t< 0, 0, 1, T>;
+    template<typename T> using unit_area         = dimensional_value_t< 2, 0, 0, T>;
+    template<typename T> using unit_velocity     = dimensional_value_t< 1, 0,-1, T>;
+    template<typename T> using unit_volume       = dimensional_value_t< 3, 0, 0, T>;
+    template<typename T> using unit_flux         = dimensional_value_t<-2, 1,-1, T>;
+    template<typename T> using unit_flow_rate    = dimensional_value_t< 0, 1,-1, T>;
+    template<typename T> using unit_mass_density = dimensional_value_t<-3, 1, 0, T>;
+
+    template<typename T> auto make_scalar(T value);
     template<typename T> auto make_length(T value);
-    template<typename T> auto make_mass  (T value);
-    template<typename T> auto make_time  (T value);
+    template<typename T> auto make_mass(T value);
+    template<typename T> auto make_time(T value);
+    template<typename T> auto make_area(T value);
+    template<typename T> auto make_velocity(T value);
+    template<typename T> auto make_volume(T value);
+    template<typename T> auto make_flux(T value);
+    template<typename T> auto make_flow_rate(T value);
+    template<typename T> auto make_mass_density(T value);
+
+    template<int C, int G, int S, typename T> auto to_string(dimensional_value_t<C, G, S, T> x);
 }
 
 
@@ -123,6 +143,17 @@ struct mara::dimensional_value_t
 
 
     /**
+     * @brief      Return the negation of this value
+     *
+     * @return     The value
+     */
+    auto operator-() const
+    {
+        return dimensional_value_t { -value };
+    }
+
+
+    /**
      * @brief      Multiply a dimensionless number
      *
      * @param[in]  scale  The scale
@@ -164,7 +195,6 @@ struct mara::dimensional_value_t
     /**
      * @brief      Convert this value to a double, if it's dimensionless
      */
-    // template<typename = typename std::enable_if<C == 0 && G == 0 && S == 0>>
     operator double() const
     {
         static_assert(C == 0 && G == 0 && S == 0, "cannot convert dimensional value to scalar");
@@ -184,8 +214,33 @@ struct mara::dimensional_value_t
     }
 
 
-    double value;
+    auto operator==(dimensional_value_t<C, G, S, T> other) const { return value == other.value; }
+    auto operator!=(dimensional_value_t<C, G, S, T> other) const { return value != other.value; }
+    auto operator>=(dimensional_value_t<C, G, S, T> other) const { return value >= other.value; }
+    auto operator<=(dimensional_value_t<C, G, S, T> other) const { return value <= other.value; }
+    auto operator>(dimensional_value_t<C, G, S, T> other) const { return value > other.value; }
+    auto operator<(dimensional_value_t<C, G, S, T> other) const { return value < other.value; }
+
+
+    double value = 0.0;
 };
+
+
+
+
+//=============================================================================
+template<int C, int G, int S, typename T>
+auto mara::make_dimensional(T value) { return dimensional_value_t<C, G, S, T> { value }; }
+template<typename T> auto mara::make_scalar      (T value) { return make_dimensional< 0, 0, 0>(value); }
+template<typename T> auto mara::make_length      (T value) { return make_dimensional< 1, 0, 0>(value); }
+template<typename T> auto mara::make_mass        (T value) { return make_dimensional< 0, 1, 0>(value); }
+template<typename T> auto mara::make_time        (T value) { return make_dimensional< 0, 0, 1>(value); }
+template<typename T> auto mara::make_area        (T value) { return make_dimensional< 2, 0, 0>(value); }
+template<typename T> auto mara::make_volume      (T value) { return make_dimensional< 3, 0, 0>(value); }
+template<typename T> auto mara::make_velocity    (T value) { return make_dimensional< 1, 0,-1>(value); }
+template<typename T> auto mara::make_flux        (T value) { return make_dimensional<-2, 1,-1>(value); }
+template<typename T> auto mara::make_flow_rate   (T value) { return make_dimensional< 0, 1,-1>(value); }
+template<typename T> auto mara::make_mass_density(T value) { return make_dimensional<-3, 1, 0>(value); }
 
 
 
@@ -199,9 +254,3 @@ auto mara::to_string(dimensional_value_t<C, G, S, T> x)
     std::to_string(std::get<1>(x.dimensions())) + " " +
     std::to_string(std::get<2>(x.dimensions())) + ")";
 }
-
-template<int C, int G, int S, typename T>
-auto mara::make_dimensional(T value) { return dimensional_value_t<C, G, S, T> { value }; }
-template<typename T> auto mara::make_length(T value) { return make_dimensional<1, 0, 0>(value); }
-template<typename T> auto mara::make_mass  (T value) { return make_dimensional<0, 1, 0>(value); }
-template<typename T> auto mara::make_time  (T value) { return make_dimensional<0, 0, 1>(value); }

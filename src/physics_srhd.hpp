@@ -1,6 +1,6 @@
 #pragma once
 #include <cmath>
-#include "core_datatypes.hpp"
+#include "core_geometric.hpp"
 
 
 
@@ -8,13 +8,13 @@
 //=============================================================================
 namespace mara::srhd
 {
-    using conserved_density_t = dimensional_sequence_t<intrinsic_t, 5>;
-    using conserved_t         = dimensional_sequence_t<extrinsic_t, 5>;
-    using flux_vector_t       = dimensional_sequence_t<flux_t, 5>;
-    using flow_vector_t       = dimensional_sequence_t<flow_rate_t, 5>;
+    using conserved_density_t = covariant_sequence_t<unit_mass_density<double>, 5>;
+    using conserved_t         = covariant_sequence_t<unit_mass<double>, 5>;
+    using flux_vector_t       = covariant_sequence_t<unit_flux<double>, 5>;
+    using flow_vector_t       = covariant_sequence_t<unit_flow_rate<double>, 5>;
 
     struct primitive_t;
-    struct wavespeeds_t { double p; double m; };
+    struct wavespeeds_t { unit_velocity<double> p; unit_velocity<double> m; };
 
     inline primitive_t recover_primitive(
         const conserved_density_t& U,
@@ -61,12 +61,6 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
     double lorentz_factor() const
     {
         return std::sqrt(1.0 + gamma_beta_squared());
-    }
-
-    area_t beta_along(const area_element_t& dA) const
-    {
-        const auto&_ = *this;
-        return (dA[0] * _[1] + dA[1] * _[2] + dA[2] * _[3]) / lorentz_factor();
     }
 
     double beta_along(const unit_vector_t& nhat) const
@@ -123,8 +117,8 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
         auto v2 = vn * vn;
         auto k0 = std::sqrt(c2 * (1 - vv) * (1 - vv * c2 - v2 * (1 - c2)));
         return {
-            (vn * (1 - c2) - k0) / (1 - vv * c2),
-            (vn * (1 - c2) + k0) / (1 - vv * c2),
+            make_velocity((vn * (1 - c2) - k0) / (1 - vv * c2)),
+            make_velocity((vn * (1 - c2) + k0) / (1 - vv * c2)),
         };
     }
 };
@@ -239,9 +233,8 @@ mara::srhd::flux_vector_t mara::srhd::riemann_hlle(
     auto eml = std::min(Al.m, Al.p);
     auto epr = std::max(Ar.m, Ar.p);
     auto emr = std::min(Ar.m, Ar.p);
-    auto ap  = make_velocity(std::max(epl, epr));
-    auto am  = make_velocity(std::min(eml, emr));
-    auto da  = ap - am;
+    auto ap  = std::max(epl, epr);
+    auto am  = std::min(eml, emr);
 
-    return Fl * (ap / da) - Fr / (am / da) - (Ul - Ur) * ap * (am / da);
+    return (Fl * ap - Fr * am - (Ul - Ur) * ap * am) / (ap - am);
 }

@@ -34,7 +34,7 @@
 #include <memory>            // std::shared_ptr
 #include <numeric>           // std::accumulate
 #include <utility>           // std::index_sequence
-#include <string>            // nd::to_string overloads
+#include <string>            // std::to_string
 
 
 

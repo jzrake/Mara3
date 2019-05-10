@@ -32,7 +32,7 @@
 #include "ndarray.hpp"
 #include "app_config.hpp"
 #include "app_schedule.hpp"
-#include "core_datatypes.hpp"
+#include "core_geometric.hpp"
 
 
 
@@ -40,8 +40,6 @@
 //=============================================================================
 namespace mara
 {
-    // using nd::to_string;
-
     inline void write_schedule(h5::Group&& group, const mara::schedule_t& schedule);
     inline auto read_schedule(h5::Group&& group);
     inline void write_config(h5::Group&& group, mara::config_t run_config);
@@ -250,14 +248,29 @@ struct h5::hdf5_type_info<nd::unique_array<ValueType, Rank>>
 
 //=============================================================================
 template<typename ValueType, std::size_t Rank>
-struct h5::hdf5_type_info<mara::dimensional_sequence_t<ValueType, Rank>>
+struct h5::hdf5_type_info<mara::covariant_sequence_t<ValueType, Rank>>
 {
-    using native_type = mara::dimensional_sequence_t<ValueType, Rank>;
-    static auto make_datatype_for(const native_type& value) { return h5::make_datatype_for(value[0].value).as_array(Rank); }
+    using native_type = mara::covariant_sequence_t<ValueType, Rank>;
+    static auto make_datatype_for(const native_type& value) { return h5::make_datatype_for(ValueType()).as_array(Rank); }
     static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
     static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
-    static auto get_address(const native_type& value) { return &value[0].value; }
-    static auto get_address(native_type& value) { return &value[0].value; }
+    static auto get_address(const native_type& value) { return &value[0]; }
+    static auto get_address(native_type& value) { return &value[0]; }
+};
+
+
+
+
+//=============================================================================
+template<int C, int G, int S, typename T>
+struct h5::hdf5_type_info<mara::dimensional_value_t<C, G, S, T>>
+{
+    using native_type = mara::dimensional_value_t<C, G, S, T>;
+    static auto make_datatype_for(const native_type& value) { return h5::make_datatype_for(value.value); }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto get_address(const native_type& value) { return &value.value; }
+    static auto get_address(native_type& value) { return &value.value; }
 };
 
 

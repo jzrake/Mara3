@@ -6,7 +6,7 @@
 #include "app_serialize.hpp"
 #include "app_subprogram.hpp"
 #include "app_parallel.hpp"
-#include "core_datatypes.hpp"
+#include "core_geometric.hpp"
 
 
 
@@ -15,8 +15,8 @@
 static auto config_template()
 {
     return mara::make_config_template()
-    .item("N", 256)
-    .item("procs", 256);
+    .item("N", 4)
+    .item("procs", 2);
 }
 
 
@@ -55,7 +55,7 @@ public:
         {
             return nd::index_array(reg.shape())
             | nd::map([reg] (auto i) { return reg.map_index(i); })
-            | nd::map([   ] (auto j) { return mara::spatial_coordinate_t<3>::from_range(j); });
+            | nd::map([   ] (auto j) { return mara::make_spatial_coordinate(j[0], j[1], j[2]); });
         });
 
         for (auto block_index : vertex_arrays.indexes())

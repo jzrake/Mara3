@@ -29,6 +29,7 @@
 #include <map>
 #include <iostream>
 #include "app_subprogram.hpp"
+#include "core_dimensional.hpp"
 
 
 
@@ -48,7 +49,7 @@ int main(int argc, const char* argv[])
 
     programs["boilerplate"] = make_subprog_boilerlate();
     programs["partdom"]     = make_subprog_partdom();
-    programs["shockwave"]   = make_subprog_shockwave();
+    // programs["shockwave"]   = make_subprog_shockwave();
 
     if (argc == 1)
     {

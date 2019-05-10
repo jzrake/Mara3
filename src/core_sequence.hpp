@@ -27,16 +27,21 @@
 
 
 #pragma once
+#include <functional> // std::plus, std::multiplies, etc...
+#include <string>     // std::to_string
 
 
 
 
 //=============================================================================
-namespace mara2
+namespace mara
 {
     template<typename ValueType, std::size_t Rank, typename DerivedType> class fixed_length_sequence_t;
     template<typename ValueType, std::size_t Rank, typename DerivedType> class arithmetic_sequence_t;
     template<typename ValueType, std::size_t Rank> class covariant_sequence_t;
+
+    template<typename ValueType, std::size_t Rank, typename DerivedType>
+    auto to_string(const fixed_length_sequence_t<ValueType, Rank, DerivedType>& sequence);
 }
 
 
@@ -53,7 +58,7 @@ namespace mara2
  * @tparam     DerivedType  The CRTP class (google 'curiously recurring template pattern')
  */
 template<typename ValueType, std::size_t Rank, typename DerivedType>
-class mara2::fixed_length_sequence_t
+class mara::fixed_length_sequence_t
 {
 public:
     using value_type = ValueType;
@@ -126,6 +131,18 @@ public:
     ValueType* end() { return memory + Rank; }
     ValueType& operator[](std::size_t n) { return memory[n]; }
 
+    template<typename Function>
+    auto transform(Function&& fn) const
+    {
+        DerivedType result;
+
+        for (std::size_t n = 0; n < Rank; ++n)
+        {
+            result[n] = fn(memory[n]);
+        }
+        return result;
+    }
+
 private:
     //=========================================================================
     ValueType memory[Rank];
@@ -154,7 +171,7 @@ private:
  *             type are not considered equal by the compiler).
  */
 template<typename ValueType, std::size_t Rank, typename DerivedType>
-class mara2::arithmetic_sequence_t : public fixed_length_sequence_t<ValueType, Rank, DerivedType>
+class mara::arithmetic_sequence_t : public fixed_length_sequence_t<ValueType, Rank, DerivedType>
 {
 public:
 
@@ -226,7 +243,7 @@ private:
  *             type.
  */
 template<typename ValueType, std::size_t Rank>
-class mara2::covariant_sequence_t final : public fixed_length_sequence_t<ValueType, Rank, covariant_sequence_t<ValueType, Rank>>
+class mara::covariant_sequence_t final : public fixed_length_sequence_t<ValueType, Rank, covariant_sequence_t<ValueType, Rank>>
 {
 public:
 
@@ -278,3 +295,28 @@ private:
         return result;
     }
 };
+
+
+
+
+//=============================================================================
+template<typename ValueType, std::size_t Rank, typename DerivedType>
+auto mara::to_string(const mara::fixed_length_sequence_t<ValueType, Rank, DerivedType>& sequence)
+{
+    using std::to_string;
+
+    auto result = std::string("( ");
+
+    for (std::size_t axis = 0; axis < Rank; ++axis)
+    {
+        if constexpr (std::is_same<ValueType, double>::value)
+        {
+            result += to_string(sequence[axis]) + " ";
+        }
+        else
+        {
+            result += to_string(sequence[axis]) + " ";            
+        }
+    }
+    return result + ")";
+}
