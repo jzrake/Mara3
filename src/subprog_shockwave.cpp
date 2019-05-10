@@ -29,7 +29,7 @@ static auto config_template()
 
 
 
-auto intercell_flux(std::size_t axis)
+static auto intercell_flux(std::size_t axis)
 {
     return [axis] (auto array)
     {
@@ -40,6 +40,17 @@ auto intercell_flux(std::size_t axis)
         auto LR = nd::zip_arrays(L, R);
         auto riemann = std::bind(mara::srhd::riemann_hlle, _1, _2, nh, gamma_law_index);
         return nd::zip_arrays(L, R) | nd::apply(riemann);
+    };
+}
+
+
+static auto extend_constant(std::size_t axis)
+{
+    return [axis] (auto array)
+    {
+        auto xl = array | nd::select_first(1, 0);
+        auto xr = array | nd::select_final(1, 0);
+        return xl | nd::concat(array).on_axis(axis) | nd::concat(xr).on_axis(axis);
     };
 }
 
@@ -112,13 +123,12 @@ static auto next_solution(const solution_state_t& state)
     auto u0 = state.solution;
     auto nx = xv.shape(0);
     auto dt = mara::make_time(0.25 / nx);
-    auto xc = xv | nd::midpoint_on_axis(0);                                                         // nx
-    auto dv = xv | nd::difference_on_axis(0) | nd::map(mara::make_volume<double>);                  // nx
-    auto p0 = u0 / dv | nd::map(std::bind(mara::srhd::recover_primitive, _1, gamma_law_index));     // nx
-    auto pe = p0 | nd::extend_periodic_on_axis(0);                                                  // nx + 2
-    auto fc =(pe | intercell_flux(0)) * mara::make_area(1.0);                                       // nx + 1
-    auto lc = fc | nd::difference_on_axis(0);                                                       // nx
-    auto u1 = u0 - lc * dt;
+    auto dv = xv | nd::difference_on_axis(0) | nd::map(mara::make_volume<double>);
+    auto p0 = u0 / dv | nd::map(std::bind(mara::srhd::recover_primitive, _1, gamma_law_index)) | nd::to_shared();
+    auto pe = p0 | extend_constant(0);
+    auto fc =(pe | intercell_flux(0)) * mara::make_area(1.0) | nd::to_shared();
+    auto lc =(fc | nd::difference_on_axis(0)) * -1.0;
+    auto u1 = u0 + lc * dt;
     auto t1 = state.time + dt.value;
     auto i1 = state.iteration + 1;
     return solution_state_t { t1, i1, xv, u1.shared() };
@@ -255,13 +265,13 @@ public:
     int main(int argc, const char* argv[]) override
     {
         mpi::Session mpi_session;
-        mpi::master_printf("initialized on %d mpi processes\n", mpi::comm_world().size());
+        mpi::printf_master("initialized on %d mpi processes\n", mpi::comm_world().size());
 
         auto run_config = create_run_config(argc, argv);
         auto perf = mara::perf_diagnostics_t();
         auto state = create_app_state(run_config);
 
-        mara::pretty_print(mpi::master_cout(), "config", run_config);
+        mara::pretty_print(mpi::cout_master(), "config", run_config);
         state = run_tasks(state);
 
         while (simulation_should_continue(state))

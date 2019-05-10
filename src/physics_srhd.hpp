@@ -178,7 +178,9 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
         {
             W0 = W;
             solution_found = true;
+            break;
         }
+        ++iteration;
     }
 
     auto P = primitive_t();

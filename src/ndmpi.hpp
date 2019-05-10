@@ -27,7 +27,7 @@ namespace mpi
     }
 
     template<typename... Args>
-    void master_printf(Args... args)
+    void printf_master(Args... args)
     {
         if (is_master())
         {
@@ -35,7 +35,7 @@ namespace mpi
         }
     }
 
-    inline std::ostream& master_cout()
+    inline std::ostream& cout_master()
     {
         if (is_master())
         {

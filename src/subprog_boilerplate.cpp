@@ -224,13 +224,13 @@ public:
     {
         mpi::Session mpi_session;
 
-        mpi::master_printf("initialized on %d mpi processes\n", mpi::comm_world().size());
+        mpi::printf_master("initialized on %d mpi processes\n", mpi::comm_world().size());
 
         auto run_config = create_run_config(argc, argv);
         auto perf = mara::perf_diagnostics_t();
         auto state = create_app_state(run_config);
 
-        mara::pretty_print(mpi::master_cout(), "config", run_config);
+        mara::pretty_print(mpi::cout_master(), "config", run_config);
         state = run_tasks(state);
 
         while (simulation_should_continue(state))

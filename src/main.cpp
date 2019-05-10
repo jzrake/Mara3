@@ -29,6 +29,7 @@
 #include <map>
 #include <iostream>
 #include "app_subprogram.hpp"
+#include "app_performance.hpp"
 #include "core_dimensional.hpp"
 
 
@@ -49,21 +50,23 @@ int main(int argc, const char* argv[])
 
     programs["boilerplate"] = make_subprog_boilerlate();
     programs["partdom"]     = make_subprog_partdom();
-    // programs["shockwave"]   = make_subprog_shockwave();
+    programs["shockwave"]   = make_subprog_shockwave();
 
     if (argc == 1)
     {
-       std::cout << "usages: \n";
+        std::cout << "usages: \n";
 
-       for (auto& prog : programs)
-       {
+        for (auto& prog : programs)
+        {
            std::cout << "    mara " << prog.first << std::endl;
-       }
-       return 0;
+        }
+        return 0;
     }
     else if (programs.count(argv[1]))
     {
-       return programs.at(argv[1])->main(argc - 1, argv + 1);
+        auto [code, perf] = mara::time_execution([&] { return programs.at(argv[1])->main(argc - 1, argv + 1); });
+        std::cout << "total execution time: " << perf.execution_time_ms / 1e3 << " seconds" << std::endl;
+        return code;
     }
 
     std::cout << "invalid sub-program '" << argv[1] << "'\n";
