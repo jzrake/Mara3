@@ -30,9 +30,9 @@
 #include <variant>
 #include "ndh5.hpp"
 #include "ndarray.hpp"
-#include "config.hpp"
-#include "schedule.hpp"
-#include "datatypes.hpp"
+#include "app_config.hpp"
+#include "app_schedule.hpp"
+#include "core_datatypes.hpp"
 
 
 
@@ -40,9 +40,7 @@
 //=============================================================================
 namespace mara
 {
-    template<std::size_t Rank> auto to_string(const nd::index_t<Rank>& index);
-    template<std::size_t Rank> auto to_string(const nd::shape_t<Rank>& index);
-    template<std::size_t Rank> auto to_string(const nd::access_pattern_t<Rank>& region);
+    // using nd::to_string;
 
     inline void write_schedule(h5::Group&& group, const mara::schedule_t& schedule);
     inline auto read_schedule(h5::Group&& group);
@@ -80,40 +78,6 @@ namespace mara::serialize::detail
     template<typename Tuple1, typename Tuple2>
     auto tuple_pair(Tuple1&& t1, Tuple2&& t2);
 };
-
-
-
-
-//=============================================================================
-template<std::size_t Rank>
-auto mara::to_string(const nd::index_t<Rank>& index)
-{
-    auto result = std::string("[ ");
-
-    for (std::size_t axis = 0; axis < Rank; ++axis)
-    {
-        result += std::to_string(index[axis]) + " ";
-    }
-    return result + "]";
-}
-
-template<std::size_t Rank>
-auto mara::to_string(const nd::shape_t<Rank>& index)
-{
-    auto result = std::string("< ");
-
-    for (std::size_t axis = 0; axis < Rank; ++axis)
-    {
-        result += std::to_string(index[axis]) + " ";
-    }
-    return result + ">";
-}
-
-template<std::size_t Rank>
-auto mara::to_string(const nd::access_pattern_t<Rank>& region)
-{
-    return to_string(region.start) + " -> " + to_string(region.final);
-}
 
 
 

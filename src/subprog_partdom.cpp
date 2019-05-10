@@ -2,11 +2,11 @@
 #include "ndarray.hpp"
 #include "ndarray_ops.hpp"
 #include "ndh5.hpp"
-#include "config.hpp"
-#include "serialize.hpp"
-#include "subprogram.hpp"
-#include "parallel.hpp"
-#include "datatypes.hpp"
+#include "app_config.hpp"
+#include "app_serialize.hpp"
+#include "app_subprogram.hpp"
+#include "app_parallel.hpp"
+#include "core_datatypes.hpp"
 
 
 
@@ -42,7 +42,7 @@ public:
 
         for (auto index : array_of_access_patterns.indexes())
         {
-            std::cout << mara::to_string(index) << " ... " << mara::to_string(array_of_access_patterns(index)) << std::endl;
+            std::cout << nd::to_string(index) << " ... " << nd::to_string(array_of_access_patterns(index)) << std::endl;
         }
 
 
@@ -60,7 +60,7 @@ public:
 
         for (auto block_index : vertex_arrays.indexes())
         {
-            std::cout << "\n<============ vertex array for block index " << mara::to_string(block_index) << " ============>\n";
+            std::cout << "\n<============ vertex array for block index " << nd::to_string(block_index) << " ============>\n";
 
             for (auto element_index : vertex_arrays(block_index).indexes())
             {
@@ -83,7 +83,7 @@ public:
 
         for (auto block_index : cell_center_arrays.indexes())
         {
-            std::cout << "\n<============ cell-center array for block index " << mara::to_string(block_index) << " ============>\n";
+            std::cout << "\n<============ cell-center array for block index " << nd::to_string(block_index) << " ============>\n";
 
             for (auto element_index : cell_center_arrays(block_index).indexes())
             {

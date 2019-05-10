@@ -35,19 +35,27 @@
 //=============================================================================
 namespace mara
 {
-    template<int C, int G, int S> struct dimensional_value_t;
-    template<int C, int G, int S> auto to_string(dimensional_value_t<C, G, S> x);
-    template<int C, int G, int S> auto make_dimensional(double value);
-
-    inline auto make_length(double value);
-    inline auto make_mass  (double value);
-    inline auto make_time  (double value);
+    template<int C, int G, int S, typename T> struct dimensional_value_t;
+    template<int C, int G, int S, typename T> auto to_string(dimensional_value_t<C, G, S, T> x);
+    template<int C, int G, int S, typename T> auto make_dimensional(T value);
+    template<typename T> auto make_length(T value);
+    template<typename T> auto make_mass  (T value);
+    template<typename T> auto make_time  (T value);
 }
 
 
 
 
-template<int C, int G, int S>
+/**
+ * @brief      A type which includes its dimension of length, mass, and time in
+ *             addition to the underlying value.
+ *
+ * @tparam     C     Dimensions of length
+ * @tparam     G     Dimensions of mass
+ * @tparam     S     Dimensions of time
+ * @tparam     T     The value type
+ */
+template<int C, int G, int S, typename T>
 struct mara::dimensional_value_t
 {
 
@@ -59,7 +67,7 @@ struct mara::dimensional_value_t
      *
      * @return     A new value with the same dimensions
      */
-    auto operator+(dimensional_value_t<C, G, S> other) const
+    auto operator+(dimensional_value_t<C, G, S, T> other) const
     {
         return dimensional_value_t { value + other.value };
     }
@@ -72,7 +80,7 @@ struct mara::dimensional_value_t
      *
      * @return     A new value with the same dimensions
      */
-    auto operator-(dimensional_value_t<C, G, S> other) const
+    auto operator-(dimensional_value_t<C, G, S, T> other) const
     {
         return dimensional_value_t { value - other.value };
     }
@@ -90,9 +98,9 @@ struct mara::dimensional_value_t
      * @return     The product of the values
      */
     template <int C1, int G1, int S1>
-    auto operator*(dimensional_value_t<C1, G1, S1> other) const
+    auto operator*(dimensional_value_t<C1, G1, S1, T> other) const
     {
-        return dimensional_value_t<C + C1, G + G1, S + S1> { value * other.value };
+        return dimensional_value_t<C + C1, G + G1, S + S1, T> { value * other.value };
     }
 
 
@@ -108,9 +116,9 @@ struct mara::dimensional_value_t
      * @return     The ratio of the values
      */
     template <int C1, int G1, int S1>
-    auto operator/(dimensional_value_t<C1, G1, S1> other) const
+    auto operator/(dimensional_value_t<C1, G1, S1, T> other) const
     {
-        return dimensional_value_t<C - C1, G - G1, S - S1> { value / other.value };
+        return dimensional_value_t<C - C1, G - G1, S - S1, T> { value / other.value };
     }
 
 
@@ -147,7 +155,7 @@ struct mara::dimensional_value_t
      *
      * @return     The ratio
      */
-    double operator/(dimensional_value_t<C, G, S> other) const
+    double operator/(dimensional_value_t other) const
     {
         return value / other.value;
     }
@@ -183,8 +191,8 @@ struct mara::dimensional_value_t
 
 
 //=============================================================================
-template<int C, int G, int S>
-auto mara::to_string(dimensional_value_t<C, G, S> x)
+template<int C, int G, int S, typename T>
+auto mara::to_string(dimensional_value_t<C, G, S, T> x)
 {
     return std::to_string(x.value) + " (" +
     std::to_string(std::get<0>(x.dimensions())) + " " +
@@ -192,8 +200,8 @@ auto mara::to_string(dimensional_value_t<C, G, S> x)
     std::to_string(std::get<2>(x.dimensions())) + ")";
 }
 
-template<int C, int G, int S>
-auto mara::make_dimensional(double value) { return dimensional_value_t<C, G, S> { value }; }
-auto mara::make_length(double value) { return make_dimensional<1, 0, 0>(value); }
-auto mara::make_mass  (double value) { return make_dimensional<0, 1, 0>(value); }
-auto mara::make_time  (double value) { return make_dimensional<0, 0, 1>(value); }
+template<int C, int G, int S, typename T>
+auto mara::make_dimensional(T value) { return dimensional_value_t<C, G, S, T> { value }; }
+template<typename T> auto mara::make_length(T value) { return make_dimensional<1, 0, 0>(value); }
+template<typename T> auto mara::make_mass  (T value) { return make_dimensional<0, 1, 0>(value); }
+template<typename T> auto mara::make_time  (T value) { return make_dimensional<0, 0, 1>(value); }

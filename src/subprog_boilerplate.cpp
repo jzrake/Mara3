@@ -4,11 +4,11 @@
 #include "ndh5.hpp"
 #include "ndarray.hpp"
 #include "ndarray_ops.hpp"
-#include "config.hpp"
-#include "serialize.hpp"
-#include "schedule.hpp"
-#include "performance.hpp"
-#include "subprogram.hpp"
+#include "app_config.hpp"
+#include "app_serialize.hpp"
+#include "app_schedule.hpp"
+#include "app_performance.hpp"
+#include "app_subprogram.hpp"
 
 
 
