@@ -54,6 +54,18 @@ static auto extend_constant(std::size_t axis)
     };
 }
 
+template<typename Multiplier>
+auto multiply(Multiplier arg)
+{
+    return std::bind(std::multiplies<>(), std::placeholders::_1, arg);
+};
+
+template<typename Multiplier>
+auto divide(Multiplier arg)
+{
+    return std::bind(std::divides<>(), std::placeholders::_1, arg);
+};
+
 
 
 
@@ -77,33 +89,33 @@ static void write_solution(h5::Group&& group, const solution_state_t& state)
 static auto read_solution(h5::Group&& group)
 {
     auto state = solution_state_t();
-    state.time = group.read<double>("time");
+    state.time      = group.read<double>("time");
     state.iteration = group.read<int>("iteration");
-    state.vertices = group.read<nd::unique_array<double, 1>>("vertices").shared();
-    state.solution = group.read<nd::unique_array<mara::srhd::conserved_t, 1>>("solution").shared();
+    state.vertices  = group.read<nd::unique_array<double, 1>>("vertices").shared();
+    state.solution  = group.read<nd::unique_array<mara::srhd::conserved_t, 1>>("solution").shared();
     return state;
 }
 
 static auto new_solution(const mara::config_t& cfg)
 {
+    using namespace std::placeholders;
+
     auto initial_p = [] (auto x)
     {
         return mara::srhd::primitive_t()
         .mass_density(x < 0.5 ? 1.0 : 0.100)
         .gas_pressure(x < 0.5 ? 1.0 : 0.125);
     };
-    auto to_conserved = [] (auto p)
-    {
-        return p.to_conserved_density(gamma_law_index) * mara::make_volume(1.0);
-    };
+    auto to_conserved = std::bind(&mara::srhd::primitive_t::to_conserved_density, _1, gamma_law_index);
 
-    auto nx = cfg.template get<int>("N");
+    auto nx = cfg.get<int>("N");
     auto xv = nd::linspace(0, 1, nx + 1);
+    auto dv = xv | nd::difference_on_axis(0) | nd::map(mara::make_volume<double>);
     auto xc = xv | nd::midpoint_on_axis(0);
     auto state = solution_state_t();
 
     state.vertices = xv.shared();
-    state.solution = (xc | nd::map(initial_p) | nd::map(to_conserved)).shared();
+    state.solution = xc | nd::map(initial_p) | nd::map(to_conserved) | multiply(dv) | nd::to_shared();
 
     return state;
 }
@@ -118,20 +130,22 @@ static auto create_solution(const mara::config_t& run_config)
 
 static auto next_solution(const solution_state_t& state)
 {
-    using namespace std::placeholders;
-    auto xv = state.vertices;
-    auto u0 = state.solution;
-    auto nx = xv.shape(0);
-    auto dt = mara::make_time(0.25 / nx);
-    auto dv = xv | nd::difference_on_axis(0) | nd::map(mara::make_volume<double>);
-    auto p0 = u0 / dv | nd::map(std::bind(mara::srhd::recover_primitive, _1, gamma_law_index)) | nd::to_shared();
-    auto pe = p0 | extend_constant(0);
-    auto fc =(pe | intercell_flux(0)) * mara::make_area(1.0) | nd::to_shared();
-    auto lc =(fc | nd::difference_on_axis(0)) * -1.0;
-    auto u1 = u0 + lc * dt;
-    auto t1 = state.time + dt.value;
-    auto i1 = state.iteration + 1;
-    return solution_state_t { t1, i1, xv, u1.shared() };
+    auto dt = mara::make_time(0.25 / state.vertices.shape(0));
+    auto du = state.solution
+    | divide(state.vertices | nd::difference_on_axis(0) | nd::map(mara::make_volume<double>))
+    | nd::map(std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index))
+    | extend_constant(0)
+    | nd::to_shared()
+    | intercell_flux(0)
+    | nd::to_shared()
+    | nd::difference_on_axis(0)
+    | multiply(-dt * mara::make_area(1.0));
+
+    return solution_state_t {
+        state.time + dt.value,
+        state.iteration + 1,
+        state.vertices,
+        state.solution + du | nd::to_shared() };
 }
 
 

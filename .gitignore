@@ -4,3 +4,4 @@ misc
 *.d
 *.h5
 tools
+Makefile.in
