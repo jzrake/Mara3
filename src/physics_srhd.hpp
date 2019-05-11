@@ -14,8 +14,8 @@ namespace mara::srhd
     struct primitive_t;
     struct wavespeeds_t
     {
-        unit_velocity<double> p;
         unit_velocity<double> m;
+        unit_velocity<double> p;
     };
 
     inline primitive_t recover_primitive(
@@ -342,13 +342,13 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
 
     while (iteration < newtonIterMax)
     {
-        double v2  = std::min(SS / std::pow(tau + D + p, 2), 1.0 - 1e-10);
-        double W2  = 1.0 / (1.0 - v2);
-        double W   = std::sqrt(W2);
-        double e   = (tau + D * (1.0 - W) + p * (1.0 - W2)) / (D * W);
-        double d   = D / W;
-        double h   = 1.0 + e + p / d;
-        double cs2 = gm * p / (d * h);
+        auto v2  = std::min(SS / std::pow(tau + D + p, 2), 1.0 - 1e-10);
+        auto W2  = 1.0 / (1.0 - v2);
+        auto W   = std::sqrt(W2);
+        auto e   = (tau + D * (1.0 - W) + p * (1.0 - W2)) / (D * W);
+        auto d   = D / W;
+        auto h   = 1.0 + e + p / d;
+        auto cs2 = gm * p / (d * h);
 
         f = d * e * (gm - 1.0) - p;
         g = v2 * cs2 - 1.0;
@@ -420,12 +420,8 @@ mara::srhd::flux_vector_t mara::srhd::riemann_hlle(
     auto Fl = Pl.flux(nhat, Ul);
     auto Fr = Pr.flux(nhat, Ur);
 
-    auto epl = std::max(Al.m, Al.p);
-    auto eml = std::min(Al.m, Al.p);
-    auto epr = std::max(Ar.m, Ar.p);
-    auto emr = std::min(Ar.m, Ar.p);
-    auto ap  = std::max(epl, epr);
-    auto am  = std::min(eml, emr);
+    auto ap = std::max(make_velocity(0.0), std::max(Al.p, Ar.p));
+    auto am = std::min(make_velocity(0.0), std::min(Al.m, Ar.m));
 
     return (Fl * ap - Fr * am - (Ul - Ur) * ap * am) / (ap - am);
 }

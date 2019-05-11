@@ -11,7 +11,9 @@
 #include "app_performance.hpp"
 #include "app_subprogram.hpp"
 #include "physics_srhd.hpp"
+
 #define gamma_law_index (4. / 3)
+#define cfl_number 0.2
 
 
 
@@ -21,14 +23,17 @@ static auto config_template()
 {
     return mara::make_config_template()
     .item("restart", std::string())
+    .item("tfinal", 1.0)
     .item("cpi", 1.0)    // checkpoint interval
     .item("di", 0.1)     // diagnostics interval
-    .item("tfinal", 1.0)
-    .item("geometry", "planar")
-    .item("N", 256);
+    .item("outer_radius", 100.0)
+    .item("nr", 256)
+    .item("explosion_pressure", 1.0)
+    .item("explosion_density", 1.0)
+    .item("density_index", 0.0);
 }
 
-namespace shockwave
+namespace sedov
 {
     struct solution_state_t
     {
@@ -48,27 +53,7 @@ namespace shockwave
     };
 }
 
-using namespace shockwave;
-
-
-
-
-//=============================================================================
-template<typename F1, typename F2, typename... Args>
-auto call_with_geometry(const mara::config_t& cfg, F1 planar, F2 spherical, Args&&... args)
-{
-    auto geometry = cfg.get<std::string>("geometry");
-
-    if (geometry == "planar")
-    {
-        return planar(std::forward<Args>(args)...);
-    }
-    if (geometry == "spherical")
-    {
-        return spherical(std::forward<Args>(args)...);
-    }
-    throw std::invalid_argument("unrecognized geometry '" + geometry + "'");
-}
+using namespace sedov;
 
 
 
@@ -87,52 +72,14 @@ static auto intercell_flux(std::size_t axis)
     };
 }
 
-static auto extend_zero_gradient(std::size_t axis)
-{
-    return [axis] (auto array)
-    {
-        auto xl = array | nd::select_first(1, 0);
-        auto xr = array | nd::select_final(1, 0);
-        return xl | nd::concat(array).on_axis(axis) | nd::concat(xr).on_axis(axis);
-    };
-}
-
-template<typename Multiplier>
-auto multiply(Multiplier arg)
-{
-    return std::bind(std::multiplies<>(), std::placeholders::_1, arg);
-};
-
-template<typename Multiplier>
-auto divide(Multiplier arg)
-{
-    return std::bind(std::divides<>(), std::placeholders::_1, arg);
-};
-
 template<typename VertexArrayType>
-auto face_areas_planar(VertexArrayType vertices)
-{
-    return mara::make_area(1.0);
-}
-
-template<typename VertexArrayType>
-auto face_areas_spherical(VertexArrayType vertices)
+auto face_areas(VertexArrayType vertices)
 {
     return vertices | nd::map([] (auto r) { return mara::make_area(r * r); });
 }
 
 template<typename VertexArrayType>
-auto cell_volumes_planar(VertexArrayType vertices)
-{
-    auto slab_volume = [] (double x0, double x1)
-    {
-        return mara::make_volume(x1 - x0);
-    };
-    return vertices | nd::zip_adjacent2_on_axis(0) | nd::apply(slab_volume);
-}
-
-template<typename VertexArrayType>
-auto cell_volumes_spherical(VertexArrayType vertices)
+auto cell_volumes(VertexArrayType vertices)
 {
     auto shell_volume = [] (double r0, double r1)
     {
@@ -141,21 +88,13 @@ auto cell_volumes_spherical(VertexArrayType vertices)
     return vertices | nd::zip_adjacent2_on_axis(0) | nd::apply(shell_volume);
 }
 
-template<typename VertexArrayType>
-auto cell_volumes(VertexArrayType vertices, const mara::config_t& cfg)
-{
-    auto p = [] (auto v) { return cell_volumes_planar(v) | nd::to_shared(); };
-    auto s = [] (auto v) { return cell_volumes_spherical(v) | nd::to_shared(); };
-    return call_with_geometry(cfg, p, s, vertices);
-}
-
-auto make_diagnostic_fields(const solution_state_t& state, const mara::config_t& cfg)
+auto make_diagnostic_fields(const solution_state_t& state)
 {
     using namespace mara::srhd;
     using namespace std::placeholders;
     auto cons_to_prim = std::bind(recover_primitive, std::placeholders::_1, gamma_law_index);
 
-    auto primitive = state.conserved | divide(cell_volumes(state.vertices, cfg)) | nd::map(cons_to_prim);
+    auto primitive = state.conserved | nd::divide(cell_volumes(state.vertices)) | nd::map(cons_to_prim);
     auto result = diagnostic_fields_t();
 
     result.time               = state.time;
@@ -193,28 +132,35 @@ static auto new_solution(const mara::config_t& cfg)
 {
     using namespace std::placeholders;
 
-    // auto initial_p = [] (auto x)
-    // {
-    //     return mara::srhd::primitive_t()
-    //     .mass_density(x < 0.5 ? 1.0 : 0.100)
-    //     .gas_pressure(x < 0.5 ? 1.0 : 0.125);
-    // };
-
-    auto initial_p = [] (auto r)
+    auto initial_p = [cfg] (auto r)
     {
+        auto explosion_density  = cfg.get<double>("explosion_density");
+        auto explosion_pressure = cfg.get<double>("explosion_pressure");
+        auto density_index      = cfg.get<double>("explosion_density");
+        auto temperature        = 1e-3;
+
         return mara::srhd::primitive_t()
-        .mass_density(r < 2.0 ? 1.0 : 0.025)
-        .gas_pressure(r < 2.0 ? 1.0 : 0.025);
+        .mass_density(r < 1.0 ? explosion_density  : std::pow(r, -density_index))
+        .gas_pressure(r < 1.0 ? explosion_pressure : std::pow(r, -density_index) * temperature);
     };
     auto to_conserved = std::bind(&mara::srhd::primitive_t::to_conserved_density, _1, gamma_law_index);
 
-    auto nx = cfg.get<int>("N");
-    // auto vertices = nd::linspace(0, 1, nx + 1);
-    auto vertices = nd::linspace(1, 10, nx + 1);
-    auto dv = cell_volumes(vertices, cfg);
+    auto nr             = cfg.get<int>("nr");
+    auto outer_radius   = cfg.get<double>("outer_radius");
+    auto radial_decades = std::log10(outer_radius);
+
+    auto vertices = nd::linspace(-0.5, radial_decades, int(radial_decades * nr) + 1)
+    | nd::map([] (auto y) { return std::pow(10.0, y); });
+
+    // For linear-spaced radial zones:
+    // auto vertices = nd::linspace(1, outer_radius, nr);
+
+    auto dv = cell_volumes(vertices);
     auto xc = vertices | nd::midpoint_on_axis(0);
     auto state = solution_state_t();
 
+    state.time = 0.0;
+    state.iteration = 0;
     state.vertices = vertices.shared();
     state.conserved = xc | nd::map(initial_p) | nd::map(to_conserved) | multiply(dv) | nd::to_shared();
 
@@ -229,23 +175,25 @@ static auto create_solution(const mara::config_t& run_config)
     : read_solution(h5::File(restart, "r").open_group("solution"));
 }
 
-static auto next_solution_spherical(const solution_state_t& state)
+static auto next_solution(const solution_state_t& state)
 {
     using namespace mara::srhd;
     using namespace std::placeholders;
 
     auto source_terms = std::bind(&primitive_t::spherical_geometry_source_terms_radial, _1, _2, gamma_law_index);
+    // auto source_terms = std::bind(&primitive_t::spherical_geometry_source_terms, _1, _2, M_PI / 2, gamma_law_index);
     auto cons_to_prim = std::bind(recover_primitive, std::placeholders::_1, gamma_law_index);
 
-    auto dt = mara::make_time(0.025 / state.vertices.shape(0));
-    auto dv = cell_volumes_spherical(state.vertices) | nd::to_shared();
-    auto da = face_areas_spherical(state.vertices);
+    auto dr_min = state.vertices | nd::difference_on_axis(0) | nd::read_index(0);
+    auto dt = mara::make_time(cfl_number * dr_min);
+    auto dv = cell_volumes(state.vertices) | nd::to_shared();
+    auto da = face_areas(state.vertices);
     auto rc = state.vertices | nd::midpoint_on_axis(0);
 
     auto u0 = state.conserved;
     auto p0 = u0 / dv | nd::map(cons_to_prim) | nd::to_shared();
     auto s0 = nd::zip_arrays(p0, rc) | nd::apply(source_terms) | multiply(dv);
-    auto l0 = p0 | extend_zero_gradient(0) | intercell_flux(0) | multiply(-da) | nd::difference_on_axis(0);
+    auto l0 = p0 | nd::extend_zero_gradient(0) | intercell_flux(0) | multiply(-da) | nd::difference_on_axis(0);
     auto u1 = u0 + (l0 + s0) * dt;
 
     return solution_state_t {
@@ -253,32 +201,6 @@ static auto next_solution_spherical(const solution_state_t& state)
         state.iteration + 1,
         state.vertices,
         u1 | nd::to_shared() };
-}
-
-static auto next_solution_planar(const solution_state_t& state)
-{
-    auto dt = mara::make_time(0.25 / state.vertices.shape(0));
-    auto du = state.conserved
-    | divide(cell_volumes_planar(state.vertices))
-    | nd::map(std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index))
-    | extend_zero_gradient(0)
-    | nd::to_shared()
-    | intercell_flux(0)
-    | nd::to_shared()
-    | multiply(face_areas_planar(state.vertices))
-    | nd::difference_on_axis(0)
-    | multiply(-dt);
-
-    return solution_state_t {
-        state.time + dt.value,
-        state.iteration + 1,
-        state.vertices,
-        state.conserved + du | nd::to_shared() };
-}
-
-static auto next_solution(const solution_state_t& state, const mara::config_t& cfg)
-{
-    return call_with_geometry(cfg, next_solution_planar, next_solution_spherical, state);
 }
 
 
@@ -366,7 +288,7 @@ static void write_diagnostics(const app_state_t& state)
 {
     auto count = state.schedule.num_times_performed("write_diagnostics");
     auto file = h5::File(mara::create_numbered_filename("diagnostics", count, "h5"), "w");
-    auto diagnostics = make_diagnostic_fields(state.solution_state, state.run_config);
+    auto diagnostics = make_diagnostic_fields(state.solution_state);
 
     file.write("time",               diagnostics.time);
     file.write("gas_pressure",       diagnostics.gas_pressure);
@@ -389,7 +311,7 @@ static auto create_app_state(mara::config_t run_config)
 static auto next(const app_state_t& state)
 {
     auto next_state = state;
-    next_state.solution_state = next_solution(state.solution_state, state.run_config);
+    next_state.solution_state = next_solution(state.solution_state);
     next_state.schedule       = next_schedule(state.schedule, state.run_config, state.solution_state.time);
     return next_state;
 }
@@ -432,20 +354,17 @@ static void print_run_loop_message(const solution_state_t& solution, mara::perf_
 
 
 //=============================================================================
-class subprog_shockwave : public mara::sub_program_t
+class subprog_sedov : public mara::sub_program_t
 {
 public:
 
     int main(int argc, const char* argv[]) override
     {
-        mpi::Session mpi_session;
-        mpi::printf_master("initialized on %d mpi processes\n", mpi::comm_world().size());
-
         auto run_config = create_run_config(argc, argv);
         auto perf = mara::perf_diagnostics_t();
         auto state = create_app_state(run_config);
 
-        mara::pretty_print(mpi::cout_master(), "config", run_config);
+        mara::pretty_print(std::cout, "config", run_config);
         state = run_tasks(state);
 
         while (simulation_should_continue(state))
@@ -460,11 +379,11 @@ public:
 
     std::string name() const override
     {
-        return "boilerplate";
+        return "sedov";
     }
 };
 
-std::unique_ptr<mara::sub_program_t> make_subprog_shockwave()
+std::unique_ptr<mara::sub_program_t> make_subprog_sedov()
 {
-    return std::make_unique<subprog_shockwave>();
+    return std::make_unique<subprog_sedov>();
 }

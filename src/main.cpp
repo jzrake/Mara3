@@ -38,7 +38,7 @@
 //=============================================================================
 std::unique_ptr<mara::sub_program_t> make_subprog_boilerlate();
 std::unique_ptr<mara::sub_program_t> make_subprog_partdom();
-std::unique_ptr<mara::sub_program_t> make_subprog_shockwave();
+std::unique_ptr<mara::sub_program_t> make_subprog_sedov();
 
 
 
@@ -50,7 +50,7 @@ int main(int argc, const char* argv[])
 
     programs["boilerplate"] = make_subprog_boilerlate();
     programs["partdom"]     = make_subprog_partdom();
-    programs["shockwave"]   = make_subprog_shockwave();
+    programs["sedov"]       = make_subprog_sedov();
 
     if (argc == 1)
     {
