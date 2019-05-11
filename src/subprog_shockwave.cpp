@@ -1,17 +1,16 @@
-#include <cmath>
 #include <iostream>
 #include "ndmpi.hpp"
 #include "ndh5.hpp"
 #include "ndarray.hpp"
 #include "ndarray_ops.hpp"
+#include "core_geometric.hpp"
+#include "core_rational.hpp"
 #include "app_config.hpp"
 #include "app_serialize.hpp"
 #include "app_schedule.hpp"
 #include "app_performance.hpp"
 #include "app_subprogram.hpp"
 #include "physics_srhd.hpp"
-#include "core_geometric.hpp"
-#include "core_rational.hpp"
 #define gamma_law_index (4. / 3)
 
 
@@ -32,7 +31,7 @@ namespace shockwave
     struct solution_state_t
     {
         double time = 0.0;
-        mara::rational_value_t iteration = mara::make_rational(0, 1);
+        mara::rational_number_t iteration = mara::make_rational(0, 1);
         nd::shared_array<double, 1> vertices;
         nd::shared_array<mara::srhd::conserved_t, 1> solution;
     };
@@ -79,6 +78,27 @@ auto divide(Multiplier arg)
     return std::bind(std::divides<>(), std::placeholders::_1, arg);
 };
 
+template<typename VertexArrayType>
+auto face_areas(VertexArrayType vertices)
+{
+    return mara::make_area(1.0);
+    // return vertices | nd::map([] (auto r) { return mara::make_area(std::pow(r, 2)); });
+}
+
+template<typename VertexArrayType>
+auto cell_volumes(VertexArrayType vertices)
+{
+    // auto shell_volume = [] (double r0, double r1)
+    // {
+    //     return mara::make_volume(std::pow(r1, 3) - std::pow(r0, 3) / 3);
+    // };
+    auto slab_volume = [] (double x0, double x1)
+    {
+        return mara::make_volume(x1 - x0);
+    };
+    return vertices | nd::zip_adjacent2_on_axis(0) | nd::apply(slab_volume);
+}
+
 
 
 
@@ -86,7 +106,7 @@ auto divide(Multiplier arg)
 static void write_solution(h5::Group&& group, const solution_state_t& state)
 {
     group.write("time", state.time);
-    group.write("iteration", state.iteration.as_integral());
+    group.write("iteration", state.iteration);
     group.write("vertices", state.vertices);
     group.write("conserved", state.solution);
 }
@@ -95,7 +115,7 @@ static auto read_solution(h5::Group&& group)
 {
     auto state = solution_state_t();
     state.time      = group.read<double>("time");
-    state.iteration = group.read<int>("iteration");
+    state.iteration = group.read<mara::rational_number_t>("iteration");
     state.vertices  = group.read<nd::unique_array<double, 1>>("vertices").shared();
     state.solution  = group.read<nd::unique_array<mara::srhd::conserved_t, 1>>("conserved").shared();
     return state;
@@ -114,12 +134,12 @@ static auto new_solution(const mara::config_t& cfg)
     auto to_conserved = std::bind(&mara::srhd::primitive_t::to_conserved_density, _1, gamma_law_index);
 
     auto nx = cfg.get<int>("N");
-    auto xv = nd::linspace(0, 1, nx + 1);
-    auto dv = xv | nd::difference_on_axis(0) | nd::map(mara::make_volume<double>);
-    auto xc = xv | nd::midpoint_on_axis(0);
+    auto vertices = nd::linspace(0, 1, nx + 1);
+    auto dv = cell_volumes(vertices);
+    auto xc = vertices | nd::midpoint_on_axis(0);
     auto state = solution_state_t();
 
-    state.vertices = xv.shared();
+    state.vertices = vertices.shared();
     state.solution = xc | nd::map(initial_p) | nd::map(to_conserved) | multiply(dv) | nd::to_shared();
 
     return state;
@@ -135,16 +155,26 @@ static auto create_solution(const mara::config_t& run_config)
 
 static auto next_solution(const solution_state_t& state)
 {
+    // auto source_terms = std::bind(
+    //     &mara::srhd::primitive_t::spherical_geometry_source_terms,
+    //     std::placeholders::_1,
+    //     std::placeholders::_2,
+    //     M_PI / 2,
+    //     gamma_law_index);
+
+    // source_terms(mara::srhd::primitive_t(), 1.0);
+
     auto dt = mara::make_time(0.25 / state.vertices.shape(0));
     auto du = state.solution
-    | divide(state.vertices | nd::difference_on_axis(0) | nd::map(mara::make_volume<double>))
+    | divide(cell_volumes(state.vertices))
     | nd::map(std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index))
     | extend_constant(0)
     | nd::to_shared()
     | intercell_flux(0)
     | nd::to_shared()
+    | multiply(face_areas(state.vertices))
     | nd::difference_on_axis(0)
-    | multiply(-dt * mara::make_area(1.0));
+    | multiply(-dt);
 
     return solution_state_t {
         state.time + dt.value,

@@ -46,8 +46,9 @@ namespace mara
     template<typename T> using unit_velocity     = dimensional_value_t< 1, 0,-1, T>;
     template<typename T> using unit_volume       = dimensional_value_t< 3, 0, 0, T>;
     template<typename T> using unit_flux         = dimensional_value_t<-2, 1,-1, T>;
-    template<typename T> using unit_flow_rate    = dimensional_value_t< 0, 1,-1, T>;
+    template<typename T> using unit_flow         = dimensional_value_t< 0, 1,-1, T>;
     template<typename T> using unit_mass_density = dimensional_value_t<-3, 1, 0, T>;
+    template<typename T> using unit_flow_density = dimensional_value_t<-3, 1,-1, T>;
 
     template<typename T> auto make_scalar(T value);
     template<typename T> auto make_length(T value);
@@ -57,8 +58,9 @@ namespace mara
     template<typename T> auto make_velocity(T value);
     template<typename T> auto make_volume(T value);
     template<typename T> auto make_flux(T value);
-    template<typename T> auto make_flow_rate(T value);
+    template<typename T> auto make_flow(T value);
     template<typename T> auto make_mass_density(T value);
+    template<typename T> auto make_flow_density(T value);
 
     template<int C, int G, int S, typename T> auto to_string(dimensional_value_t<C, G, S, T> x);
 }
@@ -239,8 +241,9 @@ template<typename T> auto mara::make_area        (T value) { return make_dimensi
 template<typename T> auto mara::make_volume      (T value) { return make_dimensional< 3, 0, 0>(value); }
 template<typename T> auto mara::make_velocity    (T value) { return make_dimensional< 1, 0,-1>(value); }
 template<typename T> auto mara::make_flux        (T value) { return make_dimensional<-2, 1,-1>(value); }
-template<typename T> auto mara::make_flow_rate   (T value) { return make_dimensional< 0, 1,-1>(value); }
+template<typename T> auto mara::make_flow        (T value) { return make_dimensional< 0, 1,-1>(value); }
 template<typename T> auto mara::make_mass_density(T value) { return make_dimensional<-3, 1, 0>(value); }
+template<typename T> auto mara::make_flow_density(T value) { return make_dimensional<-3, 1,-1>(value); }
 
 
 

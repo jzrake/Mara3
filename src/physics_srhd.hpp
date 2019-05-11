@@ -11,10 +11,12 @@ namespace mara::srhd
     using conserved_density_t = covariant_sequence_t<unit_mass_density<double>, 5>;
     using conserved_t         = covariant_sequence_t<unit_mass<double>, 5>;
     using flux_vector_t       = covariant_sequence_t<unit_flux<double>, 5>;
-    using flow_vector_t       = covariant_sequence_t<unit_flow_rate<double>, 5>;
-
     struct primitive_t;
-    struct wavespeeds_t { unit_velocity<double> p; unit_velocity<double> m; };
+    struct wavespeeds_t
+    {
+        unit_velocity<double> p;
+        unit_velocity<double> m;
+    };
 
     inline primitive_t recover_primitive(
         const conserved_density_t& U,
@@ -33,18 +35,42 @@ namespace mara::srhd
 //=============================================================================
 struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, primitive_t>
 {
+
+
+
+    /**
+     * @brief      Retrieve const-references to the quantities by name.
+     */
     const double& mass_density() const { return operator[](0); }
     const double& gamma_beta_1() const { return operator[](1); }
     const double& gamma_beta_2() const { return operator[](2); }
     const double& gamma_beta_3() const { return operator[](3); }
     const double& gas_pressure() const { return operator[](4); }
 
+
+
+    /**
+     * @brief      Return a new state with individual, named quantities replaced.
+     *
+     * @param[in]  v     The new value
+     *
+     * @return     A new primitive variable state
+     */
     primitive_t mass_density(double v) { auto res = *this; res[0] = v; return res; }
     primitive_t gamma_beta_1(double v) { auto res = *this; res[1] = v; return res; }
     primitive_t gamma_beta_2(double v) { auto res = *this; res[2] = v; return res; }
     primitive_t gamma_beta_3(double v) { auto res = *this; res[3] = v; return res; }
     primitive_t gas_pressure(double v) { auto res = *this; res[4] = v; return res; }
 
+
+
+    /**
+     * @brief      Return the fluid specific enthalpy.
+     *
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     h
+     */
     double specific_enthalpy(double gamma_law_index) const
     {
         const double e = gas_pressure() / (mass_density() * (gamma_law_index - 1.0));
@@ -52,28 +78,90 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
         return h;
     }
 
+
+
+    /**
+     * @brief      Return the fluid enthalpy density.
+     *
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     rho h
+     */
+    double enthalpy_density(double gamma_law_index) const
+    {
+        return mass_density() + gas_pressure() * (1.0 + 1.0 / (gamma_law_index - 1.0));
+    }
+
+
+
+
+    /**
+     * @brief      Return the square of the four-velocity magnitude.
+     *
+     * @return     u^2
+     */
     double gamma_beta_squared() const
     {
         const auto&_ = *this;
         return _[1] * _[1] + _[2] * _[2] + _[3] * _[3];
     }
 
+
+
+
+    /**
+     * @brief      Return the fluid Lorentz factor.
+     *
+     * @return     1 + u^2
+     */
     double lorentz_factor() const
     {
         return std::sqrt(1.0 + gamma_beta_squared());
     }
 
+
+
+
+    /**
+     * @brief      Return the kinematic three-velocity along the given unit
+     *             vector.
+     *
+     * @param[in]  nhat  The unit vector
+     *
+     * @return     v / c
+     */
     double beta_along(const unit_vector_t& nhat) const
     {
         const auto&_ = *this;
         return nhat.project(_[1], _[2], _[3]) / lorentz_factor();
     }
 
+
+
+
+    /**
+     * @brief      Return the sound-speed squared.
+     *
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     gamma p / (rho h)
+     */
     double sound_speed_squared(double gamma_law_index) const
     {
-        return gamma_law_index * gas_pressure() / (mass_density() * specific_enthalpy(gamma_law_index));
+        return gamma_law_index * gas_pressure() / enthalpy_density(gamma_law_index);
     }
 
+
+
+
+    /**
+     * @brief      Convert this state to a density of conserved mass, momentum,
+     *             and energy.
+     *
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     The conserved density U
+     */
     conserved_density_t to_conserved_density(double gamma_law_index) const
     {
         const auto& _ = *this;
@@ -90,11 +178,36 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
         return U;
     }
 
+
+
+
+    /**
+     * @brief      Return the flux of conserved quantities in the given
+     *             direction.
+     *
+     * @param[in]  nhat             The unit vector
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     The flux F
+     */
     flux_vector_t flux(const unit_vector_t& nhat, double gamma_law_index) const
     {
         return flux(nhat, to_conserved_density(gamma_law_index));
     }
 
+
+
+
+    /**
+     * @brief      Same as the above function, except uses the given
+     *             pre-computed conserved variable state - which can be useful
+     *             for performance reasons if you have already computed U.
+     *
+     * @param[in]  nhat  The direction
+     * @param[in]  U     The pre-computed conserved variables
+     *
+     * @return     The flux F
+     */
     flux_vector_t flux(const unit_vector_t& nhat, const conserved_density_t& U) const
     {
         auto v = beta_along(nhat);
@@ -108,6 +221,16 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
         return F;
     }
 
+
+
+    /**
+     * @brief      Return the wavespeeds along a given direction
+     *
+     * @param[in]  nhat             The direction
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     The wavespeeds
+     */
     wavespeeds_t wavespeeds(const unit_vector_t& nhat, double gamma_law_index) const
     {
         auto c2 = sound_speed_squared(gamma_law_index);
@@ -121,12 +244,52 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
             make_velocity((vn * (1 - c2) + k0) / (1 - vv * c2)),
         };
     }
+
+
+
+    /**
+     * @brief      Return the spherical source terms for gamma-law SRHD
+     *
+     * @param[in]  spherical_radius   The spherical radius
+     * @param[in]  polar_angle_theta  The polar angle theta
+     * @param[in]  gamma_law_index    The gamma law index
+     *
+     * @return     Source terms in units of mass / volume / time
+     */
+    auto spherical_geometry_source_terms(
+        double spherical_radius,
+        double polar_angle_theta,
+        double gamma_law_index)
+    {
+        auto cotq = std::tan(M_PI_2 - polar_angle_theta);
+        auto ur = gamma_beta_1();
+        auto uq = gamma_beta_2();
+        auto up = gamma_beta_3();
+        auto pg = gas_pressure();
+        auto H = enthalpy_density(gamma_law_index);
+        auto r = spherical_radius;
+        auto S = covariant_sequence_t<dimensional_value_t<-3, 1, -1, double>, 5>();
+        S[0].value =  0.0;
+        S[1].value = (2.0  * pg + H * (uq * uq        + up * up)) / r;
+        S[2].value = (cotq * pg + H * (up * up * cotq - ur * uq)) / r;
+        S[3].value =        -up * H * (ur + uq * cotq) / r;
+        S[4].value =  0.0;
+        return S;
+    }
 };
 
 
 
 
-//=============================================================================
+/**
+ * @brief      Attempt to recover a primitive variable state from the given
+ *             vector of conserved densities.
+ *
+ * @param[in]  U                The conserved densities
+ * @param[in]  gamma_law_index  The gamma law index
+ *
+ * @return     A primitive variable state, if the recovery succeeds
+ */
 mara::srhd::primitive_t mara::srhd::recover_primitive(
     const conserved_density_t& U,
     double gamma_law_index)
@@ -142,7 +305,6 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
         S22 = 2,
         S33 = 3,
         TAU = 4,
-        LAR = 5,
     };
 
     const double gm  = gamma_law_index;
@@ -217,7 +379,16 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
 
 
 
-//=============================================================================
+/**
+ * @brief      Return the HLLE flux for the given pair of states
+ *
+ * @param[in]  Pl               The state to the left of the interface
+ * @param[in]  Pr               The state to the right
+ * @param[in]  nhat             The normal vector to the interface
+ * @param[in]  gamma_law_index  The gamma law index
+ *
+ * @return     A vector of fluxes
+ */
 mara::srhd::flux_vector_t mara::srhd::riemann_hlle(
     const primitive_t& Pl,
     const primitive_t& Pr,

@@ -28,8 +28,6 @@
 
 #pragma once
 #include <string>
-#include "core_sequence.hpp"
-#include "core_dimensional.hpp"
 
 
 
@@ -37,10 +35,10 @@
 //=============================================================================
 namespace mara
 {
-    class rational_value_t;
+    class rational_number_t;
     inline auto make_rational(int integer);
     inline auto make_rational(int numerator, int denominator);
-    inline auto to_string(const rational_value_t& value);
+    inline auto to_string(const rational_number_t& value);
 }
 
 
@@ -49,100 +47,100 @@ namespace mara
 /**
  * @brief      Class defining operations on rational numbers
  */
-class mara::rational_value_t
+class mara::rational_number_t
 {
 public:
 
     //=========================================================================
-    rational_value_t() {}
-    rational_value_t(int integer) : num(integer), den(1) {}
-    rational_value_t(int num, int den)
+    rational_number_t() {}
+    rational_number_t(int integer) : num(integer), den(1) {}
+    rational_number_t(int num, int den)
     : num(num)
     , den(den)
     {
         if (den == 0)
         {
-            throw std::invalid_argument("rational_value_t: indeterminate (divide by zero)");
+            throw std::invalid_argument("rational_number_t: indeterminate (divide by zero)");
         }
         reduce();
     }
 
     double operator+(double other) const { return double(*this) + other; }
-    rational_value_t operator+(int other) const { return operator+(rational_value_t(other)); }
-    rational_value_t operator+(const rational_value_t& other) const
+    rational_number_t operator+(int other) const { return operator+(rational_number_t(other)); }
+    rational_number_t operator+(const rational_number_t& other) const
     {
         auto a = num;
         auto b = den;
         auto c = other.num;
         auto d = other.den;
-        return rational_value_t(a * d + b * c, b * d);
+        return rational_number_t(a * d + b * c, b * d);
     }
 
     double operator-(double other) const { return double(*this) - other; }
-    rational_value_t operator-(int other) const { return operator-(rational_value_t(other)); }
-    rational_value_t operator-(const rational_value_t& other) const
+    rational_number_t operator-(int other) const { return operator-(rational_number_t(other)); }
+    rational_number_t operator-(const rational_number_t& other) const
     {
         auto a = num;
         auto b = den;
         auto c = other.num;
         auto d = other.den;
-        return rational_value_t(a * d - b * c, b * d);
+        return rational_number_t(a * d - b * c, b * d);
     }
 
     double operator*(double other) const { return double(*this) * other; }
-    rational_value_t operator*(int other) const { return operator*(rational_value_t(other)); }
-    rational_value_t operator*(const rational_value_t& other) const
+    rational_number_t operator*(int other) const { return operator*(rational_number_t(other)); }
+    rational_number_t operator*(const rational_number_t& other) const
     {
         auto a = num;
         auto b = den;
         auto c = other.num;
         auto d = other.den;
-        return rational_value_t(a * c, b * d);
+        return rational_number_t(a * c, b * d);
     }
 
     double operator/(double other) const { return double(*this) / other; }
-    rational_value_t operator/(int other) const { return operator/(rational_value_t(other)); }
-    rational_value_t operator/(const rational_value_t& other) const
+    rational_number_t operator/(int other) const { return operator/(rational_number_t(other)); }
+    rational_number_t operator/(const rational_number_t& other) const
     {
         auto a = num;
         auto b = den;
         auto c = other.num;
         auto d = other.den;
-        return rational_value_t(a * d, b * c);
+        return rational_number_t(a * d, b * c);
     }
 
-    bool operator==(int other) const { return operator==(rational_value_t(other)); }
-    bool operator==(const rational_value_t& other) const
+    bool operator==(int other) const { return operator==(rational_number_t(other)); }
+    bool operator==(const rational_number_t& other) const
     {
         return num == other.num && den == other.den;
     }
 
-    bool operator!=(int other) const { return operator!=(rational_value_t(other)); }
-    bool operator!=(const rational_value_t& other) const
+    bool operator!=(int other) const { return operator!=(rational_number_t(other)); }
+    bool operator!=(const rational_number_t& other) const
     {
         return num != other.num || den != other.den;
     }
 
-    bool operator<(int other) const { return operator<(rational_value_t(other)); }
-    bool operator<(const rational_value_t& other) const
+    bool operator<(int other) const { return operator<(rational_number_t(other)); }
+    bool operator<(const rational_number_t& other) const
     {
         return (*this - other).num < 0;
     }
 
-    bool operator>(int other) const { return operator>(rational_value_t(other)); }
-    bool operator>(const rational_value_t& other) const
+    bool operator>(int other) const { return operator>(rational_number_t(other)); }
+    bool operator>(const rational_number_t& other) const
     {
         return (*this - other).num > 0;
     }
 
-    bool operator<=(int other) const { return operator<=(rational_value_t(other)); }
-    bool operator<=(const rational_value_t& other) const
+    bool operator<=(int other) const { return operator<=(rational_number_t(other)); }
+    bool operator<=(const rational_number_t& other) const
     {
         return (*this - other).num <= 0;
     }
 
-    bool operator>=(int other) const { return operator>=(rational_value_t(other)); }
-    bool operator>=(const rational_value_t& other) const
+    bool operator>=(int other) const { return operator>=(rational_number_t(other)); }
+    bool operator>=(const rational_number_t& other) const
     {
         return (*this - other).num >= 0;
     }
@@ -186,12 +184,7 @@ private:
             num /= g;
             den /= g;
         }
-        if (num < 0 && den < 0)
-        {
-            num *= -1;
-            den *= -1;
-        }
-        else if (num > 0 && den < 0)
+        if (den < 0)
         {
             num *= -1;
             den *= -1;
@@ -199,7 +192,9 @@ private:
     }
 
     /**
-     * @brief      Implement the Binary GCD algorithm
+     * @brief      Return the greatest common denominator of two non-negative
+     *             integers. Implements the Binary GCD Algorithm.
+     *
      */
     static int gcd(unsigned int a, unsigned int b)
     {
@@ -231,15 +226,15 @@ private:
 //=============================================================================
 auto mara::make_rational(int integer)
 {
-    return rational_value_t(integer);
+    return rational_number_t(integer);
 }
 
 auto mara::make_rational(int numerator, int denominator)
 {
-    return rational_value_t(numerator, denominator);
+    return rational_number_t(numerator, denominator);
 }
 
-auto mara::to_string(const rational_value_t& value)
+auto mara::to_string(const rational_number_t& value)
 {
     return std::to_string(value.get_numerator()) + " / " + std::to_string(value.get_denominator());
 }

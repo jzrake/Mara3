@@ -33,6 +33,7 @@
 #include "app_config.hpp"
 #include "app_schedule.hpp"
 #include "core_geometric.hpp"
+#include "core_rational.hpp"
 
 
 
@@ -271,6 +272,21 @@ struct h5::hdf5_type_info<mara::dimensional_value_t<C, G, S, T>>
     static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
     static auto get_address(const native_type& value) { return &value.value; }
     static auto get_address(native_type& value) { return &value.value; }
+};
+
+
+
+
+//=============================================================================
+template<>
+struct h5::hdf5_type_info<mara::rational_number_t>
+{
+    using native_type = mara::rational_number_t;
+    static auto make_datatype_for(const native_type& value) { return h5::Datatype::native_int().as_array(2); }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
 };
 
 

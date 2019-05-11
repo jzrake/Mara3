@@ -41,6 +41,8 @@ namespace nd
     inline auto select_first(std::size_t count, std::size_t axis);
     inline auto select_final(std::size_t count, std::size_t axis);
     inline auto difference_on_axis(std::size_t axis);
+    inline auto zip_adjacent2_on_axis(std::size_t axis);
+    inline auto zip_adjacent3_on_axis(std::size_t axis);
     inline auto intercell_flux_on_axis(std::size_t axis);
     inline auto extend_periodic_on_axis(std::size_t axis);
 }
@@ -94,6 +96,27 @@ auto nd::difference_on_axis(std::size_t axis)
         return (
         (array | nd::select_axis(axis).from(1).to(0).from_the_end()) -
         (array | nd::select_axis(axis).from(0).to(1).from_the_end()));
+    };
+}
+
+auto nd::zip_adjacent2_on_axis(std::size_t axis)
+{
+    return [axis] (auto array)
+    {
+        return nd::zip_arrays(
+        array | nd::select_axis(axis).from(0).to(1).from_the_end(),
+        array | nd::select_axis(axis).from(1).to(0).from_the_end());
+    };
+}
+
+auto nd::zip_adjacent3_on_axis(std::size_t axis)
+{
+    return [axis] (auto array)
+    {
+        return nd::zip_arrays(
+        array | nd::select_axis(axis).from(0).to(2).from_the_end(),
+        array | nd::select_axis(axis).from(1).to(1).from_the_end(),
+        array | nd::select_axis(axis).from(2).to(0).from_the_end());
     };
 }
 
