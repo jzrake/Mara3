@@ -11,6 +11,7 @@
 #include "app_subprogram.hpp"
 #include "physics_srhd.hpp"
 #include "core_geometric.hpp"
+#include "core_rational.hpp"
 #define gamma_law_index (4. / 3)
 
 
@@ -26,9 +27,23 @@ static auto config_template()
     .item("N", 256);
 }
 
+namespace shockwave
+{
+    struct solution_state_t
+    {
+        double time = 0.0;
+        mara::rational_value_t iteration = mara::make_rational(0, 1);
+        nd::shared_array<double, 1> vertices;
+        nd::shared_array<mara::srhd::conserved_t, 1> solution;
+    };
+}
+
+using namespace shockwave;
 
 
 
+
+//=============================================================================
 static auto intercell_flux(std::size_t axis)
 {
     return [axis] (auto array)
@@ -37,12 +52,10 @@ static auto intercell_flux(std::size_t axis)
         auto L = array | nd::select_axis(axis).from(0).to(1).from_the_end();
         auto R = array | nd::select_axis(axis).from(1).to(0).from_the_end();
         auto nh = mara::unit_vector_t::on_axis_1();
-        auto LR = nd::zip_arrays(L, R);
         auto riemann = std::bind(mara::srhd::riemann_hlle, _1, _2, nh, gamma_law_index);
         return nd::zip_arrays(L, R) | nd::apply(riemann);
     };
 }
-
 
 static auto extend_constant(std::size_t axis)
 {
@@ -70,18 +83,10 @@ auto divide(Multiplier arg)
 
 
 //=============================================================================
-struct solution_state_t
-{
-    double time = 0.0;
-    int iteration = 0;
-    nd::shared_array<double, 1> vertices;
-    nd::shared_array<mara::srhd::conserved_t, 1> solution;
-};
-
 static void write_solution(h5::Group&& group, const solution_state_t& state)
 {
     group.write("time", state.time);
-    group.write("iteration", state.iteration);
+    group.write("iteration", state.iteration.as_integral());
     group.write("vertices", state.vertices);
     group.write("conserved", state.solution);
 }
@@ -92,7 +97,7 @@ static auto read_solution(h5::Group&& group)
     state.time      = group.read<double>("time");
     state.iteration = group.read<int>("iteration");
     state.vertices  = group.read<nd::unique_array<double, 1>>("vertices").shared();
-    state.solution  = group.read<nd::unique_array<mara::srhd::conserved_t, 1>>("solution").shared();
+    state.solution  = group.read<nd::unique_array<mara::srhd::conserved_t, 1>>("conserved").shared();
     return state;
 }
 
@@ -265,7 +270,7 @@ static auto run_tasks(const app_state_t& state)
 static void print_run_loop_message(const solution_state_t& solution, mara::perf_diagnostics_t perf)
 {
     auto kzps = solution.vertices.size() / perf.execution_time_ms;
-    std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n", solution.iteration, solution.time, kzps);
+    std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n", solution.iteration.as_integral(), solution.time, kzps);
 }
 
 

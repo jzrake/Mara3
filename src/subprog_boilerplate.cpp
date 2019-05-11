@@ -23,18 +23,23 @@ static auto config_template()
     .item("N", 256);
 }
 
+namespace boilerplate
+{
+    struct solution_state_t
+    {
+        double time = 0.0;
+        int iteration = 0;
+        nd::shared_array<double, 1> vertices;
+        nd::shared_array<double, 1> solution;
+    };
+}
+
+using namespace boilerplate;
+
 
 
 
 //=============================================================================
-struct solution_state_t
-{
-    double time = 0.0;
-    int iteration = 0;
-    nd::shared_array<double, 1> vertices;
-    nd::shared_array<double, 1> solution;
-};
-
 static void write_solution(h5::Group&& group, const solution_state_t& state)
 {
     group.write("time", state.time);
