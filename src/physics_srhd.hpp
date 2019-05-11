@@ -269,11 +269,29 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
         auto H = enthalpy_density(gamma_law_index);
         auto r = spherical_radius;
         auto S = covariant_sequence_t<dimensional_value_t<-3, 1, -1, double>, 5>();
-        S[0].value =  0.0;
         S[1].value = (2.0  * pg + H * (uq * uq        + up * up)) / r;
         S[2].value = (cotq * pg + H * (up * up * cotq - ur * uq)) / r;
         S[3].value =        -up * H * (ur + uq * cotq) / r;
-        S[4].value =  0.0;
+        return S;
+    }
+
+
+    /**
+     * @brief      Special case of the above for 1d radial flow
+     *
+     * @param[in]  spherical_radius  The spherical radius
+     * @param[in]  gamma_law_index   The gamma law index
+     *
+     * @return     Source terms in units of mass / volume / time
+     */
+    auto spherical_geometry_source_terms_radial(double spherical_radius, double gamma_law_index)
+    {
+        auto uq = gamma_beta_2();
+        auto pg = gas_pressure();
+        auto H = enthalpy_density(gamma_law_index);
+        auto r = spherical_radius;
+        auto S = covariant_sequence_t<dimensional_value_t<-3, 1, -1, double>, 5>();
+        S[1].value = (2.0 * pg + H * uq * uq) / r;
         return S;
     }
 };

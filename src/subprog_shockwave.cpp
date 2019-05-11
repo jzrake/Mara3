@@ -21,8 +21,10 @@ static auto config_template()
 {
     return mara::make_config_template()
     .item("restart", std::string())
-    .item("cpi", 1.0)
+    .item("cpi", 1.0)    // checkpoint interval
+    .item("di", 0.1)     // diagnostics interval
     .item("tfinal", 1.0)
+    .item("geometry", "planar")
     .item("N", 256);
 }
 
@@ -33,11 +35,37 @@ namespace shockwave
         double time = 0.0;
         mara::rational_number_t iteration = mara::make_rational(0, 1);
         nd::shared_array<double, 1> vertices;
-        nd::shared_array<mara::srhd::conserved_t, 1> solution;
+        nd::shared_array<mara::srhd::conserved_t, 1> conserved;
+    };
+
+    struct diagnostic_fields_t
+    {
+        nd::shared_array<double, 1> radial_gamma_beta;
+        nd::shared_array<double, 1> radial_coordinates;
     };
 }
 
 using namespace shockwave;
+
+
+
+
+//=============================================================================
+template<typename F1, typename F2, typename... Args>
+auto call_with_geometry(const mara::config_t& cfg, F1 planar, F2 spherical, Args&&... args)
+{
+    auto geometry = cfg.get<std::string>("geometry");
+
+    if (geometry == "planar")
+    {
+        return planar(std::forward<Args>(args)...);
+    }
+    if (geometry == "spherical")
+    {
+        return spherical(std::forward<Args>(args)...);
+    }
+    throw std::invalid_argument("unrecognized geometry '" + geometry + "'");
+}
 
 
 
@@ -56,7 +84,7 @@ static auto intercell_flux(std::size_t axis)
     };
 }
 
-static auto extend_constant(std::size_t axis)
+static auto extend_zero_gradient(std::size_t axis)
 {
     return [axis] (auto array)
     {
@@ -79,24 +107,62 @@ auto divide(Multiplier arg)
 };
 
 template<typename VertexArrayType>
-auto face_areas(VertexArrayType vertices)
+auto face_areas_planar(VertexArrayType vertices)
 {
     return mara::make_area(1.0);
-    // return vertices | nd::map([] (auto r) { return mara::make_area(std::pow(r, 2)); });
 }
 
 template<typename VertexArrayType>
-auto cell_volumes(VertexArrayType vertices)
+auto face_areas_spherical(VertexArrayType vertices)
 {
-    // auto shell_volume = [] (double r0, double r1)
-    // {
-    //     return mara::make_volume(std::pow(r1, 3) - std::pow(r0, 3) / 3);
-    // };
+    return vertices | nd::map([] (auto r) { return mara::make_area(r * r); });
+}
+
+template<typename VertexArrayType>
+auto cell_volumes_planar(VertexArrayType vertices)
+{
     auto slab_volume = [] (double x0, double x1)
     {
         return mara::make_volume(x1 - x0);
     };
     return vertices | nd::zip_adjacent2_on_axis(0) | nd::apply(slab_volume);
+}
+
+template<typename VertexArrayType>
+auto cell_volumes_spherical(VertexArrayType vertices)
+{
+    auto shell_volume = [] (double r0, double r1)
+    {
+        return mara::make_volume((std::pow(r1, 3) - std::pow(r0, 3)) / 3);
+    };
+    return vertices | nd::zip_adjacent2_on_axis(0) | nd::apply(shell_volume);
+}
+
+template<typename VertexArrayType>
+auto cell_volumes(VertexArrayType vertices, const mara::config_t& cfg)
+{
+    auto p = [] (auto v) { return cell_volumes_planar(v) | nd::to_shared(); };
+    auto s = [] (auto v) { return cell_volumes_spherical(v) | nd::to_shared(); };
+    return call_with_geometry(cfg, p, s, vertices);
+}
+
+auto make_diagnostic_fields(const solution_state_t& state, const mara::config_t& cfg)
+{
+    using namespace mara::srhd;
+    using namespace std::placeholders;
+    auto cons_to_prim = std::bind(recover_primitive, std::placeholders::_1, gamma_law_index);
+
+    auto result = diagnostic_fields_t();
+
+    result.radial_gamma_beta = state.conserved
+    | divide(cell_volumes(state.vertices, cfg))
+    | nd::map(cons_to_prim)
+    | nd::map([] (auto p) { return p.gamma_beta_1(); })
+    | nd::to_shared();
+
+    result.radial_coordinates = state.vertices | nd::midpoint_on_axis(0) | nd::to_shared();
+
+    return result;
 }
 
 
@@ -108,7 +174,7 @@ static void write_solution(h5::Group&& group, const solution_state_t& state)
     group.write("time", state.time);
     group.write("iteration", state.iteration);
     group.write("vertices", state.vertices);
-    group.write("conserved", state.solution);
+    group.write("conserved", state.conserved);
 }
 
 static auto read_solution(h5::Group&& group)
@@ -117,7 +183,7 @@ static auto read_solution(h5::Group&& group)
     state.time      = group.read<double>("time");
     state.iteration = group.read<mara::rational_number_t>("iteration");
     state.vertices  = group.read<nd::unique_array<double, 1>>("vertices").shared();
-    state.solution  = group.read<nd::unique_array<mara::srhd::conserved_t, 1>>("conserved").shared();
+    state.conserved = group.read<nd::unique_array<mara::srhd::conserved_t, 1>>("conserved").shared();
     return state;
 }
 
@@ -135,12 +201,12 @@ static auto new_solution(const mara::config_t& cfg)
 
     auto nx = cfg.get<int>("N");
     auto vertices = nd::linspace(0, 1, nx + 1);
-    auto dv = cell_volumes(vertices);
+    auto dv = cell_volumes(vertices, cfg);
     auto xc = vertices | nd::midpoint_on_axis(0);
     auto state = solution_state_t();
 
     state.vertices = vertices.shared();
-    state.solution = xc | nd::map(initial_p) | nd::map(to_conserved) | multiply(dv) | nd::to_shared();
+    state.conserved = xc | nd::map(initial_p) | nd::map(to_conserved) | multiply(dv) | nd::to_shared();
 
     return state;
 }
@@ -153,26 +219,43 @@ static auto create_solution(const mara::config_t& run_config)
     : read_solution(h5::File(restart, "r").open_group("solution"));
 }
 
-static auto next_solution(const solution_state_t& state)
+static auto next_solution_spherical(const solution_state_t& state)
 {
-    // auto source_terms = std::bind(
-    //     &mara::srhd::primitive_t::spherical_geometry_source_terms,
-    //     std::placeholders::_1,
-    //     std::placeholders::_2,
-    //     M_PI / 2,
-    //     gamma_law_index);
+    using namespace mara::srhd;
+    using namespace std::placeholders;
 
-    // source_terms(mara::srhd::primitive_t(), 1.0);
+    auto source_terms = std::bind(&primitive_t::spherical_geometry_source_terms_radial, _1, _2, gamma_law_index);
+    auto cons_to_prim = std::bind(recover_primitive, std::placeholders::_1, gamma_law_index);
 
     auto dt = mara::make_time(0.25 / state.vertices.shape(0));
-    auto du = state.solution
-    | divide(cell_volumes(state.vertices))
+    auto dv = cell_volumes_spherical(state.vertices) | nd::to_shared();
+    auto da = face_areas_spherical(state.vertices);
+    auto rc = state.vertices | nd::midpoint_on_axis(0);
+
+    auto u0 = state.conserved;
+    auto p0 = u0 / dv | nd::map(cons_to_prim) | nd::to_shared();
+    auto s0 = nd::zip_arrays(p0, rc) | nd::apply(source_terms) | multiply(dv);
+    auto l0 = p0 | extend_zero_gradient(0) | intercell_flux(0) | multiply(-da) | nd::difference_on_axis(0);
+    auto u1 = u0 + (l0 + s0) * dt;
+
+    return solution_state_t {
+        state.time + dt.value,
+        state.iteration + 1,
+        state.vertices,
+        u1 | nd::to_shared() };
+}
+
+static auto next_solution_planar(const solution_state_t& state)
+{
+    auto dt = mara::make_time(0.25 / state.vertices.shape(0));
+    auto du = state.conserved
+    | divide(cell_volumes_planar(state.vertices))
     | nd::map(std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index))
-    | extend_constant(0)
+    | extend_zero_gradient(0)
     | nd::to_shared()
     | intercell_flux(0)
     | nd::to_shared()
-    | multiply(face_areas(state.vertices))
+    | multiply(face_areas_planar(state.vertices))
     | nd::difference_on_axis(0)
     | multiply(-dt);
 
@@ -180,7 +263,12 @@ static auto next_solution(const solution_state_t& state)
         state.time + dt.value,
         state.iteration + 1,
         state.vertices,
-        state.solution + du | nd::to_shared() };
+        state.conserved + du | nd::to_shared() };
+}
+
+static auto next_solution(const solution_state_t& state, const mara::config_t& cfg)
+{
+    return call_with_geometry(cfg, next_solution_planar, next_solution_spherical, state);
 }
 
 
@@ -191,7 +279,9 @@ static auto new_schedule(const mara::config_t& run_config)
 {
     auto schedule = mara::schedule_t();
     schedule.create("write_checkpoint");
+    schedule.create("write_diagnostics");
     schedule.mark_as_due("write_checkpoint");
+    schedule.mark_as_due("write_diagnostics");
     return schedule;
 }
 
@@ -207,10 +297,15 @@ static auto next_schedule(const mara::schedule_t& schedule, const mara::config_t
 {
     auto next_schedule = schedule;
     auto cpi = run_config.get<double>("cpi");
+    auto di = run_config.get<double>("di");
 
     if (time - schedule.last_performed("write_checkpoint") >= cpi)
     {
         next_schedule.mark_as_due("write_checkpoint", cpi);
+    }
+    if (time - schedule.last_performed("write_diagnostics") >= di)
+    {
+        next_schedule.mark_as_due("write_diagnostics", di);
     }
     return next_schedule;
 }
@@ -257,6 +352,19 @@ static void write_checkpoint(const app_state_t& state)
     std::printf("write checkpoint: %s\n", file.filename().data());
 }
 
+static void write_diagnostics(const app_state_t& state)
+{
+    auto count = state.schedule.num_times_performed("write_diagnostics");
+    auto file = h5::File(mara::create_numbered_filename("diagnostics", count, "h5"), "w");
+    auto diagnostics = make_diagnostic_fields(state.solution_state, state.run_config);
+
+    file.write("time", state.solution_state.time);
+    file.write("radial_gamma_beta", diagnostics.radial_gamma_beta);
+    file.write("radial_coordinates", diagnostics.radial_coordinates);
+
+    std::printf("write diagnostics: %s\n", file.filename().data());
+}
+
 static auto create_app_state(mara::config_t run_config)
 {
     auto state = app_state_t();
@@ -269,7 +377,7 @@ static auto create_app_state(mara::config_t run_config)
 static auto next(const app_state_t& state)
 {
     auto next_state = state;
-    next_state.solution_state = next_solution(state.solution_state);
+    next_state.solution_state = next_solution(state.solution_state, state.run_config);
     next_state.schedule       = next_schedule(state.schedule, state.run_config, state.solution_state.time);
     return next_state;
 }
@@ -289,6 +397,11 @@ static auto run_tasks(const app_state_t& state)
     {
         write_checkpoint(state);
         next_state.schedule.mark_as_completed("write_checkpoint");
+    }
+    if (state.schedule.is_due("write_diagnostics"))
+    {
+        write_diagnostics(state);
+        next_state.schedule.mark_as_completed("write_diagnostics");
     }
     return next_state;
 }
