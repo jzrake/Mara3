@@ -40,6 +40,9 @@ namespace shockwave
 
     struct diagnostic_fields_t
     {
+        double time = 0.0;
+        nd::shared_array<double, 1> mass_density;
+        nd::shared_array<double, 1> gas_pressure;
         nd::shared_array<double, 1> radial_gamma_beta;
         nd::shared_array<double, 1> radial_coordinates;
     };
@@ -152,14 +155,13 @@ auto make_diagnostic_fields(const solution_state_t& state, const mara::config_t&
     using namespace std::placeholders;
     auto cons_to_prim = std::bind(recover_primitive, std::placeholders::_1, gamma_law_index);
 
+    auto primitive = state.conserved | divide(cell_volumes(state.vertices, cfg)) | nd::map(cons_to_prim);
     auto result = diagnostic_fields_t();
 
-    result.radial_gamma_beta = state.conserved
-    | divide(cell_volumes(state.vertices, cfg))
-    | nd::map(cons_to_prim)
-    | nd::map([] (auto p) { return p.gamma_beta_1(); })
-    | nd::to_shared();
-
+    result.time               = state.time;
+    result.gas_pressure       = primitive | nd::map([] (auto p) { return p.gas_pressure(); }) | nd::to_shared();
+    result.mass_density       = primitive | nd::map([] (auto p) { return p.mass_density(); }) | nd::to_shared();
+    result.radial_gamma_beta  = primitive | nd::map([] (auto p) { return p.gamma_beta_1(); }) | nd::to_shared();
     result.radial_coordinates = state.vertices | nd::midpoint_on_axis(0) | nd::to_shared();
 
     return result;
@@ -191,16 +193,24 @@ static auto new_solution(const mara::config_t& cfg)
 {
     using namespace std::placeholders;
 
-    auto initial_p = [] (auto x)
+    // auto initial_p = [] (auto x)
+    // {
+    //     return mara::srhd::primitive_t()
+    //     .mass_density(x < 0.5 ? 1.0 : 0.100)
+    //     .gas_pressure(x < 0.5 ? 1.0 : 0.125);
+    // };
+
+    auto initial_p = [] (auto r)
     {
         return mara::srhd::primitive_t()
-        .mass_density(x < 0.5 ? 1.0 : 0.100)
-        .gas_pressure(x < 0.5 ? 1.0 : 0.125);
+        .mass_density(r < 2.0 ? 1.0 : 0.025)
+        .gas_pressure(r < 2.0 ? 1.0 : 0.025);
     };
     auto to_conserved = std::bind(&mara::srhd::primitive_t::to_conserved_density, _1, gamma_law_index);
 
     auto nx = cfg.get<int>("N");
-    auto vertices = nd::linspace(0, 1, nx + 1);
+    // auto vertices = nd::linspace(0, 1, nx + 1);
+    auto vertices = nd::linspace(1, 10, nx + 1);
     auto dv = cell_volumes(vertices, cfg);
     auto xc = vertices | nd::midpoint_on_axis(0);
     auto state = solution_state_t();
@@ -227,7 +237,7 @@ static auto next_solution_spherical(const solution_state_t& state)
     auto source_terms = std::bind(&primitive_t::spherical_geometry_source_terms_radial, _1, _2, gamma_law_index);
     auto cons_to_prim = std::bind(recover_primitive, std::placeholders::_1, gamma_law_index);
 
-    auto dt = mara::make_time(0.25 / state.vertices.shape(0));
+    auto dt = mara::make_time(0.025 / state.vertices.shape(0));
     auto dv = cell_volumes_spherical(state.vertices) | nd::to_shared();
     auto da = face_areas_spherical(state.vertices);
     auto rc = state.vertices | nd::midpoint_on_axis(0);
@@ -358,8 +368,10 @@ static void write_diagnostics(const app_state_t& state)
     auto file = h5::File(mara::create_numbered_filename("diagnostics", count, "h5"), "w");
     auto diagnostics = make_diagnostic_fields(state.solution_state, state.run_config);
 
-    file.write("time", state.solution_state.time);
-    file.write("radial_gamma_beta", diagnostics.radial_gamma_beta);
+    file.write("time",               diagnostics.time);
+    file.write("gas_pressure",       diagnostics.gas_pressure);
+    file.write("mass_density",       diagnostics.mass_density);
+    file.write("radial_gamma_beta",  diagnostics.radial_gamma_beta);
     file.write("radial_coordinates", diagnostics.radial_coordinates);
 
     std::printf("write diagnostics: %s\n", file.filename().data());
