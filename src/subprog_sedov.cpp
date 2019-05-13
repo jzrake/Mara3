@@ -316,17 +316,25 @@ static void write_diagnostics(const app_state_t& state)
 
 static void write_time_series(const app_state_t& state)
 {
-    FILE* time_series_file = std::fopen("time_series.dat", "a");
+    // FILE* time_series_file = std::fopen("time_series.dat", "a");
 
-    if (state.solution_state.iteration == 0)
-    {
-        std::fprintf(time_series_file, "# time shock_radius\n");
-    }
-    std::fprintf(time_series_file, "%6.4e %6.4e\n",
-        state.solution_state.time,
-        find_shock_radius(state.solution_state));
+    // std::fprintf(time_series_file, "%6.4e %6.4e\n",
+    //     state.solution_state.time,
+    //     find_shock_radius(state.solution_state));
 
-    std::fclose(time_series_file);
+    // std::fclose(time_series_file);
+
+    auto file = h5::File("time_series.h5", "r+");
+    auto time         = file.open_dataset("time");
+    auto shock_radius = file.open_dataset("shock_radius");
+    auto current_size = state.schedule.num_times_performed("write_time_series");
+    auto target_space = h5::hyperslab_t{{std::size_t(current_size)}, {1}, {1}, {1}};
+
+    time.set_extent(current_size + 1);
+    shock_radius.set_extent(current_size + 1);
+
+    time.write(state.solution_state.time, time.get_space().select(target_space));
+    shock_radius.write(find_shock_radius(state.solution_state), shock_radius.get_space().select(target_space));
 }
 
 static auto create_app_state(mara::config_t run_config)
@@ -389,8 +397,15 @@ static void prepare_filesystem(const mara::config_t& cfg)
 {
     if (cfg.get<std::string>("restart").empty())
     {
-        FILE* time_series_file = std::fopen("time_series.dat", "w");
-        std::fclose(time_series_file);
+        // FILE* time_series_file = std::fopen("time_series.dat", "w");
+        // std::fclose(time_series_file);
+
+        auto file = h5::File("time_series.h5", "w");
+        auto plist = h5::PropertyList::dataset_create().set_chunk(std::vector<std::size_t>{1000});
+        auto space = h5::Dataspace::unlimited(0);
+
+        file.require_dataset("time", h5::Datatype::native_double(), space, plist);
+        file.require_dataset("shock_radius", h5::Datatype::native_double(), space, plist);
     }
     else
     {

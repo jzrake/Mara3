@@ -100,8 +100,6 @@ T h5::detail::check(T result)
 // ============================================================================
 struct h5::hyperslab_t
 {
-    hyperslab_t() {}
-
     void check_valid(hsize_t rank) const
     {
         if (start.size() != rank ||
@@ -129,7 +127,6 @@ public:
     static PropertyList dataset_create() { return H5Pcreate(H5P_DATASET_CREATE); }
 
     ~PropertyList() { close(); }
-    PropertyList() {}
     PropertyList(const PropertyList& other) : id(H5Pcopy(other.id)) {}
     PropertyList(PropertyList&& other)
     {
@@ -260,6 +257,26 @@ public:
     {
         auto hdims = std::vector<hsize_t>(dims.begin(), dims.end());
         return detail::check(H5Screate_simple(int(hdims.size()), &hdims[0], nullptr));
+    }
+
+    template<typename Container>
+    static Dataspace simple(Container dims, Container max_dims)
+    {
+        if (dims.size() != max_dims.size())
+        {
+            throw std::invalid_argument("dims and max dims sizes do not agree");
+        }
+        auto hdims = std::vector<hsize_t>(dims.begin(), dims.end());
+        auto max_hdims = std::vector<hsize_t>(max_dims.begin(), max_dims.end());
+        return detail::check(H5Screate_simple(int(hdims.size()), &hdims[0], &max_hdims[0]));
+    }
+
+    template<typename... Args>
+    static Dataspace unlimited(Args... initial_sizes)
+    {
+        auto initial = std::vector<hsize_t> {hsize_t(initial_sizes)...};
+        auto maximum = std::vector<hsize_t>(sizeof...(initial_sizes), H5S_UNLIMITED);
+        return simple(initial, maximum);
     }
 
     //=========================================================================
@@ -642,6 +659,22 @@ public:
     PropertyList get_creation_plist() const
     {
         return detail::check(H5Dget_create_plist(link.id));
+    }
+
+    Dataset& set_extent(const std::vector<hsize_t>& hdims)
+    {
+        if (get_space().rank() != hdims.size())
+        {
+            throw std::invalid_argument("new and old extents have different ranks");
+        }
+        detail::check(H5Dset_extent(link.id, &hdims[0]));
+        return *this;
+    }
+
+    template<typename... Args>
+    Dataset& set_extent(Args... args)
+    {
+        return set_extent(std::vector<hsize_t>{hsize_t(args)...});
     }
 
 private:
