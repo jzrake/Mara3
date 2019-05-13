@@ -56,11 +56,11 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
      *
      * @return     A new primitive variable state
      */
-    primitive_t mass_density(double v) { auto res = *this; res[0] = v; return res; }
-    primitive_t gamma_beta_1(double v) { auto res = *this; res[1] = v; return res; }
-    primitive_t gamma_beta_2(double v) { auto res = *this; res[2] = v; return res; }
-    primitive_t gamma_beta_3(double v) { auto res = *this; res[3] = v; return res; }
-    primitive_t gas_pressure(double v) { auto res = *this; res[4] = v; return res; }
+    primitive_t with_mass_density(double v) { auto res = *this; res[0] = v; return res; }
+    primitive_t with_gamma_beta_1(double v) { auto res = *this; res[1] = v; return res; }
+    primitive_t with_gamma_beta_2(double v) { auto res = *this; res[2] = v; return res; }
+    primitive_t with_gamma_beta_3(double v) { auto res = *this; res[3] = v; return res; }
+    primitive_t with_gas_pressure(double v) { auto res = *this; res[4] = v; return res; }
 
 
 
@@ -73,9 +73,7 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
      */
     double specific_enthalpy(double gamma_law_index) const
     {
-        const double e = gas_pressure() / (mass_density() * (gamma_law_index - 1.0));
-        const double h = 1.0 + e + gas_pressure() / mass_density();
-        return h;
+        return enthalpy_density(gamma_law_index) / mass_density();
     }
 
 
@@ -90,6 +88,21 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
     double enthalpy_density(double gamma_law_index) const
     {
         return mass_density() + gas_pressure() * (1.0 + 1.0 / (gamma_law_index - 1.0));
+    }
+
+
+
+
+    /**
+     * @brief      Return the fluid specific entropy
+     *
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     log(p / rho^gamma)
+     */
+    double specific_entropy(double gamma_law_index) const
+    {
+        return std::log(gas_pressure() / std::pow(mass_density(), gamma_law_index));
     }
 
 
@@ -247,7 +260,7 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
 
 
 
-    /**
+    /** 
      * @brief      Return the spherical source terms for gamma-law SRHD
      *
      * @param[in]  spherical_radius   The spherical radius
@@ -335,8 +348,6 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
 
     bool solution_found = 0;
     int iteration = 0;
-    double f;
-    double g;
     double W0 = 1.0;
     double p = 0.0; // guess pressure
 
@@ -350,8 +361,8 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
         auto h   = 1.0 + e + p / d;
         auto cs2 = gm * p / (d * h);
 
-        f = d * e * (gm - 1.0) - p;
-        g = v2 * cs2 - 1.0;
+        auto f = d * e * (gm - 1.0) - p;
+        auto g = v2 * cs2 - 1.0;
         p -= f / g;
 
         if (std::fabs(f) < errorTolerance)

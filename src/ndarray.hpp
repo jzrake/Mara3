@@ -127,8 +127,11 @@ namespace nd
     inline auto to_unique();
     inline auto bounds_check();
     inline auto sum();
+    inline auto min();
+    inline auto max();
     inline auto all();
     inline auto any();
+    inline auto where();
     inline auto shift_by(int delta);
     inline auto select_axis(std::size_t axis_to_select);
     inline auto freeze_axis(std::size_t axis_to_freeze);
@@ -148,6 +151,8 @@ namespace nd
     template<typename Function> auto map(Function function);
     template<typename Function> auto apply(Function function);
     template<typename Function> auto binary_op(Function function);
+    template<typename ArrayType> auto min(ArrayType&& array);
+    template<typename ArrayType> auto max(ArrayType&& array);
 
 
     // array query support
@@ -2060,6 +2065,45 @@ auto nd::sum()
 
 
 
+template<typename ArrayType>
+auto nd::min(ArrayType&& array)
+{
+    auto result = nd::value_type_of<ArrayType>();
+    auto first = true;
+
+    for (const auto& i : array.indexes())
+    {
+        if (first || array(i) < result)
+        {
+            result = array(i);
+        }
+        first = false;
+    }
+    return result;
+}
+
+template<typename ArrayType>
+auto nd::max(ArrayType&& array)
+{
+    auto result = nd::value_type_of<ArrayType>();
+    auto first = true;
+
+    for (const auto& i : array.indexes())
+    {
+        if (first || array(i) > result)
+        {
+            result = array(i);
+        }
+        first = false;
+    }
+    return result;
+}
+
+auto nd::min() { return [] (auto&& array) { return min(std::forward<decltype(array)>(array)); }; }
+auto nd::max() { return [] (auto&& array) { return max(std::forward<decltype(array)>(array)); }; }
+
+
+
 
 /**
  * @brief      Return a reduce operator that returns true if all of its
@@ -2091,6 +2135,24 @@ auto nd::any()
     {
         for (const auto& i : array.indexes()) if (array(i)) return true;
         return false;
+    };
+}
+
+
+
+
+/**
+ * @brief      Return an operator that applies where to an array
+ *
+ * @return     The operator
+ *
+ * @note       See nd::where(ArrayType)
+ */
+auto nd::where()
+{
+    return [] (auto array)
+    {
+        return nd::where(array);
     };
 }
 

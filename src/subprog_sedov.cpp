@@ -13,7 +13,7 @@
 #include "physics_srhd.hpp"
 
 #define gamma_law_index (4. / 3)
-#define cfl_number 0.2
+#define cfl_number 0.4
 
 
 
@@ -22,15 +22,16 @@
 static auto config_template()
 {
     return mara::make_config_template()
-    .item("restart", std::string())
-    .item("tfinal", 1.0)
-    .item("cpi", 1.0)    // checkpoint interval
-    .item("di", 0.1)     // diagnostics interval
-    .item("outer_radius", 100.0)
-    .item("nr", 256)
-    .item("explosion_pressure", 1.0)
-    .item("explosion_density", 1.0)
-    .item("density_index", 0.0);
+    .item("restart",  std::string())   // name of a restart file (create new run if empty)
+    .item("nr",                 256)   // number of radial zones, per decade
+    .item("tfinal",             1.0)   // time to stop the simulation
+    .item("cpi",                1.0)   // checkpoint interval
+    .item("tsi",                0.1)   // time-series interval
+    .item("dfi",                0.1)   // diagnostic field interval (useful primitives)
+    .item("outer_radius",     100.0)   // outer boundary radius
+    .item("explosion_pressure", 1.0)   // gas pressure between 0.5 < r < 1.0
+    .item("explosion_density",  1.0)   // mass density between 0.5 < r < 1.0
+    .item("density_index",      0.0);  // index n of the power-law ambient density profile, rho = r^(-n)
 }
 
 namespace sedov
@@ -46,8 +47,10 @@ namespace sedov
     struct diagnostic_fields_t
     {
         double time = 0.0;
+        double shock_radius = 1.0;
         nd::shared_array<double, 1> mass_density;
         nd::shared_array<double, 1> gas_pressure;
+        nd::shared_array<double, 1> specific_entropy;
         nd::shared_array<double, 1> radial_gamma_beta;
         nd::shared_array<double, 1> radial_coordinates;
     };
@@ -88,20 +91,36 @@ auto cell_volumes(VertexArrayType vertices)
     return vertices | nd::zip_adjacent2_on_axis(0) | nd::apply(shell_volume);
 }
 
+auto find_shock_radius(const solution_state_t& state)
+{
+    using namespace mara::srhd;
+    using namespace std::placeholders;
+    auto cons_to_prim = std::bind(recover_primitive, _1, gamma_law_index);
+
+    auto primitive = state.conserved | nd::divide(cell_volumes(state.vertices)) | nd::map(cons_to_prim);
+    auto rc = state.vertices | nd::midpoint_on_axis(0);
+    auto s0 = primitive | nd::map(std::bind(&primitive_t::specific_entropy, _1, gamma_law_index));
+    auto ds = s0 | nd::difference_on_axis(0);
+    auto shock_index = nd::where(ds == nd::min(ds)) | nd::read_index(0);
+    return rc(shock_index);
+}
+
 auto make_diagnostic_fields(const solution_state_t& state)
 {
     using namespace mara::srhd;
     using namespace std::placeholders;
-    auto cons_to_prim = std::bind(recover_primitive, std::placeholders::_1, gamma_law_index);
+    auto cons_to_prim = std::bind(recover_primitive, _1, gamma_law_index);
 
     auto primitive = state.conserved | nd::divide(cell_volumes(state.vertices)) | nd::map(cons_to_prim);
     auto result = diagnostic_fields_t();
 
     result.time               = state.time;
-    result.gas_pressure       = primitive | nd::map([] (auto p) { return p.gas_pressure(); }) | nd::to_shared();
-    result.mass_density       = primitive | nd::map([] (auto p) { return p.mass_density(); }) | nd::to_shared();
-    result.radial_gamma_beta  = primitive | nd::map([] (auto p) { return p.gamma_beta_1(); }) | nd::to_shared();
+    result.gas_pressure       = primitive | nd::map(std::mem_fn(&primitive_t::gas_pressure)) | nd::to_shared();
+    result.mass_density       = primitive | nd::map(std::mem_fn(&primitive_t::mass_density)) | nd::to_shared();
+    result.radial_gamma_beta  = primitive | nd::map(std::mem_fn(&primitive_t::gamma_beta_1)) | nd::to_shared();
+    result.specific_entropy   = primitive | nd::map(std::bind(&primitive_t::specific_entropy, _1, gamma_law_index)) | nd::to_shared();
     result.radial_coordinates = state.vertices | nd::midpoint_on_axis(0) | nd::to_shared();
+    result.shock_radius       = find_shock_radius(state);
 
     return result;
 }
@@ -136,12 +155,12 @@ static auto new_solution(const mara::config_t& cfg)
     {
         auto explosion_density  = cfg.get<double>("explosion_density");
         auto explosion_pressure = cfg.get<double>("explosion_pressure");
-        auto density_index      = cfg.get<double>("explosion_density");
-        auto temperature        = 1e-3;
+        auto density_index      = cfg.get<double>("density_index");
+        auto temperature        = 1e-6;
 
         return mara::srhd::primitive_t()
-        .mass_density(r < 1.0 ? explosion_density  : std::pow(r, -density_index))
-        .gas_pressure(r < 1.0 ? explosion_pressure : std::pow(r, -density_index) * temperature);
+        .with_mass_density(r < 1.0 ? explosion_density  : std::pow(r, -density_index))
+        .with_gas_pressure(r < 1.0 ? explosion_pressure : std::pow(r, -density_index) * temperature);
     };
     auto to_conserved = std::bind(&mara::srhd::primitive_t::to_conserved_density, _1, gamma_law_index);
 
@@ -151,9 +170,6 @@ static auto new_solution(const mara::config_t& cfg)
 
     auto vertices = nd::linspace(-0.5, radial_decades, int(radial_decades * nr) + 1)
     | nd::map([] (auto y) { return std::pow(10.0, y); });
-
-    // For linear-spaced radial zones:
-    // auto vertices = nd::linspace(1, outer_radius, nr);
 
     auto dv = cell_volumes(vertices);
     auto xc = vertices | nd::midpoint_on_axis(0);
@@ -181,7 +197,6 @@ static auto next_solution(const solution_state_t& state)
     using namespace std::placeholders;
 
     auto source_terms = std::bind(&primitive_t::spherical_geometry_source_terms_radial, _1, _2, gamma_law_index);
-    // auto source_terms = std::bind(&primitive_t::spherical_geometry_source_terms, _1, _2, M_PI / 2, gamma_law_index);
     auto cons_to_prim = std::bind(recover_primitive, std::placeholders::_1, gamma_law_index);
 
     auto dr_min = state.vertices | nd::difference_on_axis(0) | nd::read_index(0);
@@ -212,6 +227,7 @@ static auto new_schedule(const mara::config_t& run_config)
     auto schedule = mara::schedule_t();
     schedule.create("write_checkpoint");
     schedule.create("write_diagnostics");
+    schedule.create("write_time_series");
     schedule.mark_as_due("write_checkpoint");
     schedule.mark_as_due("write_diagnostics");
     return schedule;
@@ -229,16 +245,13 @@ static auto next_schedule(const mara::schedule_t& schedule, const mara::config_t
 {
     auto next_schedule = schedule;
     auto cpi = run_config.get<double>("cpi");
-    auto di = run_config.get<double>("di");
+    auto dfi = run_config.get<double>("dfi");
+    auto tsi = run_config.get<double>("tsi");
 
-    if (time - schedule.last_performed("write_checkpoint") >= cpi)
-    {
-        next_schedule.mark_as_due("write_checkpoint", cpi);
-    }
-    if (time - schedule.last_performed("write_diagnostics") >= di)
-    {
-        next_schedule.mark_as_due("write_diagnostics", di);
-    }
+    if (time - schedule.last_performed("write_checkpoint")  >= cpi) next_schedule.mark_as_due("write_checkpoint",  cpi);
+    if (time - schedule.last_performed("write_diagnostics") >= dfi) next_schedule.mark_as_due("write_diagnostics", dfi);
+    if (time - schedule.last_performed("write_time_series") >= tsi) next_schedule.mark_as_due("write_time_series", tsi);
+
     return next_schedule;
 }
 
@@ -293,10 +306,27 @@ static void write_diagnostics(const app_state_t& state)
     file.write("time",               diagnostics.time);
     file.write("gas_pressure",       diagnostics.gas_pressure);
     file.write("mass_density",       diagnostics.mass_density);
+    file.write("specific_entropy",   diagnostics.specific_entropy);
     file.write("radial_gamma_beta",  diagnostics.radial_gamma_beta);
     file.write("radial_coordinates", diagnostics.radial_coordinates);
+    file.write("shock_radius",       diagnostics.shock_radius);
 
     std::printf("write diagnostics: %s\n", file.filename().data());
+}
+
+static void write_time_series(const app_state_t& state)
+{
+    FILE* time_series_file = std::fopen("time_series.dat", "a");
+
+    if (state.solution_state.iteration == 0)
+    {
+        std::fprintf(time_series_file, "# time shock_radius\n");
+    }
+    std::fprintf(time_series_file, "%6.4e %6.4e\n",
+        state.solution_state.time,
+        find_shock_radius(state.solution_state));
+
+    std::fclose(time_series_file);
 }
 
 static auto create_app_state(mara::config_t run_config)
@@ -337,6 +367,11 @@ static auto run_tasks(const app_state_t& state)
         write_diagnostics(state);
         next_state.schedule.mark_as_completed("write_diagnostics");
     }
+    if (state.schedule.is_due("write_time_series"))
+    {
+        write_time_series(state);
+        next_state.schedule.mark_as_completed("write_time_series");
+    }
     return next_state;
 }
 
@@ -348,6 +383,19 @@ static void print_run_loop_message(const solution_state_t& solution, mara::perf_
 {
     auto kzps = solution.vertices.size() / perf.execution_time_ms;
     std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n", solution.iteration.as_integral(), solution.time, kzps);
+}
+
+static void prepare_filesystem(const mara::config_t& cfg)
+{
+    if (cfg.get<std::string>("restart").empty())
+    {
+        FILE* time_series_file = std::fopen("time_series.dat", "w");
+        std::fclose(time_series_file);
+    }
+    else
+    {
+        // should truncate trailing iterations here...
+    }
 }
 
 
@@ -363,6 +411,7 @@ public:
         auto run_config = create_run_config(argc, argv);
         auto perf = mara::perf_diagnostics_t();
         auto state = create_app_state(run_config);
+        prepare_filesystem(run_config);
 
         mara::pretty_print(std::cout, "config", run_config);
         state = run_tasks(state);
