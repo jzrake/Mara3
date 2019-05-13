@@ -39,6 +39,7 @@ namespace h5
 {
     template <class GroupType, class DatasetType>
     class Location;
+    class PropertyList;
     class Link;
     class File;
     class Group;
@@ -122,6 +123,54 @@ struct h5::hyperslab_t
 
 
 //=============================================================================
+class h5::PropertyList final
+{
+public:
+    static PropertyList dataset_create() { return H5Pcreate(H5P_DATASET_CREATE); }
+
+    ~PropertyList() { close(); }
+    PropertyList() {}
+    PropertyList(const PropertyList& other) : id(H5Pcopy(other.id)) {}
+    PropertyList(PropertyList&& other)
+    {
+        id = other.id;
+        other.id = -1;
+    }
+
+    void close()
+    {
+        if (id != -1)
+        {
+            H5Pclose(id);
+        }
+    }
+
+    template<typename Container>
+    PropertyList& set_chunk(Container dims)
+    {
+        auto hdims = std::vector<hsize_t>(dims.begin(), dims.end());
+        detail::check(H5Pset_chunk(id, int(hdims.size()), &hdims[0]));
+        return *this;
+    }
+
+    bool operator==(const PropertyList& other) const
+    {
+        return detail::check(H5Pequal(id, other.id));
+    }
+
+private:
+    //=========================================================================
+    friend class Dataset;
+    friend class Link;
+
+    PropertyList(hid_t id) : id(id) {}
+    hid_t id = -1;
+};
+
+
+
+
+//=============================================================================
 class h5::Datatype final
 {
 public:
@@ -152,7 +201,7 @@ public:
     Datatype& operator=(const Datatype& other)
     {
         close();
-        id = H5Tcopy(other.id);
+        id = detail::check(H5Tcopy(other.id));
         return *this;
     }
 
@@ -181,7 +230,7 @@ public:
     Datatype as_array(std::size_t size) const
     {
         hsize_t dims = size;
-        return H5Tarray_create(id, 1, &dims);
+        return detail::check(H5Tarray_create(id, 1, &dims));
     }
 
 private:
@@ -451,19 +500,18 @@ private:
 
     Link create_group(const std::string& name)
     {
-        return detail::check(H5Gcreate(id, name.data(),
-            H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
+        return detail::check(H5Gcreate(id, name.data(), H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
     }
 
     Link open_dataset(const std::string& name)
     {
-        return detail::check(H5Dopen(id, name.data(),
-            H5P_DEFAULT));
+        return detail::check(H5Dopen(id, name.data(), H5P_DEFAULT));
     }
 
     Link create_dataset(const std::string& name,
                         const Datatype& type,
-                        const Dataspace& space)
+                        const Dataspace& space,
+                        const PropertyList& creation_plist=PropertyList::dataset_create())
     {
         return detail::check(H5Dcreate(
             id,
@@ -471,7 +519,7 @@ private:
             type.id,
             space.id,
             H5P_DEFAULT,
-            H5P_DEFAULT,
+            creation_plist.id,
             H5P_DEFAULT));
     }
 
@@ -591,6 +639,11 @@ public:
         return value;
     }
 
+    PropertyList get_creation_plist() const
+    {
+        return detail::check(H5Dget_create_plist(link.id));
+    }
+
 private:
     //=========================================================================
     Datatype check_compatible(const Datatype& type) const
@@ -675,21 +728,23 @@ public:
 
     DatasetType require_dataset(const std::string& name,
                                 const Datatype& type,
-                                const Dataspace& space)
+                                const Dataspace& space,
+                                const PropertyList& creation_plist=PropertyList::dataset_create())
     {
         if (link.contains(name, Object::dataset))
         {
             auto dset = open_dataset(name);
 
             if (dset.get_type() == type &&
-                dset.get_space() == space)
+                dset.get_space() == space &&
+                dset.get_creation_plist() == PropertyList::dataset_create())
             {
                 return dset;
             }
             throw std::invalid_argument(
                 "data set with different type or space already exists");
         }
-        return link.create_dataset(name, type, space);
+        return link.create_dataset(name, type, space, creation_plist);
     }
 
     template<typename T>
