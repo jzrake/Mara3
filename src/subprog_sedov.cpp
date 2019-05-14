@@ -77,7 +77,7 @@ static auto intercell_flux(std::size_t axis)
     };
 }
 
-auto extend_reflecting_inner()
+static auto extend_reflecting_inner()
 {
     return [] (auto array)
     {
@@ -88,7 +88,7 @@ auto extend_reflecting_inner()
     };
 }
 
-auto extend_zero_gradient_outer()
+static auto extend_zero_gradient_outer()
 {
     return [] (auto array)
     {
@@ -112,7 +112,7 @@ auto cell_volumes(VertexArrayType vertices)
     return vertices | nd::zip_adjacent2_on_axis(0) | nd::apply(shell_volume);
 }
 
-auto find_shock_radius(const solution_state_t& state)
+static auto find_shock_radius(const solution_state_t& state)
 {
     using namespace mara::srhd;
     using namespace std::placeholders;
@@ -126,7 +126,7 @@ auto find_shock_radius(const solution_state_t& state)
     return rc(shock_index);
 }
 
-auto make_diagnostic_fields(const solution_state_t& state)
+static auto make_diagnostic_fields(const solution_state_t& state)
 {
     using namespace mara::srhd;
     using namespace std::placeholders;
