@@ -142,12 +142,17 @@ public:
         }
     }
 
-    template<typename Container>
-    PropertyList& set_chunk(Container dims)
+    PropertyList& set_chunk(std::vector<hsize_t> dims)
     {
         auto hdims = std::vector<hsize_t>(dims.begin(), dims.end());
         detail::check(H5Pset_chunk(id, int(hdims.size()), &hdims[0]));
         return *this;
+    }
+
+    template<typename... Args>
+    PropertyList& set_chunk(Args... args)
+    {
+        return set_chunk(std::vector<hsize_t>{hsize_t(args)...});
     }
 
     bool operator==(const PropertyList& other) const
@@ -247,6 +252,7 @@ class h5::Dataspace
 {
 public:
 
+    //=========================================================================
     static Dataspace scalar()
     {
         return detail::check(H5Screate(H5S_SCALAR));
@@ -854,6 +860,7 @@ class h5::File final : public Location<Group, Dataset>
 {
 public:
 
+    //=========================================================================
     static bool exists(const std::string& filename)
     {
         return H5Fis_hdf5(filename.data()) > 0;

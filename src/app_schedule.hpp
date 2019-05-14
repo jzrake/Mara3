@@ -114,6 +114,12 @@ public:
         at(task_name).last_performed += amount_to_increase_last_performed_by;
     }
 
+    void create_and_mark_as_due(std::string task_name)
+    {
+        create(task_name);
+        mark_as_due(task_name);
+    }
+
     void mark_as_completed(std::string task_name)
     {
         at(task_name).is_due = false;        

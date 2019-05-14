@@ -6,6 +6,7 @@
 #include "core_geometric.hpp"
 #include "core_rational.hpp"
 #include "app_config.hpp"
+#include "app_filesystem.hpp"
 #include "app_serialize.hpp"
 #include "app_schedule.hpp"
 #include "app_performance.hpp"
@@ -23,6 +24,7 @@ static auto config_template()
 {
     return mara::make_config_template()
     .item("restart",  std::string())   // name of a restart file (create new run if empty)
+    .item("outdir",          "data")   // directory to put output files in
     .item("nr",                 256)   // number of radial zones, per decade
     .item("tfinal",             1.0)   // time to stop the simulation
     .item("cpi",                1.0)   // checkpoint interval
@@ -225,11 +227,9 @@ static auto next_solution(const solution_state_t& state)
 static auto new_schedule(const mara::config_t& run_config)
 {
     auto schedule = mara::schedule_t();
-    schedule.create("write_checkpoint");
-    schedule.create("write_diagnostics");
-    schedule.create("write_time_series");
-    schedule.mark_as_due("write_checkpoint");
-    schedule.mark_as_due("write_diagnostics");
+    schedule.create_and_mark_as_due("write_checkpoint");
+    schedule.create_and_mark_as_due("write_diagnostics");
+    schedule.create_and_mark_as_due("write_time_series");
     return schedule;
 }
 
@@ -286,10 +286,10 @@ struct app_state_t
     mara::config_t run_config;
 };
 
-static void write_checkpoint(const app_state_t& state)
+static void write_checkpoint(const app_state_t& state, std::string outdir)
 {
     auto count = state.schedule.num_times_performed("write_checkpoint");
-    auto file = h5::File(mara::create_numbered_filename("chkpt", count, "h5"), "w");
+    auto file = h5::File(mara::filesystem::join({outdir, mara::create_numbered_filename("chkpt", count, "h5")}), "w");
     write_solution(file.require_group("solution"), state.solution_state);
     mara::write_schedule(file.require_group("schedule"), state.schedule);
     mara::write_config(file.require_group("run_config"), state.run_config);
@@ -297,10 +297,10 @@ static void write_checkpoint(const app_state_t& state)
     std::printf("write checkpoint: %s\n", file.filename().data());
 }
 
-static void write_diagnostics(const app_state_t& state)
+static void write_diagnostics(const app_state_t& state, std::string outdir)
 {
     auto count = state.schedule.num_times_performed("write_diagnostics");
-    auto file = h5::File(mara::create_numbered_filename("diagnostics", count, "h5"), "w");
+    auto file = h5::File(mara::filesystem::join({outdir, mara::create_numbered_filename("diagnostics", count, "h5")}), "w");
     auto diagnostics = make_diagnostic_fields(state.solution_state);
 
     file.write("time",               diagnostics.time);
@@ -314,17 +314,9 @@ static void write_diagnostics(const app_state_t& state)
     std::printf("write diagnostics: %s\n", file.filename().data());
 }
 
-static void write_time_series(const app_state_t& state)
+static void write_time_series(const app_state_t& state, std::string outdir)
 {
-    // FILE* time_series_file = std::fopen("time_series.dat", "a");
-
-    // std::fprintf(time_series_file, "%6.4e %6.4e\n",
-    //     state.solution_state.time,
-    //     find_shock_radius(state.solution_state));
-
-    // std::fclose(time_series_file);
-
-    auto file = h5::File("time_series.h5", "r+");
+    auto file = h5::File(mara::filesystem::join({outdir, "time_series.h5"}), "r+");
     auto time         = file.open_dataset("time");
     auto shock_radius = file.open_dataset("shock_radius");
     auto current_size = state.schedule.num_times_performed("write_time_series");
@@ -364,20 +356,21 @@ static auto simulation_should_continue(const app_state_t& state)
 static auto run_tasks(const app_state_t& state)
 {
     auto next_state = state;
+    auto outdir = state.run_config.get<std::string>("outdir");
 
     if (state.schedule.is_due("write_checkpoint"))
     {
-        write_checkpoint(state);
+        write_checkpoint(state, outdir);
         next_state.schedule.mark_as_completed("write_checkpoint");
     }
     if (state.schedule.is_due("write_diagnostics"))
     {
-        write_diagnostics(state);
+        write_diagnostics(state, outdir);
         next_state.schedule.mark_as_completed("write_diagnostics");
     }
     if (state.schedule.is_due("write_time_series"))
     {
-        write_time_series(state);
+        write_time_series(state, outdir);
         next_state.schedule.mark_as_completed("write_time_series");
     }
     return next_state;
@@ -397,11 +390,11 @@ static void prepare_filesystem(const mara::config_t& cfg)
 {
     if (cfg.get<std::string>("restart").empty())
     {
-        // FILE* time_series_file = std::fopen("time_series.dat", "w");
-        // std::fclose(time_series_file);
+        auto outdir = cfg.get<std::string>("outdir");
+        mara::filesystem::require_dir(outdir);
 
-        auto file = h5::File("time_series.h5", "w");
-        auto plist = h5::PropertyList::dataset_create().set_chunk(std::vector<std::size_t>{1000});
+        auto file = h5::File(mara::filesystem::join({outdir, "time_series.h5"}), "w");
+        auto plist = h5::PropertyList::dataset_create().set_chunk(1000);
         auto space = h5::Dataspace::unlimited(0);
 
         file.require_dataset("time", h5::Datatype::native_double(), space, plist);
