@@ -49,6 +49,12 @@ namespace mara::filesystem
     inline int remove_recurse(std::string path);
     inline bool isfile(std::string path);
     inline bool isdir(std::string path);
+
+    template<typename... Args>
+    std::string join(Args... args)
+    {
+        return join(std::vector<std::string>{args...});
+    }
 }
 
 

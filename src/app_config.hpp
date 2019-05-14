@@ -68,6 +68,10 @@ public:
     : parameters(parameters)
     , template_items(template_items) {}
 
+    const int& get_int(std::string key) const { return get<int>(key); }
+    const double& get_double(std::string key) const { return get<double>(key); }
+    const std::string& get_string(std::string key) const { return get<std::string>(key); }
+
     template<typename ValueType>
     const ValueType& get(std::string key) const
     {

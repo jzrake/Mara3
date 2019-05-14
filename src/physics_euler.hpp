@@ -6,13 +6,13 @@
 
 
 //=============================================================================
-namespace mara { struct srhd; }
+namespace mara { struct euler; }
 
 
 
 
 //=============================================================================
-struct mara::srhd
+struct mara::euler
 {
     using conserved_density_t = covariant_sequence_t<unit_mass_density<double>, 5>;
     using conserved_t         = covariant_sequence_t<unit_mass<double>, 5>;
@@ -39,7 +39,7 @@ struct mara::srhd
 
 
 //=============================================================================
-struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, primitive_t>
+struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, primitive_t>
 {
 
 
@@ -48,9 +48,9 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
      * @brief      Retrieve const-references to the quantities by name.
      */
     const double& mass_density() const { return operator[](0); }
-    const double& gamma_beta_1() const { return operator[](1); }
-    const double& gamma_beta_2() const { return operator[](2); }
-    const double& gamma_beta_3() const { return operator[](3); }
+    const double& velocity_1() const { return operator[](1); }
+    const double& velocity_2() const { return operator[](2); }
+    const double& velocity_3() const { return operator[](3); }
     const double& gas_pressure() const { return operator[](4); }
 
 
@@ -63,38 +63,10 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
      * @return     A new primitive variable state
      */
     primitive_t with_mass_density(double v) const { auto res = *this; res[0] = v; return res; }
-    primitive_t with_gamma_beta_1(double v) const { auto res = *this; res[1] = v; return res; }
-    primitive_t with_gamma_beta_2(double v) const { auto res = *this; res[2] = v; return res; }
-    primitive_t with_gamma_beta_3(double v) const { auto res = *this; res[3] = v; return res; }
+    primitive_t with_velocity_1(double v)   const { auto res = *this; res[1] = v; return res; }
+    primitive_t with_velocity_2(double v)   const { auto res = *this; res[2] = v; return res; }
+    primitive_t with_velocity_3(double v)   const { auto res = *this; res[3] = v; return res; }
     primitive_t with_gas_pressure(double v) const { auto res = *this; res[4] = v; return res; }
-
-
-
-    /**
-     * @brief      Return the fluid specific enthalpy.
-     *
-     * @param[in]  gamma_law_index  The gamma law index
-     *
-     * @return     h
-     */
-    double specific_enthalpy(double gamma_law_index) const
-    {
-        return enthalpy_density(gamma_law_index) / mass_density();
-    }
-
-
-
-    /**
-     * @brief      Return the fluid enthalpy density.
-     *
-     * @param[in]  gamma_law_index  The gamma law index
-     *
-     * @return     rho h
-     */
-    double enthalpy_density(double gamma_law_index) const
-    {
-        return mass_density() + gas_pressure() * (1.0 + 1.0 / (gamma_law_index - 1.0));
-    }
 
 
 
@@ -119,23 +91,10 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
      *
      * @return     u^2
      */
-    double gamma_beta_squared() const
+    double velocity_squared() const
     {
         const auto&_ = *this;
         return _[1] * _[1] + _[2] * _[2] + _[3] * _[3];
-    }
-
-
-
-
-    /**
-     * @brief      Return the fluid Lorentz factor.
-     *
-     * @return     1 + u^2
-     */
-    double lorentz_factor() const
-    {
-        return std::sqrt(1.0 + gamma_beta_squared());
     }
 
 
@@ -149,10 +108,10 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
      *
      * @return     v / c
      */
-    double beta_along(const unit_vector_t& nhat) const
+    double velocity_along(const unit_vector_t& nhat) const
     {
         const auto&_ = *this;
-        return nhat.project(_[1], _[2], _[3]) / lorentz_factor();
+        return nhat.project(_[1], _[2], _[3]);
     }
 
 
@@ -163,11 +122,11 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
      *
      * @param[in]  gamma_law_index  The gamma law index
      *
-     * @return     gamma p / (rho h)
+     * @return     gamma p / rho
      */
     double sound_speed_squared(double gamma_law_index) const
     {
-        return gamma_law_index * gas_pressure() / enthalpy_density(gamma_law_index);
+        return gamma_law_index * gas_pressure() / mass_density();
     }
 
 
@@ -184,16 +143,14 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
     conserved_density_t to_conserved_density(double gamma_law_index) const
     {
         const auto& _ = *this;
-        auto W = lorentz_factor();
-        auto h = specific_enthalpy(gamma_law_index);
-        auto D = mass_density() * W;
+        auto d = mass_density();
         auto p = gas_pressure();
         auto U = conserved_density_t();
-        U[0].value = D;
-        U[1].value = D * _[1] * h;
-        U[2].value = D * _[2] * h;
-        U[3].value = D * _[3] * h;
-        U[4].value = D * h * W - p - D;
+        U[0].value = d;
+        U[1].value = d * _[1];
+        U[2].value = d * _[2];
+        U[3].value = d * _[3];
+        U[4].value = 0.5 * d * velocity_squared() + p / (gamma_law_index - 1);
         return U;
     }
 
@@ -229,7 +186,7 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
      */
     flux_vector_t flux(const unit_vector_t& nhat, const conserved_density_t& U) const
     {
-        auto v = beta_along(nhat);
+        auto v = velocity_along(nhat);
         auto p = gas_pressure();
         auto F = flux_vector_t();
         F[0].value = v * U[0].value;
@@ -252,22 +209,18 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
      */
     wavespeeds_t wavespeeds(const unit_vector_t& nhat, double gamma_law_index) const
     {
-        auto c2 = sound_speed_squared(gamma_law_index);
-        auto vn = beta_along(nhat);
-        auto uu = gamma_beta_squared();
-        auto vv = uu / (1 + uu);
-        auto v2 = vn * vn;
-        auto k0 = std::sqrt(c2 * (1 - vv) * (1 - vv * c2 - v2 * (1 - c2)));
+        auto cs = std::sqrt(sound_speed_squared(gamma_law_index));
+        auto vn = velocity_along(nhat);
         return {
-            make_velocity((vn * (1 - c2) - k0) / (1 - vv * c2)),
-            make_velocity((vn * (1 - c2) + k0) / (1 - vv * c2)),
+            make_velocity(vn - cs),
+            make_velocity(vn + cs),
         };
     }
 
 
 
     /** 
-     * @brief      Return the spherical source terms for gamma-law SRHD
+     * @brief      Return the spherical source terms for gamma-law euler
      *
      * @param[in]  spherical_radius   The spherical radius
      * @param[in]  polar_angle_theta  The polar angle theta
@@ -281,16 +234,16 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
         double gamma_law_index)
     {
         auto cotq = std::tan(M_PI_2 - polar_angle_theta);
-        auto ur = gamma_beta_1();
-        auto uq = gamma_beta_2();
-        auto up = gamma_beta_3();
+        auto vr = velocity_1();
+        auto vq = velocity_2();
+        auto vp = velocity_3();
         auto pg = gas_pressure();
-        auto H = enthalpy_density(gamma_law_index);
+        auto d = mass_density();
         auto r = spherical_radius;
         auto S = covariant_sequence_t<dimensional_value_t<-3, 1, -1, double>, 5>();
-        S[1].value = (2.0  * pg + H * (uq * uq        + up * up)) / r;
-        S[2].value = (cotq * pg + H * (up * up * cotq - ur * uq)) / r;
-        S[3].value =        -up * H * (ur + uq * cotq) / r;
+        S[1].value = (2.0  * pg + d * (vq * vq        + vp * vp)) / r;
+        S[2].value = (cotq * pg + d * (vp * vp * cotq - vr * vq)) / r;
+        S[3].value =        -vp * d * (vr + vq * cotq) / r;
         return S;
     }
 
@@ -305,12 +258,12 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
      */
     auto spherical_geometry_source_terms_radial(double spherical_radius, double gamma_law_index)
     {
-        auto uq = gamma_beta_2();
+        auto vq = velocity_2();
         auto pg = gas_pressure();
-        auto H = enthalpy_density(gamma_law_index);
+        auto d = mass_density();
         auto r = spherical_radius;
         auto S = covariant_sequence_t<dimensional_value_t<-3, 1, -1, double>, 5>();
-        S[1].value = (2.0 * pg + H * uq * uq) / r;
+        S[1].value = (2.0 * pg + d * vq * vq) / r;
         return S;
     }
 };
@@ -327,87 +280,20 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
  *
  * @return     A primitive variable state, if the recovery succeeds
  */
-mara::srhd::primitive_t mara::srhd::recover_primitive(
+mara::euler::primitive_t mara::euler::recover_primitive(
     const conserved_density_t& U,
     double gamma_law_index)
 {
-    constexpr bool allowNegativePressure = false;
-    constexpr int newtonIterMax          = 50;
-    constexpr double errorTolerance      = 1e-10;
-
-    // indexes to conserved quanitites
-    enum {
-        DDD = 0,
-        S11 = 1,
-        S22 = 2,
-        S33 = 3,
-        TAU = 4,
-    };
-
-    const double gm  = gamma_law_index;
-    const double D   = U[DDD].value;
-    const double tau = U[TAU].value;
-    const double SS  =
-    U[S11].value * U[S11].value +
-    U[S22].value * U[S22].value +
-    U[S33].value * U[S33].value;
-
-    bool solution_found = 0;
-    int iteration = 0;
-    double W0 = 1.0;
-    double p = 0.0; // guess pressure
-
-    while (iteration < newtonIterMax)
-    {
-        auto v2  = std::min(SS / std::pow(tau + D + p, 2), 1.0 - 1e-10);
-        auto W2  = 1.0 / (1.0 - v2);
-        auto W   = std::sqrt(W2);
-        auto e   = (tau + D * (1.0 - W) + p * (1.0 - W2)) / (D * W);
-        auto d   = D / W;
-        auto h   = 1.0 + e + p / d;
-        auto cs2 = gm * p / (d * h);
-
-        auto f = d * e * (gm - 1.0) - p;
-        auto g = v2 * cs2 - 1.0;
-        p -= f / g;
-
-        if (std::fabs(f) < errorTolerance)
-        {
-            W0 = W;
-            solution_found = true;
-            break;
-        }
-        ++iteration;
-    }
-
+    auto p_squared = (U[1] * U[1] + U[2] * U[2] + U[3] * U[3]).value;
+    auto d = U[0].value;
     auto P = primitive_t();
 
-    P[0] = D / W0;
-    P[1] = W0 * U[S11].value / (tau + D + p);
-    P[2] = W0 * U[S22].value / (tau + D + p);
-    P[3] = W0 * U[S33].value / (tau + D + p);
-    P[4] = p;
+    P[0] =  d;
+    P[1] =  U[1].value / d;
+    P[2] =  U[2].value / d;
+    P[3] =  U[3].value / d;
+    P[4] = (U[4].value - 0.5 * p_squared / d) * (gamma_law_index - 1.0);
 
-    if (! solution_found)
-    {
-        throw std::invalid_argument("mara::srhd::recover_primitive failure: "
-            "root finder not converging U=" + to_string(U));
-    }
-    if (P.gas_pressure() < 0.0 && ! allowNegativePressure)
-    {
-        throw std::invalid_argument("mara::srhd::recover_primitive failure: "
-            "negative pressure U=" + mara::to_string(U));
-    }
-    if (P.mass_density() < 0.0)
-    {
-        throw std::invalid_argument("mara::srhd::recover_primitive failure: "
-            "negative density U=" + mara::to_string(U));
-    }
-    if (std::isnan(W0))
-    {
-        throw std::invalid_argument("mara::srhd::recover_primitive failure: "
-            "nan W U=" + mara::to_string(U));
-    }
     return P;
 }
 
@@ -424,7 +310,7 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
  *
  * @return     A vector of fluxes
  */
-mara::srhd::flux_vector_t mara::srhd::riemann_hlle(
+mara::euler::flux_vector_t mara::euler::riemann_hlle(
     const primitive_t& Pl,
     const primitive_t& Pr,
     const unit_vector_t& nhat,
