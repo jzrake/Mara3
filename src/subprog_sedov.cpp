@@ -77,6 +77,25 @@ static auto intercell_flux(std::size_t axis)
     };
 }
 
+auto extend_reflecting_inner()
+{
+    return [] (auto array)
+    {
+        auto xl = array
+        | nd::select_first(1, 0)
+        | nd::map([] (auto p) { return p.with_gamma_beta_1(-p.gamma_beta_1()); });
+        return xl | nd::concat(array);
+    };
+}
+
+auto extend_zero_gradient_outer()
+{
+    return [] (auto array)
+    {
+        return array | nd::concat(array | nd::select_final(1, 0));
+    };
+}
+
 template<typename VertexArrayType>
 auto face_areas(VertexArrayType vertices)
 {
@@ -200,6 +219,7 @@ static auto next_solution(const solution_state_t& state)
 
     auto source_terms = std::bind(&primitive_t::spherical_geometry_source_terms_radial, _1, _2, gamma_law_index);
     auto cons_to_prim = std::bind(recover_primitive, std::placeholders::_1, gamma_law_index);
+    auto extend_bc = mara::compose(extend_reflecting_inner(), extend_zero_gradient_outer());
 
     auto dr_min = state.vertices | nd::difference_on_axis(0) | nd::read_index(0);
     auto dt = mara::make_time(cfl_number * dr_min);
@@ -210,7 +230,7 @@ static auto next_solution(const solution_state_t& state)
     auto u0 = state.conserved;
     auto p0 = u0 / dv | nd::map(cons_to_prim) | nd::to_shared();
     auto s0 = nd::zip_arrays(p0, rc) | nd::apply(source_terms) | multiply(dv);
-    auto l0 = p0 | nd::extend_zero_gradient(0) | intercell_flux(0) | multiply(-da) | nd::difference_on_axis(0);
+    auto l0 = p0 | extend_bc | intercell_flux(0) | multiply(-da) | nd::difference_on_axis(0);
     auto u1 = u0 + (l0 + s0) * dt;
 
     return solution_state_t {
@@ -399,6 +419,7 @@ static void prepare_filesystem(const mara::config_t& cfg)
 
         file.require_dataset("time", h5::Datatype::native_double(), space, plist);
         file.require_dataset("shock_radius", h5::Datatype::native_double(), space, plist);
+        mara::write_config(file.require_group("run_config"), cfg);
     }
     else
     {
