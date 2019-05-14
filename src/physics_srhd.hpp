@@ -6,7 +6,9 @@
 
 
 //=============================================================================
-namespace mara::srhd
+namespace mara { struct srhd; }
+
+struct mara::srhd
 {
     using conserved_density_t = covariant_sequence_t<unit_mass_density<double>, 5>;
     using conserved_t         = covariant_sequence_t<unit_mass<double>, 5>;
@@ -18,11 +20,11 @@ namespace mara::srhd
         unit_velocity<double> p;
     };
 
-    inline primitive_t recover_primitive(
+    static inline primitive_t recover_primitive(
         const conserved_density_t& U,
         double gamma_law_index);
 
-    inline flux_vector_t riemann_hlle(
+    static inline flux_vector_t riemann_hlle(
         const primitive_t& Pl,
         const primitive_t& Pr,
         const unit_vector_t& nhat,

@@ -36,14 +36,22 @@ static auto config_template()
     .item("density_index",      0.0);  // index n of the power-law ambient density profile, rho = r^(-n)
 }
 
-namespace sedov
+
+
+
+//=============================================================================
+template<typename HydroSystem>
+struct SedovProblem
 {
+
+
+    //=========================================================================
     struct solution_state_t
     {
         double time = 0.0;
         mara::rational_number_t iteration = mara::make_rational(0, 1);
         nd::shared_array<double, 1> vertices;
-        nd::shared_array<mara::srhd::conserved_t, 1> conserved;
+        nd::shared_array<typename HydroSystem::conserved_t, 1> conserved;
     };
 
     struct diagnostic_fields_t
@@ -56,15 +64,79 @@ namespace sedov
         nd::shared_array<double, 1> radial_gamma_beta;
         nd::shared_array<double, 1> radial_coordinates;
     };
-}
 
-using namespace sedov;
+    struct app_state_t
+    {
+        solution_state_t solution_state;
+        mara::schedule_t schedule;
+        mara::config_t run_config;
+    };
+
+
+    //=========================================================================
+    static auto intercell_flux(std::size_t axis);
+    static auto extend_reflecting_inner();
+    static auto extend_zero_gradient_outer();
+    static auto find_shock_radius(const solution_state_t& state);
+    static auto make_diagnostic_fields(const solution_state_t& state);
+
+
+    //=========================================================================
+    template<typename VertexArrayType>
+    static auto face_areas(VertexArrayType vertices)
+    {
+        return vertices | nd::map([] (auto r) { return mara::make_area(r * r); });
+    }
+
+    template<typename VertexArrayType>
+    static auto cell_volumes(VertexArrayType vertices)
+    {
+        auto shell_volume = [] (double r0, double r1)
+        {
+            return mara::make_volume((std::pow(r1, 3) - std::pow(r0, 3)) / 3);
+        };
+        return vertices | nd::zip_adjacent2_on_axis(0) | nd::apply(shell_volume);
+    }
+
+
+    //=============================================================================
+    static void write_solution(h5::Group&& group, const solution_state_t& state);
+    static auto read_solution(h5::Group&& group);
+    static auto new_solution(const mara::config_t& cfg);
+    static auto create_solution(const mara::config_t& run_config);
+    static auto next_solution(const solution_state_t& state);
+
+
+    //=============================================================================
+    static auto new_schedule(const mara::config_t& run_config);
+    static auto create_schedule(const mara::config_t& run_config);
+    static auto next_schedule(const mara::schedule_t& schedule, const mara::config_t& run_config, double time);
+
+
+    //=============================================================================
+    static auto new_run_config(const mara::config_string_map_t& args);
+    static auto create_run_config(int argc, const char* argv[]);
+
+
+    //=========================================================================
+    static void write_checkpoint(const app_state_t& state, std::string outdir);
+    static void write_diagnostics(const app_state_t& state, std::string outdir);
+    static void write_time_series(const app_state_t& state, std::string outdir);
+    static auto create_app_state(mara::config_t run_config);
+    static auto next(const app_state_t& state);
+    static auto simulation_should_continue(const app_state_t& state);
+    static auto run_tasks(const app_state_t& state);
+
+    //=========================================================================
+    static void print_run_loop_message(const solution_state_t& solution, mara::perf_diagnostics_t perf);
+    static void prepare_filesystem(const mara::config_t& cfg);
+};
 
 
 
 
 //=============================================================================
-static auto intercell_flux(std::size_t axis)
+template<typename HydroSystem> auto SedovProblem<HydroSystem>::intercell_flux(std::size_t axis)
 {
     return [axis] (auto array)
     {
@@ -77,7 +149,7 @@ static auto intercell_flux(std::size_t axis)
     };
 }
 
-static auto extend_reflecting_inner()
+template<typename HydroSystem> auto SedovProblem<HydroSystem>::extend_reflecting_inner()
 {
     return [] (auto array)
     {
@@ -88,7 +160,7 @@ static auto extend_reflecting_inner()
     };
 }
 
-static auto extend_zero_gradient_outer()
+template<typename HydroSystem> auto SedovProblem<HydroSystem>::extend_zero_gradient_outer()
 {
     return [] (auto array)
     {
@@ -96,50 +168,34 @@ static auto extend_zero_gradient_outer()
     };
 }
 
-template<typename VertexArrayType>
-auto face_areas(VertexArrayType vertices)
+template<typename HydroSystem> auto SedovProblem<HydroSystem>::find_shock_radius(const solution_state_t& state)
 {
-    return vertices | nd::map([] (auto r) { return mara::make_area(r * r); });
-}
-
-template<typename VertexArrayType>
-auto cell_volumes(VertexArrayType vertices)
-{
-    auto shell_volume = [] (double r0, double r1)
-    {
-        return mara::make_volume((std::pow(r1, 3) - std::pow(r0, 3)) / 3);
-    };
-    return vertices | nd::zip_adjacent2_on_axis(0) | nd::apply(shell_volume);
-}
-
-static auto find_shock_radius(const solution_state_t& state)
-{
-    using namespace mara::srhd;
+    // using namespace mara::srhd;
     using namespace std::placeholders;
-    auto cons_to_prim = std::bind(recover_primitive, _1, gamma_law_index);
+    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, _1, gamma_law_index);
 
     auto primitive = state.conserved | nd::divide(cell_volumes(state.vertices)) | nd::map(cons_to_prim);
     auto rc = state.vertices | nd::midpoint_on_axis(0);
-    auto s0 = primitive | nd::map(std::bind(&primitive_t::specific_entropy, _1, gamma_law_index));
+    auto s0 = primitive | nd::map(std::bind(&mara::srhd::primitive_t::specific_entropy, _1, gamma_law_index));
     auto ds = s0 | nd::difference_on_axis(0);
     auto shock_index = nd::where(ds == nd::min(ds)) | nd::read_index(0);
     return rc(shock_index);
 }
 
-static auto make_diagnostic_fields(const solution_state_t& state)
+template<typename HydroSystem> auto SedovProblem<HydroSystem>::make_diagnostic_fields(const solution_state_t& state)
 {
-    using namespace mara::srhd;
+    // using namespace mara::srhd;
     using namespace std::placeholders;
-    auto cons_to_prim = std::bind(recover_primitive, _1, gamma_law_index);
+    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, _1, gamma_law_index);
 
     auto primitive = state.conserved | nd::divide(cell_volumes(state.vertices)) | nd::map(cons_to_prim);
     auto result = diagnostic_fields_t();
 
     result.time               = state.time;
-    result.gas_pressure       = primitive | nd::map(std::mem_fn(&primitive_t::gas_pressure)) | nd::to_shared();
-    result.mass_density       = primitive | nd::map(std::mem_fn(&primitive_t::mass_density)) | nd::to_shared();
-    result.radial_gamma_beta  = primitive | nd::map(std::mem_fn(&primitive_t::gamma_beta_1)) | nd::to_shared();
-    result.specific_entropy   = primitive | nd::map(std::bind(&primitive_t::specific_entropy, _1, gamma_law_index)) | nd::to_shared();
+    result.gas_pressure       = primitive | nd::map(std::mem_fn(&mara::srhd::primitive_t::gas_pressure)) | nd::to_shared();
+    result.mass_density       = primitive | nd::map(std::mem_fn(&mara::srhd::primitive_t::mass_density)) | nd::to_shared();
+    result.radial_gamma_beta  = primitive | nd::map(std::mem_fn(&mara::srhd::primitive_t::gamma_beta_1)) | nd::to_shared();
+    result.specific_entropy   = primitive | nd::map(std::bind(&mara::srhd::primitive_t::specific_entropy, _1, gamma_law_index)) | nd::to_shared();
     result.radial_coordinates = state.vertices | nd::midpoint_on_axis(0) | nd::to_shared();
     result.shock_radius       = find_shock_radius(state);
 
@@ -150,7 +206,8 @@ static auto make_diagnostic_fields(const solution_state_t& state)
 
 
 //=============================================================================
-static void write_solution(h5::Group&& group, const solution_state_t& state)
+template<typename HydroSystem>
+void SedovProblem<HydroSystem>::write_solution(h5::Group&& group, const solution_state_t& state)
 {
     group.write("time", state.time);
     group.write("iteration", state.iteration);
@@ -158,7 +215,8 @@ static void write_solution(h5::Group&& group, const solution_state_t& state)
     group.write("conserved", state.conserved);
 }
 
-static auto read_solution(h5::Group&& group)
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::read_solution(h5::Group&& group)
 {
     auto state = solution_state_t();
     state.time      = group.read<double>("time");
@@ -168,7 +226,8 @@ static auto read_solution(h5::Group&& group)
     return state;
 }
 
-static auto new_solution(const mara::config_t& cfg)
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::new_solution(const mara::config_t& cfg)
 {
     using namespace std::placeholders;
 
@@ -204,7 +263,8 @@ static auto new_solution(const mara::config_t& cfg)
     return state;
 }
 
-static auto create_solution(const mara::config_t& run_config)
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::create_solution(const mara::config_t& run_config)
 {
     auto restart = run_config.get<std::string>("restart");
     return restart.empty()
@@ -212,13 +272,14 @@ static auto create_solution(const mara::config_t& run_config)
     : read_solution(h5::File(restart, "r").open_group("solution"));
 }
 
-static auto next_solution(const solution_state_t& state)
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::next_solution(const solution_state_t& state)
 {
-    using namespace mara::srhd;
+    // using namespace mara::srhd;
     using namespace std::placeholders;
 
-    auto source_terms = std::bind(&primitive_t::spherical_geometry_source_terms_radial, _1, _2, gamma_law_index);
-    auto cons_to_prim = std::bind(recover_primitive, std::placeholders::_1, gamma_law_index);
+    auto source_terms = std::bind(&mara::srhd::primitive_t::spherical_geometry_source_terms_radial, _1, _2, gamma_law_index);
+    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index);
     auto extend_bc = mara::compose(extend_reflecting_inner(), extend_zero_gradient_outer());
 
     auto dr_min = state.vertices | nd::difference_on_axis(0) | nd::read_index(0);
@@ -244,7 +305,8 @@ static auto next_solution(const solution_state_t& state)
 
 
 //=============================================================================
-static auto new_schedule(const mara::config_t& run_config)
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::new_schedule(const mara::config_t& run_config)
 {
     auto schedule = mara::schedule_t();
     schedule.create_and_mark_as_due("write_checkpoint");
@@ -253,7 +315,8 @@ static auto new_schedule(const mara::config_t& run_config)
     return schedule;
 }
 
-static auto create_schedule(const mara::config_t& run_config)
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::create_schedule(const mara::config_t& run_config)
 {
     auto restart = run_config.get<std::string>("restart");
     return restart.empty()
@@ -261,7 +324,8 @@ static auto create_schedule(const mara::config_t& run_config)
     : mara::read_schedule(h5::File(restart, "r").open_group("schedule"));
 }
 
-static auto next_schedule(const mara::schedule_t& schedule, const mara::config_t& run_config, double time)
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::next_schedule(const mara::schedule_t& schedule, const mara::config_t& run_config, double time)
 {
     auto next_schedule = schedule;
     auto cpi = run_config.get<double>("cpi");
@@ -279,12 +343,14 @@ static auto next_schedule(const mara::schedule_t& schedule, const mara::config_t
 
 
 //=============================================================================
-static auto new_run_config(const mara::config_string_map_t& args)
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::new_run_config(const mara::config_string_map_t& args)
 {
     return config_template().create().update(args);
 }
 
-static auto create_run_config(int argc, const char* argv[])
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::create_run_config(int argc, const char* argv[])
 {
     auto args = mara::argv_to_string_map(argc, argv);
     return args.count("restart")
@@ -299,14 +365,8 @@ static auto create_run_config(int argc, const char* argv[])
 
 
 //=============================================================================
-struct app_state_t
-{
-    solution_state_t solution_state;
-    mara::schedule_t schedule;
-    mara::config_t run_config;
-};
-
-static void write_checkpoint(const app_state_t& state, std::string outdir)
+template<typename HydroSystem>
+void SedovProblem<HydroSystem>::write_checkpoint(const app_state_t& state, std::string outdir)
 {
     auto count = state.schedule.num_times_performed("write_checkpoint");
     auto file = h5::File(mara::filesystem::join({outdir, mara::create_numbered_filename("chkpt", count, "h5")}), "w");
@@ -317,7 +377,8 @@ static void write_checkpoint(const app_state_t& state, std::string outdir)
     std::printf("write checkpoint: %s\n", file.filename().data());
 }
 
-static void write_diagnostics(const app_state_t& state, std::string outdir)
+template<typename HydroSystem>
+void SedovProblem<HydroSystem>::write_diagnostics(const app_state_t& state, std::string outdir)
 {
     auto count = state.schedule.num_times_performed("write_diagnostics");
     auto file = h5::File(mara::filesystem::join({outdir, mara::create_numbered_filename("diagnostics", count, "h5")}), "w");
@@ -334,7 +395,8 @@ static void write_diagnostics(const app_state_t& state, std::string outdir)
     std::printf("write diagnostics: %s\n", file.filename().data());
 }
 
-static void write_time_series(const app_state_t& state, std::string outdir)
+template<typename HydroSystem>
+void SedovProblem<HydroSystem>::write_time_series(const app_state_t& state, std::string outdir)
 {
     auto file = h5::File(mara::filesystem::join({outdir, "time_series.h5"}), "r+");
     auto time         = file.open_dataset("time");
@@ -349,7 +411,8 @@ static void write_time_series(const app_state_t& state, std::string outdir)
     shock_radius.write(find_shock_radius(state.solution_state), shock_radius.get_space().select(target_space));
 }
 
-static auto create_app_state(mara::config_t run_config)
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::create_app_state(mara::config_t run_config)
 {
     auto state = app_state_t();
     state.run_config     = run_config;
@@ -358,7 +421,8 @@ static auto create_app_state(mara::config_t run_config)
     return state;
 }
 
-static auto next(const app_state_t& state)
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::next(const app_state_t& state)
 {
     auto next_state = state;
     next_state.solution_state = next_solution(state.solution_state);
@@ -366,17 +430,19 @@ static auto next(const app_state_t& state)
     return next_state;
 }
 
-static auto simulation_should_continue(const app_state_t& state)
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::simulation_should_continue(const app_state_t& state)
 {
     auto time = state.solution_state.time;
-    auto tfinal = state.run_config.get<double>("tfinal");
+    auto tfinal = state.run_config.template get<double>("tfinal");
     return time < tfinal;
 }
 
-static auto run_tasks(const app_state_t& state)
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::run_tasks(const app_state_t& state)
 {
     auto next_state = state;
-    auto outdir = state.run_config.get<std::string>("outdir");
+    auto outdir = state.run_config.template get<std::string>("outdir");
 
     if (state.schedule.is_due("write_checkpoint"))
     {
@@ -400,13 +466,15 @@ static auto run_tasks(const app_state_t& state)
 
 
 //=============================================================================
-static void print_run_loop_message(const solution_state_t& solution, mara::perf_diagnostics_t perf)
+template<typename HydroSystem>
+void SedovProblem<HydroSystem>::print_run_loop_message(const solution_state_t& solution, mara::perf_diagnostics_t perf)
 {
     auto kzps = solution.vertices.size() / perf.execution_time_ms;
     std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n", solution.iteration.as_integral(), solution.time, kzps);
 }
 
-static void prepare_filesystem(const mara::config_t& cfg)
+template<typename HydroSystem>
+void SedovProblem<HydroSystem>::prepare_filesystem(const mara::config_t& cfg)
 {
     if (cfg.get<std::string>("restart").empty())
     {
@@ -437,21 +505,24 @@ public:
 
     int main(int argc, const char* argv[]) override
     {
-        auto run_config = create_run_config(argc, argv);
-        auto perf = mara::perf_diagnostics_t();
-        auto state = create_app_state(run_config);
-        prepare_filesystem(run_config);
+        using prob             = SedovProblem<mara::srhd>;
+        auto run_tasks_on_next = mara::compose(prob::run_tasks, prob::next);
+        auto run_config        = prob::create_run_config(argc, argv);
+        auto perf              = mara::perf_diagnostics_t();
+        auto state             = prob::create_app_state(run_config);
 
+        prob::prepare_filesystem(run_config);
         mara::pretty_print(std::cout, "config", run_config);
-        state = run_tasks(state);
 
-        while (simulation_should_continue(state))
+        state = prob::run_tasks(state);
+
+        while (prob::simulation_should_continue(state))
         {
-            std::tie(state, perf) = mara::time_execution(mara::compose(run_tasks, next), state);
-            print_run_loop_message(state.solution_state, perf);
+            std::tie(state, perf) = mara::time_execution(run_tasks_on_next, state);
+            prob::print_run_loop_message(state.solution_state, perf);
         }
 
-        run_tasks(next(state));
+        run_tasks_on_next(state);
         return 0;
     }
 
