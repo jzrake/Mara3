@@ -11,6 +11,7 @@
 #include "app_schedule.hpp"
 #include "app_performance.hpp"
 #include "app_subprogram.hpp"
+#include "app_fitting.hpp"
 #include "physics_srhd.hpp"
 #include "physics_euler.hpp"
 
@@ -106,8 +107,8 @@ struct SedovProblem
 
 
     static auto find_shock_index(primitive_array_t primitive);
-    static auto find_index_of_pressure_maximum_behind(primitive_array_t primitive, std::size_t index);
-    static auto find_pressure_plateau_ahead(primitive_array_t primitive, std::size_t index);
+    static auto find_index_of_velocity_maximum_behind(primitive_array_t primitive, std::size_t index);
+    static auto find_velocity_plateau_ahead(primitive_array_t primitive, std::size_t index);
     static auto compute_time_series_data(const solution_state_t& state);
     static auto get_time_series_column_names();
 
@@ -247,30 +248,47 @@ auto SedovProblem<HydroSystem>::find_shock_index(primitive_array_t primitive)
 }
 
 template<typename HydroSystem>
-auto SedovProblem<HydroSystem>::find_index_of_pressure_maximum_behind(primitive_array_t primitive, std::size_t index)
+auto SedovProblem<HydroSystem>::find_index_of_velocity_maximum_behind(primitive_array_t primitive, std::size_t index)
 {
-    auto p = primitive | nd::map(std::mem_fn(&HydroSystem::primitive_t::gas_pressure));
+    auto p = primitive
+    | nd::map([] (auto p) { return radial_velocity_or_gamma_beta(p); })
+    | nd::bounds_check();
 
-    while (index > 0 && p(index - 1) > p(index))
-    {
-        --index;
+    try {
+        while (p(index - 1) > p(index))
+        {
+            --index;
+        }
+        return index;
     }
-    return index;
+    catch (const std::exception& e)
+    {
+        std::printf("find_index_of_velocity_maximum_behind: %s", e.what());
+        return std::size_t(0);
+    }
 }
 
 template<typename HydroSystem>
-auto SedovProblem<HydroSystem>::find_pressure_plateau_ahead(primitive_array_t primitive, std::size_t index)
+auto SedovProblem<HydroSystem>::find_velocity_plateau_ahead(primitive_array_t primitive, std::size_t index)
 {
     auto dlogp = primitive
-    | nd::map(std::mem_fn(&HydroSystem::primitive_t::gas_pressure))
+    | nd::map([] (auto p) { return radial_velocity_or_gamma_beta(p); })
     | nd::map([] (auto p) { return std::log(p); })
-    | nd::difference_on_axis(0);
+    | nd::difference_on_axis(0)
+    | nd::bounds_check();
 
-    while (index < dlogp.size() - 1 && dlogp(index + 1) > dlogp(index))
-    {
-        ++index;
+    try {
+        while (dlogp(index) < 0.5 * dlogp(index - 1))
+        {
+            ++index;
+        }
+        return index;
     }
-    return index;
+    catch (const std::exception& e)
+    {
+        std::printf("find_velocity_plateau_ahead: %s", e.what());
+        return std::size_t(0);
+    }
 }
 
 template<typename HydroSystem>
@@ -285,15 +303,25 @@ auto SedovProblem<HydroSystem>::compute_time_series_data(const solution_state_t&
     | nd::to_shared();
 
     auto shock_index      = find_shock_index(primitive)[0];
-    auto downstream_index = find_index_of_pressure_maximum_behind(primitive, shock_index);
-    auto upstream_index   = find_pressure_plateau_ahead(primitive, shock_index);
+    auto downstream_index = find_index_of_velocity_maximum_behind(primitive, shock_index);
+    auto upstream_index   = find_velocity_plateau_ahead(primitive, shock_index);
+    auto rc = state.vertices | nd::midpoint_on_axis(0);
+    auto vc = primitive | nd::map([] (auto p) { return radial_velocity_or_gamma_beta(p); });
+
+    auto find_vertex = [rc, vc] (auto i)
+    {
+        return mara::parabola_vertex(
+            rc(i - 1), rc(i), rc(i + 1),
+            vc(i - 1), vc(i), vc(i + 1)).first;
+    };
 
     return std::map<std::string, double>
     {
         {"time", state.time},
         {"shock_radius", state.vertices(shock_index)},
-        {"shock_radius_upstream", state.vertices(upstream_index)},
-        {"shock_radius_downstream", state.vertices(downstream_index)},
+        {"shock_radius_upstream", rc(upstream_index)},
+        {"shock_radius_downstream", rc(downstream_index)},
+        {"shock_radius_interpolated", find_vertex(downstream_index)},
     };
 }
 
@@ -306,6 +334,7 @@ auto SedovProblem<HydroSystem>::get_time_series_column_names()
         "shock_radius",
         "shock_radius_upstream",
         "shock_radius_downstream",
+        "shock_radius_interpolated",
     };
 }
 
@@ -505,8 +534,6 @@ template<typename HydroSystem>
 void SedovProblem<HydroSystem>::write_time_series(const app_state_t& state, std::string outdir)
 {
     auto file = h5::File(mara::filesystem::join({outdir, "time_series.h5"}), "r+");
-    auto time         = file.open_dataset("time");
-    auto shock_radius = file.open_dataset("shock_radius");
     auto current_size = state.schedule.num_times_performed("write_time_series");
     auto target_space = h5::hyperslab_t{{std::size_t(current_size)}, {1}, {1}, {1}};
 
@@ -514,7 +541,7 @@ void SedovProblem<HydroSystem>::write_time_series(const app_state_t& state, std:
     {
         auto dataset = file.open_dataset(item.first);
         dataset.set_extent(current_size + 1);
-        dataset.write(state.solution_state.time, dataset.get_space().select(target_space));
+        dataset.write(item.second, dataset.get_space().select(target_space));
     }
 }
 
