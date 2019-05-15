@@ -508,10 +508,6 @@ void SedovProblem<HydroSystem>::prepare_filesystem(const mara::config_t& cfg)
         file.require_dataset("shock_radius", h5::Datatype::native_double(), space, plist);
         mara::write_config(file.require_group("run_config"), cfg);
     }
-    else
-    {
-        // should truncate trailing iterations here...
-    }
 }
 
 

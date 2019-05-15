@@ -266,7 +266,7 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
 
 
 
-    /** 
+    /**
      * @brief      Return the spherical source terms for gamma-law SRHD
      *
      * @param[in]  spherical_radius   The spherical radius

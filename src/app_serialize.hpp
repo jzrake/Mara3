@@ -248,6 +248,21 @@ struct h5::hdf5_type_info<nd::unique_array<ValueType, Rank>>
 
 
 //=============================================================================
+// template<typename ValueType, std::size_t Rank, typename DerivedType>
+// struct h5::hdf5_type_info<mara::fixed_length_sequence_t<ValueType, Rank, DerivedType>>
+// {
+//     using native_type = mara::fixed_length_sequence_t<ValueType, Rank, DerivedType>;
+//     static auto make_datatype_for(const native_type& value) { return h5::make_datatype_for(ValueType()).as_array(Rank); }
+//     static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+//     static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+//     static auto get_address(const native_type& value) { return &value[0]; }
+//     static auto get_address(native_type& value) { return &value[0]; }
+// };
+
+
+
+
+//=============================================================================
 template<typename ValueType, std::size_t Rank>
 struct h5::hdf5_type_info<mara::covariant_sequence_t<ValueType, Rank>>
 {

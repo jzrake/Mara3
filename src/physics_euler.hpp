@@ -219,7 +219,7 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
 
 
 
-    /** 
+    /**
      * @brief      Return the spherical source terms for gamma-law euler
      *
      * @param[in]  spherical_radius   The spherical radius
