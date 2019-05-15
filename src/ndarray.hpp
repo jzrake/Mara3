@@ -95,6 +95,7 @@ namespace nd
     //=========================================================================
     template<typename Provider> auto make_array(Provider&&);
     template<typename Mapping, std::size_t Rank> auto make_array(Mapping mapping, shape_t<Rank> shape);
+    template<typename ContainerType> auto make_array_from(const ContainerType& container);
     template<typename ValueType, std::size_t Rank> auto make_shared_array(shape_t<Rank> shape);
     template<typename ValueType, typename... Args> auto make_shared_array(Args... args);
     template<typename ValueType, std::size_t Rank> auto make_unique_array(shape_t<Rank> shape);
@@ -1733,6 +1734,32 @@ template<typename Mapping, std::size_t Rank>
 auto nd::make_array(Mapping mapping, shape_t<Rank> shape)
 {
     return make_array(basic_provider_t<Mapping, Rank>(mapping, shape));
+}
+
+
+
+
+/**
+ * @brief      Create a 1-dimensional array from an iterable container
+ *
+ * @param[in]  container      The container to source values from
+ *
+ * @tparam     ContainerType  The type of the container, std::vector, std::list,
+ *                            std::array, etc.
+ *
+ * @return     The array
+ */
+template<typename ContainerType>
+auto nd::make_array_from(const ContainerType& container)
+{
+    auto shape = make_shape(container.size());
+    auto result = make_unique_array<typename ContainerType::value_type>(shape);
+
+    for (auto [n, source_value] : enumerate(container))
+    {
+        result(n) = source_value;
+    }
+    return std::move(result).shared();
 }
 
 

@@ -87,8 +87,8 @@ auto mara::propose_block_decomposition(std::size_t number_of_subdomains)
 
 /**
  * @brief      Creates an N-dimensional array of N-dimensional
- *             nd::access_pattern_t types, representing a block decomposition of
- *             an array.
+ *             nd::access_pattern_t instances, representing a block
+ *             decomposition of an N-dimensional array.
  *
  * @param[in]  global_shape  The shape of the array to decompose
  * @param[in]  blocks_shape  The shape of the decomposed subgrid blocks
