@@ -62,6 +62,16 @@ public:
     static unit_vector_t on_axis_1() { return {1.0, 0.0, 0.0}; }
     static unit_vector_t on_axis_2() { return {0.0, 1.0, 0.0}; }
     static unit_vector_t on_axis_3() { return {0.0, 0.0, 1.0}; }
+    static unit_vector_t on_axis(std::size_t axis)
+    {
+        switch (axis)
+        {
+            case 1: return on_axis_1();
+            case 2: return on_axis_2();
+            case 3: return on_axis_3();
+        }
+        throw std::invalid_argument("can only construct unit vector on axis 1, 2, or 3");
+    }
 
     unit_vector_t(double n1, double n2, double n3) : n1(n1), n2(n2), n3(n3)
     {

@@ -46,6 +46,7 @@ namespace nd
     inline auto intercell_flux_on_axis(std::size_t axis);
     inline auto extend_periodic_on_axis(std::size_t axis);
     inline auto extend_zero_gradient(std::size_t axis);
+    inline auto extend_zeros(std::size_t axis);
     template<typename Multiplier> auto multiply(Multiplier arg);
     template<typename Multiplier> auto divide(Multiplier arg);
 }
@@ -135,8 +136,8 @@ auto nd::extend_periodic_on_axis(std::size_t axis)
 {
     return [axis] (auto array)
     {
-        auto xl = array | select_first(1, 0);
-        auto xr = array | select_final(1, 0);
+        auto xl = array | select_first(1, axis);
+        auto xr = array | select_final(1, axis);
         return xr | nd::concat(array).on_axis(axis) | nd::concat(xl).on_axis(axis);
     };
 }
@@ -145,8 +146,8 @@ auto nd::extend_zero_gradient(std::size_t axis)
 {
     return [axis] (auto array)
     {
-        auto xl = array | nd::select_first(1, 0);
-        auto xr = array | nd::select_final(1, 0);
+        auto xl = array | nd::select_first(1, axis);
+        auto xr = array | nd::select_final(1, axis);
         return xl | nd::concat(array).on_axis(axis) | nd::concat(xr).on_axis(axis);
     };
 }
