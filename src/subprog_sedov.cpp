@@ -69,6 +69,8 @@ struct SedovProblem
 
 
     //=========================================================================
+    using primitive_array_t = nd::shared_array<typename HydroSystem::primitive_t, 1>;
+
     struct solution_state_t
     {
         double time = 0.0;
@@ -79,13 +81,12 @@ struct SedovProblem
 
     struct diagnostic_fields_t
     {
-        double time = 0.0;
-        double shock_radius = 1.0;
         nd::shared_array<double, 1> mass_density;
         nd::shared_array<double, 1> gas_pressure;
         nd::shared_array<double, 1> specific_entropy;
         nd::shared_array<double, 1> radial_gamma_beta;
         nd::shared_array<double, 1> radial_coordinates;
+        std::map<std::string, double> time_series_data;
     };
 
     struct app_state_t
@@ -102,6 +103,13 @@ struct SedovProblem
     static auto extend_zero_gradient_outer();
     static auto find_shock_radius(const solution_state_t& state);
     static auto make_diagnostic_fields(const solution_state_t& state);
+
+
+    static auto find_shock_index(primitive_array_t primitive);
+    static auto find_index_of_pressure_maximum_behind(primitive_array_t primitive, std::size_t index);
+    static auto find_pressure_plateau_ahead(primitive_array_t primitive, std::size_t index);
+    static auto compute_time_series_data(const solution_state_t& state);
+    static auto get_time_series_column_names();
 
 
     //=========================================================================
@@ -213,15 +221,92 @@ auto SedovProblem<HydroSystem>::make_diagnostic_fields(const solution_state_t& s
     auto primitive = state.conserved | nd::divide(cell_volumes(state.vertices)) | nd::map(cons_to_prim);
     auto result = diagnostic_fields_t();
 
-    result.time               = state.time;
     result.specific_entropy   = primitive | nd::map(std::bind(&HydroSystem::primitive_t::specific_entropy, _1, gamma_law_index)) | nd::to_shared();
     result.gas_pressure       = primitive | nd::map(std::mem_fn(&HydroSystem::primitive_t::gas_pressure)) | nd::to_shared();
     result.mass_density       = primitive | nd::map(std::mem_fn(&HydroSystem::primitive_t::mass_density)) | nd::to_shared();
     result.radial_gamma_beta  = primitive | nd::map([](auto p){return radial_velocity_or_gamma_beta(p);}) | nd::to_shared();
     result.radial_coordinates = state.vertices | nd::midpoint_on_axis(0) | nd::to_shared();
-    result.shock_radius       = find_shock_radius(state);
+    result.time_series_data   = compute_time_series_data(state);
 
     return result;
+}
+
+
+
+
+//=============================================================================
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::find_shock_index(primitive_array_t primitive)
+{
+    using namespace std::placeholders;
+
+    auto s0 = primitive | nd::map(std::bind(&HydroSystem::primitive_t::specific_entropy, _1, gamma_law_index));
+    auto ds = s0 | nd::difference_on_axis(0);
+    auto shock_index = nd::where(ds == nd::min(ds)) | nd::read_index(0);
+    return shock_index;
+}
+
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::find_index_of_pressure_maximum_behind(primitive_array_t primitive, std::size_t index)
+{
+    auto p = primitive | nd::map(std::mem_fn(&HydroSystem::primitive_t::gas_pressure));
+
+    while (index > 0 && p(index - 1) > p(index))
+    {
+        --index;
+    }
+    return index;
+}
+
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::find_pressure_plateau_ahead(primitive_array_t primitive, std::size_t index)
+{
+    auto dlogp = primitive
+    | nd::map(std::mem_fn(&HydroSystem::primitive_t::gas_pressure))
+    | nd::map([] (auto p) { return std::log(p); })
+    | nd::difference_on_axis(0);
+
+    while (index < dlogp.size() - 1 && dlogp(index + 1) > dlogp(index))
+    {
+        ++index;
+    }
+    return index;
+}
+
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::compute_time_series_data(const solution_state_t& state)
+{
+    using namespace std::placeholders;
+    auto cons_to_prim = std::bind(HydroSystem::recover_primitive, _1, gamma_law_index);
+
+    auto primitive = state.conserved
+    | nd::divide(cell_volumes(state.vertices))
+    | nd::map(cons_to_prim)
+    | nd::to_shared();
+
+    auto shock_index      = find_shock_index(primitive)[0];
+    auto downstream_index = find_index_of_pressure_maximum_behind(primitive, shock_index);
+    auto upstream_index   = find_pressure_plateau_ahead(primitive, shock_index);
+
+    return std::map<std::string, double>
+    {
+        {"time", state.time},
+        {"shock_radius", state.vertices(shock_index)},
+        {"shock_radius_upstream", state.vertices(upstream_index)},
+        {"shock_radius_downstream", state.vertices(downstream_index)},
+    };
+}
+
+template<typename HydroSystem>
+auto SedovProblem<HydroSystem>::get_time_series_column_names()
+{
+    return std::vector<std::string>
+    {
+        "time",
+        "shock_radius",
+        "shock_radius_upstream",
+        "shock_radius_downstream",
+    };
 }
 
 
@@ -403,14 +488,16 @@ void SedovProblem<HydroSystem>::write_diagnostics(const app_state_t& state, std:
     auto file = h5::File(mara::filesystem::join(outdir, mara::create_numbered_filename("diagnostics", count, "h5")), "w");
     auto diagnostics = make_diagnostic_fields(state.solution_state);
 
-    file.write("time",               diagnostics.time);
     file.write("gas_pressure",       diagnostics.gas_pressure);
     file.write("mass_density",       diagnostics.mass_density);
     file.write("specific_entropy",   diagnostics.specific_entropy);
     file.write("radial_gamma_beta",  diagnostics.radial_gamma_beta);
     file.write("radial_coordinates", diagnostics.radial_coordinates);
-    file.write("shock_radius",       diagnostics.shock_radius);
 
+    for (auto item : diagnostics.time_series_data)
+    {
+        file.write(item.first, item.second);
+    }
     std::printf("write diagnostics: %s\n", file.filename().data());
 }
 
@@ -423,11 +510,12 @@ void SedovProblem<HydroSystem>::write_time_series(const app_state_t& state, std:
     auto current_size = state.schedule.num_times_performed("write_time_series");
     auto target_space = h5::hyperslab_t{{std::size_t(current_size)}, {1}, {1}, {1}};
 
-    time.set_extent(current_size + 1);
-    shock_radius.set_extent(current_size + 1);
-
-    time.write(state.solution_state.time, time.get_space().select(target_space));
-    shock_radius.write(find_shock_radius(state.solution_state), shock_radius.get_space().select(target_space));
+    for (auto item : compute_time_series_data(state.solution_state))
+    {
+        auto dataset = file.open_dataset(item.first);
+        dataset.set_extent(current_size + 1);
+        dataset.write(state.solution_state.time, dataset.get_space().select(target_space));
+    }
 }
 
 template<typename HydroSystem>
@@ -504,8 +592,10 @@ void SedovProblem<HydroSystem>::prepare_filesystem(const mara::config_t& cfg)
         auto plist = h5::PropertyList::dataset_create().set_chunk(1000);
         auto space = h5::Dataspace::unlimited(0);
 
-        file.require_dataset("time", h5::Datatype::native_double(), space, plist);
-        file.require_dataset("shock_radius", h5::Datatype::native_double(), space, plist);
+        for (auto column_name : get_time_series_column_names())
+        {
+            file.require_dataset(column_name, h5::Datatype::native_double(), space, plist);            
+        }
         mara::write_config(file.require_group("run_config"), cfg);
     }
 }
