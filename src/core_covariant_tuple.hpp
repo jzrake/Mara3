@@ -27,6 +27,8 @@
 
 
 #pragma once
+#include <tuple>
+#include <functional>
 
 
 
@@ -34,6 +36,7 @@
 //=============================================================================
 namespace mara
 {
+    template<typename DerivedClass, typename... Types>
     class covariant_tuple_t;
 }
 

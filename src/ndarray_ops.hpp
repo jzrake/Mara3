@@ -36,17 +36,14 @@
 namespace nd
 {
     template<typename Function> auto apply(Function fn);
-    inline auto linspace(double x0, double x1, std::size_t count);
-    inline auto midpoint_on_axis(std::size_t axis);
     inline auto select_first(std::size_t count, std::size_t axis);
     inline auto select_final(std::size_t count, std::size_t axis);
+    inline auto midpoint_on_axis(std::size_t axis);
     inline auto difference_on_axis(std::size_t axis);
     inline auto zip_adjacent2_on_axis(std::size_t axis);
     inline auto zip_adjacent3_on_axis(std::size_t axis);
-    inline auto intercell_flux_on_axis(std::size_t axis);
     inline auto extend_periodic_on_axis(std::size_t axis);
     inline auto extend_zero_gradient(std::size_t axis);
-    inline auto extend_zeros(std::size_t axis);
     template<typename Multiplier> auto multiply(Multiplier arg);
     template<typename Multiplier> auto divide(Multiplier arg);
 }
@@ -55,16 +52,6 @@ namespace nd
 
 
 //=============================================================================
-auto nd::midpoint_on_axis(std::size_t axis)
-{
-    return [axis] (auto array)
-    {
-        return (
-        (array | nd::select_axis(axis).from(0).to(1).from_the_end()) +
-        (array | nd::select_axis(axis).from(1).to(0).from_the_end())) * 0.5;
-    };
-}
-
 auto nd::select_first(std::size_t count, std::size_t axis)
 {
     return [count, axis] (auto array)
@@ -90,6 +77,16 @@ auto nd::select_final(std::size_t count, std::size_t axis)
         start[axis] = final[axis] - count;
 
         return array | nd::select(nd::make_access_pattern(shape).with_start(start).with_final(final));
+    };
+}
+
+auto nd::midpoint_on_axis(std::size_t axis)
+{
+    return [axis] (auto array)
+    {
+        return (
+        (array | nd::select_axis(axis).from(0).to(1).from_the_end()) +
+        (array | nd::select_axis(axis).from(1).to(0).from_the_end())) * 0.5;
     };
 }
 
@@ -121,14 +118,6 @@ auto nd::zip_adjacent3_on_axis(std::size_t axis)
         array | nd::select_axis(axis).from(0).to(2).from_the_end(),
         array | nd::select_axis(axis).from(1).to(1).from_the_end(),
         array | nd::select_axis(axis).from(2).to(0).from_the_end());
-    };
-}
-
-auto nd::intercell_flux_on_axis(std::size_t axis)
-{
-    return [axis] (auto array)
-    {
-        return array | nd::select_axis(axis).from(0).to(1).from_the_end();        
     };
 }
 

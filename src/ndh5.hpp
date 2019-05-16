@@ -393,51 +393,61 @@ private:
 template<>
 struct h5::hdf5_type_info<char>
 {
-    static auto make_datatype_for(const char&) { return Datatype::c_s1(); }
-    static auto make_dataspace_for(const char&) { return Dataspace::scalar(); }
-    static auto prepare(const Datatype&, const Dataspace&) { return char(); }
-    static auto get_address(char& value) { return &value; }
-    static auto get_address(const char& value) { return &value; }
+    using native_type = char;
+    static auto make_datatype_for(const native_type&) { return Datatype::c_s1(); }
+    static auto make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
+    static auto prepare(const Datatype&, const Dataspace&) { return native_type(); }
+    static auto finalize(native_type&& value) { return value; }
+    static auto get_address(native_type& value) { return &value; }
+    static auto get_address(const native_type& value) { return &value; }
 };
 
 template<>
 struct h5::hdf5_type_info<int>
 {
-    static Datatype make_datatype_for(const int&) { return Datatype::native_int(); }
-    static Dataspace make_dataspace_for(const int&) { return Dataspace::scalar(); }
-    static int prepare(const Datatype&, const Dataspace&) { return int(); }
-    static void* get_address(int& value) { return &value; }
-    static const void* get_address(const int& value) { return &value; }
+    using native_type = int;
+    static Datatype make_datatype_for(const native_type&) { return Datatype::native_int(); }
+    static Dataspace make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
+    static native_type prepare(const Datatype&, const Dataspace&) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static void* get_address(native_type& value) { return &value; }
+    static const void* get_address(const native_type& value) { return &value; }
 };
 
 template<>
 struct h5::hdf5_type_info<double>
 {
-    static auto make_datatype_for(const double&) { return Datatype::native_double(); }
-    static auto make_dataspace_for(const double&) { return Dataspace::scalar(); }
-    static auto prepare(const Datatype&, const Dataspace&) { return double(); }
-    static auto get_address(double& value) { return &value; }
-    static auto get_address(const double& value) { return &value; }
+    using native_type = double;
+    static auto make_datatype_for(const native_type&) { return Datatype::native_double(); }
+    static auto make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
+    static auto prepare(const Datatype&, const Dataspace&) { return native_type(); }
+    static auto finalize(native_type&& value) { return value; }
+    static auto get_address(native_type& value) { return &value; }
+    static auto get_address(const native_type& value) { return &value; }
 };
 
 template<>
 struct h5::hdf5_type_info<std::string>
 {
-    static auto make_datatype_for(const std::string& value) { return Datatype::c_s1().with_size(std::max(std::size_t(1), value.size())); }
-    static auto make_dataspace_for(const std::string&) { return Dataspace::scalar(); }
-    static auto prepare(const Datatype& type, const Dataspace&) { return std::string(type.size(), 0); }
-    static auto get_address(std::string& value) { return value.data(); }
-    static auto get_address(const std::string& value) { return value.data(); }
+    using native_type = std::string;
+    static auto make_datatype_for(const native_type& value) { return Datatype::c_s1().with_size(std::max(std::size_t(1), value.size())); }
+    static auto make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
+    static auto prepare(const Datatype& type, const Dataspace&) { return native_type(type.size(), 0); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(native_type& value) { return value.data(); }
+    static auto get_address(const native_type& value) { return value.data(); }
 };
 
 template<typename ValueType>
 struct h5::hdf5_type_info<std::vector<ValueType>>
 {
-    static auto make_datatype_for(const std::vector<ValueType>&) { return h5::make_datatype_for(ValueType()); }
-    static auto make_dataspace_for(const std::vector<ValueType>& value) { return Dataspace{value.size()}; }
-    static auto prepare(const Datatype&, const Dataspace& space) { return std::vector<ValueType>(space.size()); }
-    static auto get_address(std::vector<ValueType>& value) { return value.data(); }
-    static auto get_address(const std::vector<ValueType>& value) { return value.data(); }
+    using native_type = std::vector<ValueType>;
+    static auto make_datatype_for(const native_type&) { return h5::make_datatype_for(ValueType()); }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace{value.size()}; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(space.size()); }
+    static auto finalize(native_type&& value) { return value; }
+    static auto get_address(native_type& value) { return value.data(); }
+    static auto get_address(const native_type& value) { return value.data(); }
 };
 
 
@@ -659,7 +669,19 @@ public:
         auto mspace = make_dataspace_for(value);
         check_compatible(type);
         detail::check(H5Dread(link.id, type.id, mspace.id, fspace.id, H5P_DEFAULT, data));
-        return value;
+        return hdf5_type_info<T>::finalize(std::move(value));
+    }
+
+    template<typename T>
+    void read(T& value, const Dataspace& fspace)
+    {
+        value = read<T>(fspace);
+    }
+
+    template<typename T>
+    void read(T& value)
+    {
+        value = read<T>();
     }
 
     PropertyList get_creation_plist() const
@@ -800,24 +822,16 @@ public:
         require_dataset(name, type, space).write(value);
     }
 
-    template<typename T, typename Selector>
-    void write(const std::string& name, const T& value, Selector sel)
-    {
-        auto type  = make_datatype_for(value);
-        auto space = make_dataspace_for(value);
-        require_dataset(name, type, space).write(value, sel);
-    }
-
     template<typename T>
     T read(const std::string& name)
     {
         return open_dataset(name).template read<T>();
     }
 
-    template<typename T, typename Selector>
-    T read(const std::string& name, Selector sel)
+    template<typename T>
+    void read(const std::string& name, T& value)
     {
-        return open_dataset(name).template read<T>(sel);
+        value = read<T>(name);
     }
 
 protected:

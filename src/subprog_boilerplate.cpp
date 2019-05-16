@@ -1,3 +1,5 @@
+#include "app_compile_opts.hpp"
+#if MARA_COMPILE_SUBPROGRAM_BOILERPLATE
 #include <cmath>
 #include <iostream>
 #include "ndmpi.hpp"
@@ -32,6 +34,14 @@ namespace boilerplate
         nd::shared_array<double, 1> vertices;
         nd::shared_array<double, 1> solution;
     };
+
+    auto intercell_flux_on_axis(std::size_t axis)
+    {
+        return [axis] (auto array)
+        {
+            return array | nd::select_axis(axis).from(0).to(1).from_the_end();        
+        };
+    }
 }
 
 using namespace boilerplate;
@@ -89,7 +99,7 @@ static auto next_solution(const solution_state_t& state)
     auto xc = xv | nd::midpoint_on_axis(0);          // nx
     auto dx = xv | nd::difference_on_axis(0);        // nx
     auto ue = u0 | nd::extend_periodic_on_axis(0);   // nx + 2
-    auto fc = ue | nd::intercell_flux_on_axis(0);    // nx + 1
+    auto fc = ue | intercell_flux_on_axis(0);        // nx + 1
     auto lc = (fc | nd::difference_on_axis(0)) / dx; // nx / nx
     auto u1 = u0 - lc * dt;
     auto t1 = state.time + dt;
@@ -258,3 +268,5 @@ std::unique_ptr<mara::sub_program_t> make_subprog_boilerlate()
 {
     return std::make_unique<subprog_boilerlate>();
 }
+
+#endif // MARA_COMPILE_SUBPROGRAM_BOILERPLATE

@@ -2,6 +2,7 @@
 #include <numeric>
 #include <vector>
 #include <fstream>
+#include <iostream>
 #include <mpi.h>
 
 

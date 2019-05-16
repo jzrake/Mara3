@@ -1,3 +1,5 @@
+#include "app_compile_opts.hpp"
+#if MARA_COMPILE_SUBPROGRAM_SEDOV
 #include <iostream>
 #include "ndmpi.hpp"
 #include "ndh5.hpp"
@@ -355,10 +357,10 @@ template<typename HydroSystem>
 auto SedovProblem<HydroSystem>::read_solution(h5::Group&& group)
 {
     auto state = solution_state_t();
-    state.time      = group.read<double>("time");
-    state.iteration = group.read<mara::rational_number_t>("iteration");
-    state.vertices  = group.read<nd::unique_array<double, 1>>("vertices").shared();
-    state.conserved = group.read<nd::unique_array<typename HydroSystem::conserved_t, 1>>("conserved").shared();
+    group.read("time", state.time);
+    group.read("iteration", state.iteration);
+    group.read("vertices", state.vertices);
+    group.read("conserved", state.conserved);
     return state;
 }
 
@@ -682,3 +684,5 @@ std::unique_ptr<mara::sub_program_t> make_subprog_sedov()
 {
     return std::make_unique<subprog_sedov>();
 }
+
+#endif // MARA_COMPILE_SUBPROGRAM_SEDOV

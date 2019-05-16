@@ -27,6 +27,13 @@
 
 
 #pragma once
+#include <utility>
+
+
+
+
+// This header doesn't really belong in 'app' - more like math_algebra.hpp,
+// math_statistics.hpp, math_stencils.hpp, etc.
 
 
 
@@ -34,6 +41,7 @@
 //=============================================================================
 namespace mara
 {
+
     inline std::pair<double, double> parabola_vertex(double x1, double x2, double x3, double y1, double y2, double y3);
 }
 

@@ -226,9 +226,12 @@ auto mara::serialize::detail::tuple_pair(Tuple1&& t1, Tuple2&& t2)
 template<typename ValueType, std::size_t Rank>
 struct h5::hdf5_type_info<nd::shared_array<ValueType, Rank>>
 {
-    static auto make_datatype_for(const nd::shared_array<ValueType, Rank>&) { return h5::make_datatype_for(ValueType()); }
-    static auto make_dataspace_for(const nd::shared_array<ValueType, Rank>& value) { return Dataspace::simple(value.shape()); }
-    static auto get_address(const nd::shared_array<ValueType, Rank>& value) { return value.data(); }
+    using native_type = nd::shared_array<ValueType, Rank>;
+    static auto make_datatype_for(const native_type&) { return h5::make_datatype_for(ValueType()); }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::simple(value.shape()); }
+    static auto prepare(const Datatype&, const Dataspace& space) { return nd::make_unique_array<ValueType>(nd::shape_t<Rank>::from_range(space.extent())); }
+    static auto finalize(nd::unique_array<ValueType, Rank>&& value) { return std::move(value).shared(); }
+    static auto get_address(const native_type& value) { return value.data(); }
 };
 
 
@@ -238,26 +241,13 @@ struct h5::hdf5_type_info<nd::shared_array<ValueType, Rank>>
 template<typename ValueType, std::size_t Rank>
 struct h5::hdf5_type_info<nd::unique_array<ValueType, Rank>>
 {
-    static auto make_datatype_for(const nd::unique_array<ValueType, Rank>&) { return h5::make_datatype_for(ValueType()); }
-    static auto make_dataspace_for(const nd::unique_array<ValueType, Rank>& value) { return Dataspace::simple(value.shape()); }
+    using native_type = nd::unique_array<ValueType, Rank>;
+    static auto make_datatype_for(const native_type&) { return h5::make_datatype_for(ValueType()); }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::simple(value.shape()); }
     static auto prepare(const Datatype&, const Dataspace& space) { return nd::make_unique_array<ValueType>(nd::shape_t<Rank>::from_range(space.extent())); }
-    static auto get_address(nd::unique_array<ValueType, Rank>& value) { return value.data(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(native_type& value) { return value.data(); }
 };
-
-
-
-
-//=============================================================================
-// template<typename ValueType, std::size_t Rank, typename DerivedType>
-// struct h5::hdf5_type_info<mara::fixed_length_sequence_t<ValueType, Rank, DerivedType>>
-// {
-//     using native_type = mara::fixed_length_sequence_t<ValueType, Rank, DerivedType>;
-//     static auto make_datatype_for(const native_type& value) { return h5::make_datatype_for(ValueType()).as_array(Rank); }
-//     static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
-//     static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
-//     static auto get_address(const native_type& value) { return &value[0]; }
-//     static auto get_address(native_type& value) { return &value[0]; }
-// };
 
 
 
@@ -270,6 +260,7 @@ struct h5::hdf5_type_info<mara::covariant_sequence_t<ValueType, Rank>>
     static auto make_datatype_for(const native_type& value) { return h5::make_datatype_for(ValueType()).as_array(Rank); }
     static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
     static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
     static auto get_address(const native_type& value) { return &value[0]; }
     static auto get_address(native_type& value) { return &value[0]; }
 };
@@ -285,6 +276,7 @@ struct h5::hdf5_type_info<mara::dimensional_value_t<C, G, S, T>>
     static auto make_datatype_for(const native_type& value) { return h5::make_datatype_for(value.value); }
     static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
     static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
     static auto get_address(const native_type& value) { return &value.value; }
     static auto get_address(native_type& value) { return &value.value; }
 };
@@ -300,6 +292,7 @@ struct h5::hdf5_type_info<mara::rational_number_t>
     static auto make_datatype_for(const native_type& value) { return h5::Datatype::native_int().as_array(2); }
     static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
     static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
     static auto get_address(const native_type& value) { return &value; }
     static auto get_address(native_type& value) { return &value; }
 };
@@ -328,6 +321,10 @@ struct h5::hdf5_type_info<mara::config_parameter_t>
         if (dtype == Datatype::c_s1())          return mara::config_parameter_t(h5::prepare<std::string>(dtype, space));
         throw std::invalid_argument("invalid hdf5 type for parameter variant");
     }
+    static auto finalize(mara::config_parameter_t&& value)
+    {
+        return std::move(value);
+    }
     static auto make_datatype_for(const mara::config_parameter_t& value)
     {
         switch (value.index())
@@ -338,7 +335,7 @@ struct h5::hdf5_type_info<mara::config_parameter_t>
         }
         throw;
     }
-    static auto get_address(mara::config_parameter_t& value)
+    static auto get_address(mara::config_parameter_t& value) -> void*
     {
         switch (value.index())
         {

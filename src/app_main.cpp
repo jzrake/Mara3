@@ -28,6 +28,7 @@
 
 #include <map>
 #include <iostream>
+#include "app_compile_opts.hpp"
 #include "app_subprogram.hpp"
 #include "app_performance.hpp"
 #include "core_dimensional.hpp"
@@ -49,10 +50,10 @@ int main(int argc, const char* argv[])
 {
     auto programs = std::map<std::string, std::unique_ptr<mara::sub_program_t>>();
 
-    programs["boilerplate"] = make_subprog_boilerlate();
-    programs["partdom"]     = make_subprog_partdom();
-    programs["sedov"]       = make_subprog_sedov();
-    programs["cloud"]       = make_subprog_cloud();
+    if constexpr (MARA_COMPILE_SUBPROGRAM_BOILERPLATE) programs["boilerplate"] = make_subprog_boilerlate();
+    if constexpr (MARA_COMPILE_SUBPROGRAM_PARTDOM)     programs["partdom"]     = make_subprog_partdom();
+    if constexpr (MARA_COMPILE_SUBPROGRAM_SEDOV)       programs["sedov"]       = make_subprog_sedov();
+    if constexpr (MARA_COMPILE_SUBPROGRAM_CLOUD)       programs["cloud"]       = make_subprog_cloud();
 
     if (argc == 1)
     {

@@ -1,3 +1,5 @@
+#include "app_compile_opts.hpp"
+#if MARA_COMPILE_SUBPROGRAM_PARTDOM
 #include <iostream>
 #include "ndarray.hpp"
 #include "ndarray_ops.hpp"
@@ -118,3 +120,5 @@ std::unique_ptr<mara::sub_program_t> make_subprog_partdom()
 {
     return std::make_unique<subprog_partdom>();
 }
+
+#endif // MARA_COMPILE_SUBPROGRAM_PARTDOM

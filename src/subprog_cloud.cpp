@@ -1,4 +1,7 @@
+#include "app_compile_opts.hpp"
+#if MARA_COMPILE_SUBPROGRAM_CLOUD
 #include <iostream>
+#include <thread>
 #include "ndmpi.hpp"
 #include "ndh5.hpp"
 #include "ndarray.hpp"
@@ -36,6 +39,40 @@ static auto config_template()
     // .item("explosion_density",  1.0)   // mass density between 0.5 < r < 1.0
     .item("density_index",      0.0)   // index n of the power-law ambient density profile, rho = r^(-n)
     .item("newtonian",            0);  // whether to use euler equations instead of srhd
+}
+
+
+
+
+//==============================================================================
+template<std::size_t NumThreads>
+static auto evaluate_on()
+{
+    return [] (auto array)
+    {
+        using value_type = typename decltype(array)::value_type;
+        auto provider = nd::make_unique_provider<value_type>(array.shape());
+        auto evaluate_partial = [&] (auto accessor)
+        {
+            return [accessor, array, &provider]
+            {
+                for (auto index : accessor)
+                {
+                    provider(index) = array(index);
+                }
+            };
+        };
+        auto threads = nd::basic_sequence_t<std::thread, NumThreads>();
+        auto regions = nd::partition_shape<NumThreads>(array.shape());
+
+        for (auto [n, accessor] : nd::enumerate(regions))
+            threads[n] = std::thread(evaluate_partial(accessor));
+
+        for (auto& thread : threads)
+            thread.join();
+
+        return nd::make_array(std::move(provider).shared());
+    };
 }
 
 
@@ -92,7 +129,6 @@ struct CloudProblem
     static auto intercell_flux(std::size_t axis);
     static auto extend_reflecting_inner();
     static auto extend_zero_gradient_outer();
-    // static auto find_shock_radius(const solution_state_t& state);
     static auto make_diagnostic_fields(const solution_state_t& state);
 
 
@@ -207,20 +243,6 @@ auto CloudProblem<HydroSystem>::extend_zero_gradient_outer()
     };
 }
 
-// template<typename HydroSystem>
-// auto CloudProblem<HydroSystem>::find_shock_radius(const solution_state_t& state)
-// {
-//     using namespace std::placeholders;
-//     auto cons_to_prim = std::bind(HydroSystem::recover_primitive, _1, gamma_law_index);
-
-//     auto primitive = state.conserved | nd::divide(cell_volumes(state.vertices)) | nd::map(cons_to_prim);
-//     auto rc = state.vertices | nd::midpoint_on_axis(0);
-//     auto s0 = primitive | nd::map(std::bind(&HydroSystem::primitive_t::specific_entropy, _1, gamma_law_index));
-//     auto ds = s0 | nd::difference_on_axis(0);
-//     auto shock_index = nd::where(ds == nd::min(ds)) | nd::read_index(0);
-//     return rc(shock_index);
-// }
-
 template<typename HydroSystem>
 auto CloudProblem<HydroSystem>::make_diagnostic_fields(const solution_state_t& state)
 {
@@ -259,11 +281,11 @@ template<typename HydroSystem>
 auto CloudProblem<HydroSystem>::read_solution(h5::Group&& group)
 {
     auto state = solution_state_t();
-    state.time            = group.read<double>("time");
-    state.iteration       = group.read<mara::rational_number_t>("iteration");
-    state.radial_vertices = group.read<radial_vertex_unique_array_t>("radial_vertices").shared();
-    state.polar_vertices  = group.read<polar_vertex_unique_array_t>("polar_vertices").shared();
-    state.conserved       = group.read<nd::unique_array<typename HydroSystem::conserved_t, 2>>("conserved").shared();
+    group.read("time", state.time);
+    group.read("iteration", state.iteration);
+    group.read("radial_vertices", state.radial_vertices);
+    group.read("polar_vertices", state.polar_vertices);
+    group.read("conserved", state.conserved);
     return state;
 }
 
@@ -281,8 +303,7 @@ auto CloudProblem<HydroSystem>::new_solution(const mara::config_t& cfg)
         .with_mass_density(std::pow(r.value, -density_index))
         .with_gas_pressure(std::pow(r.value, -density_index) * temperature);
     };
-    auto to_conserved = std::bind(&HydroSystem::primitive_t::to_conserved_density, _1, gamma_law_index);
-
+    auto to_conserved   = std::bind(&HydroSystem::primitive_t::to_conserved_density, _1, gamma_law_index);
     auto nr             = cfg.get_int("nr");
     auto outer_radius   = cfg.get_double("outer_radius");
     auto radial_decades = std::log10(outer_radius);
@@ -331,15 +352,17 @@ auto CloudProblem<HydroSystem>::next_solution(const solution_state_t& state)
     auto cons_to_prim = std::bind(HydroSystem::recover_primitive, std::placeholders::_1, gamma_law_index);
     auto extend_bc = mara::compose(extend_reflecting_inner(), extend_zero_gradient_outer());
 
+    auto evaluate = evaluate_on<12>();
+
     auto dr_min = state.radial_vertices | nd::difference_on_axis(0) | nd::read_index(0);
-    auto dt = dr_min / mara::make_velocity(1.0) * cfl_number;
-    auto rc = cell_centroids    (state.radial_vertices, state.polar_vertices);
-    auto dv = cell_volumes      (state.radial_vertices, state.polar_vertices);
-    auto dAr = radial_face_areas(state.radial_vertices, state.polar_vertices);
-    auto dAq = polar_face_areas (state.radial_vertices, state.polar_vertices);
+    auto dt  = dr_min / mara::make_velocity(1.0) * cfl_number;
+    auto rc  = cell_centroids   (state.radial_vertices, state.polar_vertices) | evaluate;
+    auto dv  = cell_volumes     (state.radial_vertices, state.polar_vertices) | evaluate;
+    auto dAr = radial_face_areas(state.radial_vertices, state.polar_vertices) | evaluate;
+    auto dAq = polar_face_areas (state.radial_vertices, state.polar_vertices) | evaluate;
 
     auto u0 = state.conserved;
-    auto p0 = u0 / dv | nd::map(cons_to_prim) | nd::to_shared();
+    auto p0 = u0 / dv | nd::map(cons_to_prim) | evaluate;
     auto s0 = nd::zip_arrays(p0, rc) | nd::apply(source_terms) | multiply(dv);
     auto lr = p0 | extend_bc | intercell_flux(0) | multiply(-dAr) | nd::difference_on_axis(0);
     auto lq = p0 | intercell_flux(1) | nd::extend_zero_gradient(1) | multiply(-dAq) | nd::difference_on_axis(1);
@@ -350,7 +373,7 @@ auto CloudProblem<HydroSystem>::next_solution(const solution_state_t& state)
         state.iteration + 1,
         state.radial_vertices,
         state.polar_vertices,
-        u1 | nd::to_shared() };
+        u1 | evaluate };
 }
 
 
@@ -441,7 +464,6 @@ void CloudProblem<HydroSystem>::write_diagnostics(const app_state_t& state, std:
     file.write("radial_gamma_beta",  diagnostics.radial_gamma_beta);
     file.write("radial_vertices",    diagnostics.radial_vertices);
     file.write("polar_vertices",     diagnostics.polar_vertices);
-    // file.write("shock_radius",       diagnostics.shock_radius);
 
     std::printf("write diagnostics: %s\n", file.filename().data());
 }
@@ -449,17 +471,6 @@ void CloudProblem<HydroSystem>::write_diagnostics(const app_state_t& state, std:
 template<typename HydroSystem>
 void CloudProblem<HydroSystem>::write_time_series(const app_state_t& state, std::string outdir)
 {
-    auto file = h5::File(mara::filesystem::join({outdir, "time_series.h5"}), "r+");
-    auto time         = file.open_dataset("time");
-    auto shock_radius = file.open_dataset("shock_radius");
-    auto current_size = state.schedule.num_times_performed("write_time_series");
-    auto target_space = h5::hyperslab_t{{std::size_t(current_size)}, {1}, {1}, {1}};
-
-    time.set_extent(current_size + 1);
-    shock_radius.set_extent(current_size + 1);
-
-    time.write(state.solution_state.time, time.get_space().select(target_space));
-    // shock_radius.write(find_shock_radius(state.solution_state), shock_radius.get_space().select(target_space));
 }
 
 template<typename HydroSystem>
@@ -588,3 +599,5 @@ std::unique_ptr<mara::sub_program_t> make_subprog_cloud()
 {
     return std::make_unique<subprog_cloud>();
 }
+
+#endif // MARA_COMPILE_SUBPROGRAM_CLOUD
