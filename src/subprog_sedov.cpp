@@ -13,9 +13,9 @@
 #include "app_schedule.hpp"
 #include "app_performance.hpp"
 #include "app_subprogram.hpp"
-#include "app_fitting.hpp"
 #include "physics_srhd.hpp"
 #include "physics_euler.hpp"
+#include "math_polynomial.hpp"
 
 #define gamma_law_index (4. / 3)
 #define cfl_number 0.4
@@ -60,6 +60,24 @@ static auto negate_radial_velocity(const mara::srhd::primitive_t& p)
 static auto negate_radial_velocity(const mara::euler::primitive_t& p)
 {
     return p.with_velocity_1(-p.velocity_1());
+}
+static double solve_for_shock_velocity(const mara::srhd::primitive_t& p1, const mara::srhd::primitive_t& p2)
+{
+    auto d1 = p1.mass_density();
+    auto d2 = p2.mass_density();
+    auto u1 = p1.gamma_beta_1();
+    auto u2 = p2.gamma_beta_1();
+    auto g1 = p1.lorentz_factor();
+    auto g2 = p2.lorentz_factor();
+    return (d2 * u2 - d1 * u1) / (d2 * g2 - d1 * g1);
+}
+static double solve_for_shock_velocity(const mara::euler::primitive_t& p1, const mara::euler::primitive_t& p2)
+{
+    auto d1 = p1.mass_density();
+    auto d2 = p2.mass_density();
+    auto v1 = p1.velocity_1();
+    auto v2 = p2.velocity_1();
+    return (d2 * v2 - d1 * v1) / (d2 - d1);
 }
 
 
@@ -109,8 +127,8 @@ struct SedovProblem
 
 
     static auto find_shock_index(primitive_array_t primitive);
-    static auto find_index_of_velocity_maximum_behind(primitive_array_t primitive, std::size_t index);
-    static auto find_velocity_plateau_ahead(primitive_array_t primitive, std::size_t index);
+    static auto find_index_of_maximum_pressure_behind(primitive_array_t primitive, std::size_t index);
+    static auto find_index_of_pressure_plateau_ahead(primitive_array_t primitive, std::size_t index);
     static auto compute_time_series_data(const solution_state_t& state);
     static auto get_time_series_column_names();
 
@@ -250,10 +268,10 @@ auto SedovProblem<HydroSystem>::find_shock_index(primitive_array_t primitive)
 }
 
 template<typename HydroSystem>
-auto SedovProblem<HydroSystem>::find_index_of_velocity_maximum_behind(primitive_array_t primitive, std::size_t index)
+auto SedovProblem<HydroSystem>::find_index_of_maximum_pressure_behind(primitive_array_t primitive, std::size_t index)
 {
     auto p = primitive
-    | nd::map([] (auto p) { return radial_velocity_or_gamma_beta(p); })
+    | nd::map(std::mem_fn(&HydroSystem::primitive_t::gas_pressure))
     | nd::bounds_check();
 
     try {
@@ -265,22 +283,22 @@ auto SedovProblem<HydroSystem>::find_index_of_velocity_maximum_behind(primitive_
     }
     catch (const std::exception& e)
     {
-        std::printf("find_index_of_velocity_maximum_behind: %s", e.what());
+        std::printf("find_index_of_maximum_pressure_behind: %s\n", e.what());
         return std::size_t(0);
     }
 }
 
 template<typename HydroSystem>
-auto SedovProblem<HydroSystem>::find_velocity_plateau_ahead(primitive_array_t primitive, std::size_t index)
+auto SedovProblem<HydroSystem>::find_index_of_pressure_plateau_ahead(primitive_array_t primitive, std::size_t index)
 {
     auto dlogp = primitive
-    | nd::map([] (auto p) { return radial_velocity_or_gamma_beta(p); })
+    | nd::map(std::mem_fn(&HydroSystem::primitive_t::gas_pressure))
     | nd::map([] (auto p) { return std::log(p); })
     | nd::difference_on_axis(0)
     | nd::bounds_check();
 
     try {
-        while (dlogp(index) < 0.5 * dlogp(index - 1))
+        while (dlogp(index - 1) < 0.5 * dlogp(index - 2))
         {
             ++index;
         }
@@ -288,7 +306,7 @@ auto SedovProblem<HydroSystem>::find_velocity_plateau_ahead(primitive_array_t pr
     }
     catch (const std::exception& e)
     {
-        std::printf("find_velocity_plateau_ahead: %s", e.what());
+        std::printf("find_index_of_pressure_plateau_ahead: %s\n", e.what());
         return std::size_t(0);
     }
 }
@@ -305,8 +323,8 @@ auto SedovProblem<HydroSystem>::compute_time_series_data(const solution_state_t&
     | nd::to_shared();
 
     auto shock_index      = find_shock_index(primitive)[0];
-    auto downstream_index = find_index_of_velocity_maximum_behind(primitive, shock_index);
-    auto upstream_index   = find_velocity_plateau_ahead(primitive, shock_index);
+    auto downstream_index = find_index_of_maximum_pressure_behind(primitive, shock_index);
+    auto upstream_index   = find_index_of_pressure_plateau_ahead(primitive, shock_index);
     auto rc = state.vertices | nd::midpoint_on_axis(0);
     auto vc = primitive | nd::map([] (auto p) { return radial_velocity_or_gamma_beta(p); });
 
@@ -324,6 +342,7 @@ auto SedovProblem<HydroSystem>::compute_time_series_data(const solution_state_t&
         {"shock_radius_upstream", rc(upstream_index)},
         {"shock_radius_downstream", rc(downstream_index)},
         {"shock_radius_interpolated", find_vertex(downstream_index)},
+        {"shock_velocity", solve_for_shock_velocity(primitive(upstream_index), primitive(downstream_index))},
     };
 }
 
@@ -337,6 +356,7 @@ auto SedovProblem<HydroSystem>::get_time_series_column_names()
         "shock_radius_upstream",
         "shock_radius_downstream",
         "shock_radius_interpolated",
+        "shock_velocity",
     };
 }
 
