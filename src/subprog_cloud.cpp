@@ -27,18 +27,20 @@
 static auto config_template()
 {
     return mara::make_config_template()
-    .item("restart",  std::string())   // name of a restart file (create new run if empty)
-    .item("outdir",          "data")   // directory to put output files in
-    .item("nr",                 256)   // number of radial zones, per decade
-    .item("tfinal",             1.0)   // time to stop the simulation
-    .item("cpi",                1.0)   // checkpoint interval
-    .item("tsi",                0.1)   // time-series interval
-    .item("dfi",                0.1)   // diagnostic field interval (useful primitives)
-    .item("outer_radius",     100.0)   // outer boundary radius
-    // .item("explosion_pressure", 1.0)   // gas pressure between 0.5 < r < 1.0
-    // .item("explosion_density",  1.0)   // mass density between 0.5 < r < 1.0
-    .item("density_index",      0.0)   // index n of the power-law ambient density profile, rho = r^(-n)
-    .item("newtonian",            0);  // whether to use euler equations instead of srhd
+    .item("restart",      std::string())   // name of a restart file (create new run if empty)
+    .item("outdir",              "data")   // directory to put output files in
+    .item("nr",                     256)   // number of radial zones, per decade
+    .item("tfinal",                 1.0)   // time to stop the simulation
+    .item("cpi",                    1.0)   // checkpoint interval
+    .item("tsi",                    0.1)   // time-series interval
+    .item("dfi",                    0.1)   // diagnostic field interval (useful primitives)
+    .item("outer_radius",         100.0)   // outer boundary radius
+    .item("jet_velocity",          10.0)
+    .item("jet_density",            1.0)
+    .item("jet_opening_angle",      0.1)
+    .item("jet_structure_exp",      2.0)
+    .item("jet_timescale",        100.0)
+    .item("density_index",          0.0);  // index n of the power-law ambient density profile, rho = r^(-n)
 }
 
 
@@ -129,6 +131,7 @@ struct CloudProblem
     static auto intercell_flux(std::size_t axis);
     static auto extend_reflecting_inner();
     static auto extend_zero_gradient_outer();
+    static auto extend_inflow_nozzle_inner(const app_state_t& app_state);
     static auto make_diagnostic_fields(const solution_state_t& state);
 
 
@@ -137,7 +140,7 @@ struct CloudProblem
     static auto read_solution(h5::Group&& group);
     static auto new_solution(const mara::config_t& cfg);
     static auto create_solution(const mara::config_t& run_config);
-    static auto next_solution(const solution_state_t& state);
+    static auto next_solution(const app_state_t& app_state);
 
 
     //=============================================================================
@@ -231,6 +234,47 @@ auto CloudProblem<HydroSystem>::extend_reflecting_inner()
         | nd::select_first(1, 0)
         | nd::map([] (auto p) { return p.with_gamma_beta_1(-p.gamma_beta_1()); });
         return xl | nd::concat(array);
+    };
+}
+
+template<typename HydroSystem>
+auto CloudProblem<HydroSystem>::extend_inflow_nozzle_inner(const app_state_t& app_state)
+{
+    auto time                   = app_state.solution_state.time;
+    auto polar_vertices         = app_state.solution_state.polar_vertices;
+    auto polar_cells            = polar_vertices | nd::midpoint_on_axis(0);
+    auto jet_velocity           = app_state.run_config.get_double("jet_velocity");
+    auto jet_density            = app_state.run_config.get_double("jet_density");
+    auto jet_opening_angle      = app_state.run_config.get_double("jet_opening_angle");
+    auto jet_structure_exp      = app_state.run_config.get_double("jet_structure_exp");
+    auto jet_timescale          = app_state.run_config.get_double("jet_timescale");
+
+    auto angular_kernel = [=] (auto q)
+    {
+        auto dq = jet_opening_angle;
+        auto q0 = 0.0;
+        auto q1 = M_PI;
+        auto f0 = std::exp(-std::pow((q - q0) / dq, jet_structure_exp));
+        auto f1 = std::exp(-std::pow((q - q1) / dq, jet_structure_exp));
+        return f0 + f1;
+    };
+
+    auto inflow_function = [=] (double q)
+    {
+        return typename HydroSystem::primitive_t()
+                .with_mass_density(jet_density)
+                .with_gas_pressure(jet_density * 0.1)
+                .with_gamma_beta_1(jet_velocity * angular_kernel(q) * std::exp(-time / jet_timescale));
+    };
+
+    return [=] (auto array)
+    {
+        auto nozzle_inflow = polar_cells
+        | nd::map(inflow_function)
+        | nd::to_shared()
+        | nd::reshape(1, polar_cells.size());
+
+        return nozzle_inflow | nd::concat(array);
     };
 }
 
@@ -339,7 +383,7 @@ auto CloudProblem<HydroSystem>::create_solution(const mara::config_t& run_config
 }
 
 template<typename HydroSystem>
-auto CloudProblem<HydroSystem>::next_solution(const solution_state_t& state)
+auto CloudProblem<HydroSystem>::next_solution(const app_state_t& app_state)
 {
     using namespace std::placeholders;
 
@@ -350,9 +394,11 @@ auto CloudProblem<HydroSystem>::next_solution(const solution_state_t& state)
         return primitive.spherical_geometry_source_terms(r, q, gamma_law_index);
     };
     auto cons_to_prim = std::bind(HydroSystem::recover_primitive, std::placeholders::_1, gamma_law_index);
-    auto extend_bc = mara::compose(extend_reflecting_inner(), extend_zero_gradient_outer());
+    // auto extend_bc = mara::compose(extend_reflecting_inner(), extend_zero_gradient_outer());
+    auto extend_bc = mara::compose(extend_inflow_nozzle_inner(app_state), extend_zero_gradient_outer());
 
     auto evaluate = evaluate_on<12>();
+    auto state = app_state.solution_state;
 
     auto dr_min = state.radial_vertices | nd::difference_on_axis(0) | nd::read_index(0);
     auto dt  = dr_min / mara::make_velocity(1.0) * cfl_number;
@@ -487,7 +533,7 @@ template<typename HydroSystem>
 auto CloudProblem<HydroSystem>::next(const app_state_t& state)
 {
     auto next_state = state;
-    next_state.solution_state = next_solution(state.solution_state);
+    next_state.solution_state = next_solution(state);
     next_state.schedule       = next_schedule(state.schedule, state.run_config, state.solution_state.time);
     return next_state;
 }

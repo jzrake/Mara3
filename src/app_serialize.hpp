@@ -127,7 +127,13 @@ auto mara::read_config(h5::Group&& group)
 
     for (auto item_name : group)
     {
-        config[item_name] = group.read<mara::config_parameter_t>(item_name);
+        try {
+            config[item_name] = group.read<mara::config_parameter_t>(item_name);
+        }
+        catch (const std::exception& e)
+        {
+            std::printf("%s: %s\n", e.what(), item_name.data());
+        }
     }
     return config;
 }
@@ -314,12 +320,12 @@ struct h5::hdf5_type_info<mara::config_parameter_t>
         }
         throw;
     }
-    static auto prepare(const Datatype& dtype, const Dataspace& space)
+    static auto prepare(const Datatype& dtype, const Dataspace& space) -> mara::config_parameter_t
     {
-        if (dtype == Datatype::native_int())    return mara::config_parameter_t(h5::prepare<int>        (dtype, space));
-        if (dtype == Datatype::native_double()) return mara::config_parameter_t(h5::prepare<double>     (dtype, space));
-        if (dtype == Datatype::c_s1())          return mara::config_parameter_t(h5::prepare<std::string>(dtype, space));
-        throw std::invalid_argument("invalid hdf5 type for parameter variant");
+        if (dtype              == Datatype::native_int())    return h5::prepare<int>        (dtype, space);
+        if (dtype              == Datatype::native_double()) return h5::prepare<double>     (dtype, space);
+        if (dtype.with_size(1) == Datatype::c_s1())          return h5::prepare<std::string>(dtype, space);
+        throw std::invalid_argument("invalid HDF5 type for config_parameter_t (std::variant<int, double, std::string>)");
     }
     static auto finalize(mara::config_parameter_t&& value)
     {

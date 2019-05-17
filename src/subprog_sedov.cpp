@@ -435,18 +435,19 @@ auto SedovProblem<HydroSystem>::next_solution(const solution_state_t& state)
 {
     using namespace std::placeholders;
 
+    auto evaluate = nd::to_shared();
     auto source_terms = std::bind(&HydroSystem::primitive_t::spherical_geometry_source_terms_radial, _1, _2, gamma_law_index);
     auto cons_to_prim = std::bind(HydroSystem::recover_primitive, std::placeholders::_1, gamma_law_index);
     auto extend_bc = mara::compose(extend_reflecting_inner(), extend_zero_gradient_outer());
 
     auto dr_min = state.vertices | nd::difference_on_axis(0) | nd::read_index(0);
     auto dt = mara::make_time(cfl_number * dr_min);
-    auto dv = cell_volumes(state.vertices) | nd::to_shared();
+    auto dv = cell_volumes(state.vertices) | evaluate;
     auto da = face_areas(state.vertices);
     auto rc = state.vertices | nd::midpoint_on_axis(0);
 
     auto u0 = state.conserved;
-    auto p0 = u0 / dv | nd::map(cons_to_prim) | nd::to_shared();
+    auto p0 = u0 / dv | nd::map(cons_to_prim) | evaluate;
     auto s0 = nd::zip_arrays(p0, rc) | nd::apply(source_terms) | multiply(dv);
     auto l0 = p0 | extend_bc | intercell_flux(0) | multiply(-da) | nd::difference_on_axis(0);
     auto u1 = u0 + (l0 + s0) * dt;
@@ -455,7 +456,7 @@ auto SedovProblem<HydroSystem>::next_solution(const solution_state_t& state)
         state.time + dt.value,
         state.iteration + 1,
         state.vertices,
-        u1 | nd::to_shared() };
+        u1 | evaluate };
 }
 
 
@@ -625,8 +626,11 @@ auto SedovProblem<HydroSystem>::run_tasks(const app_state_t& state)
 template<typename HydroSystem>
 void SedovProblem<HydroSystem>::print_run_loop_message(const solution_state_t& solution, mara::perf_diagnostics_t perf)
 {
-    auto kzps = solution.vertices.size() / perf.execution_time_ms;
-    std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n", solution.iteration.as_integral(), solution.time, kzps);
+    if (solution.iteration.as_integral() % 100 == 0)
+    {
+        auto kzps = solution.vertices.size() / perf.execution_time_ms;
+        std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n", solution.iteration.as_integral(), solution.time, kzps);
+    }
 }
 
 template<typename HydroSystem>
