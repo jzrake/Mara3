@@ -40,10 +40,10 @@ DEP      := $(SRC:%.cpp=%.d)
 # Build rules
 # =====================================================================
 #
-mara3: $(OBJ)
+mara: $(OBJ)
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
 clean:
-	$(RM) $(OBJ) $(DEP) mara3
+	$(RM) $(OBJ) $(DEP) mara
 
 -include $(DEP)

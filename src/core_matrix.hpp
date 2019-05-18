@@ -27,7 +27,7 @@
 
 
 #pragma once
-#include <type_traits> // std::invoke_result_t
+#include <type_traits>        // std::invoke_result_t
 #include "core_sequence.hpp"
 
 
@@ -66,6 +66,35 @@ public:
     static constexpr std::size_t num_cols = NumCols;
     static constexpr std::size_t num_rows = NumRows;
 
+    static matrix_t identity()
+    {
+        static_assert(num_rows == num_cols, "only square matrices have an identity");
+        auto result = matrix_t();
+
+        for (std::size_t i = 0; i < num_rows; ++i)
+        {
+            for (std::size_t j = 0; j < num_rows; ++j)
+            {
+                result(i, j) = i == j;
+            }
+        }
+        return result;
+    }
+
+    static matrix_t zero()
+    {
+        auto result = matrix_t();
+
+        for (std::size_t i = 0; i < num_rows; ++i)
+        {
+            for (std::size_t j = 0; j < num_rows; ++j)
+            {
+                result(i, j) = 0;
+            }
+        }
+        return result;
+    }
+
     const ValueType& operator()(std::size_t i, std::size_t j) const
     {
         return memory[i * NumCols + j];
@@ -74,6 +103,21 @@ public:
     ValueType& operator()(std::size_t i, std::size_t j)
     {
         return memory[i * NumCols + j];
+    }
+
+    bool operator==(const matrix_t& other) const
+    {
+        for (std::size_t i = 0; i < num_rows; ++i)
+        {
+            for (std::size_t j = 0; j < num_rows; ++j)
+            {
+                if (operator()(i, j) != other(i, j))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
 private:

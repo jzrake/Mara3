@@ -397,7 +397,7 @@ struct h5::hdf5_type_info<char>
     static auto make_datatype_for(const native_type&) { return Datatype::c_s1(); }
     static auto make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
     static auto prepare(const Datatype&, const Dataspace&) { return native_type(); }
-    static auto finalize(native_type&& value) { return value; }
+    static auto finalize(native_type&& value) { return std::move(value); }
     static auto get_address(native_type& value) { return &value; }
     static auto get_address(const native_type& value) { return &value; }
 };
@@ -421,7 +421,7 @@ struct h5::hdf5_type_info<double>
     static auto make_datatype_for(const native_type&) { return Datatype::native_double(); }
     static auto make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
     static auto prepare(const Datatype&, const Dataspace&) { return native_type(); }
-    static auto finalize(native_type&& value) { return value; }
+    static auto finalize(native_type&& value) { return std::move(value); }
     static auto get_address(native_type& value) { return &value; }
     static auto get_address(const native_type& value) { return &value; }
 };
@@ -445,7 +445,7 @@ struct h5::hdf5_type_info<std::vector<ValueType>>
     static auto make_datatype_for(const native_type&) { return h5::make_datatype_for(ValueType()); }
     static auto make_dataspace_for(const native_type& value) { return Dataspace{value.size()}; }
     static auto prepare(const Datatype&, const Dataspace& space) { return native_type(space.size()); }
-    static auto finalize(native_type&& value) { return value; }
+    static auto finalize(native_type&& value) { return std::move(value); }
     static auto get_address(native_type& value) { return value.data(); }
     static auto get_address(const native_type& value) { return value.data(); }
 };

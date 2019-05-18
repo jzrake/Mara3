@@ -41,6 +41,7 @@ std::unique_ptr<mara::sub_program_t> make_subprog_boilerlate();
 std::unique_ptr<mara::sub_program_t> make_subprog_partdom();
 std::unique_ptr<mara::sub_program_t> make_subprog_sedov();
 std::unique_ptr<mara::sub_program_t> make_subprog_cloud();
+std::unique_ptr<mara::sub_program_t> make_subprog_test();
 
 
 
@@ -54,6 +55,7 @@ int main(int argc, const char* argv[])
     if constexpr (MARA_COMPILE_SUBPROGRAM_PARTDOM)     programs["partdom"]     = make_subprog_partdom();
     if constexpr (MARA_COMPILE_SUBPROGRAM_SEDOV)       programs["sedov"]       = make_subprog_sedov();
     if constexpr (MARA_COMPILE_SUBPROGRAM_CLOUD)       programs["cloud"]       = make_subprog_cloud();
+    if constexpr (MARA_COMPILE_SUBPROGRAM_TEST)        programs["test"]        = make_subprog_test();
 
     if (argc == 1)
     {
