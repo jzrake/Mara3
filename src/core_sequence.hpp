@@ -254,6 +254,61 @@ public:
     auto operator-(const covariant_sequence_t& v) const { return binary_op(v, std::minus<>()); }
     auto operator-() const { return unary_op(std::negate<>()); }
 
+
+    /**
+     * @brief      Return a new sequence by mapping the elements of this one
+     *             through a function f, which may return a value type other
+     *             than the type of this sequence's elements.
+     *
+     * @param      fn        The function to transform by
+     *
+     * @tparam     Function  The type of the function object
+     *
+     * @return     The new sequence
+     */
+    template<typename Function>
+    auto transform(Function&& fn) const
+    {
+        return unary_op(std::forward<Function>(fn));
+    }
+
+
+    /**
+     * @brief      Return a new sequence built from the final Rank - 1 elements
+     *             of this one.
+     *
+     * @return     The new sequence
+     */
+    auto drop_first() const
+    {
+        auto result = covariant_sequence_t<ValueType, Rank - 1>();
+
+        for (std::size_t n = 0; n < Rank - 1; ++n)
+        {
+            result.memory[n] = this->operator[](n + 1);
+        }
+        return result;
+    }
+
+
+    /**
+     * @brief      Return a new sequence built from the first Rank - 1 elements
+     *             of this one.
+     *
+     * @return     The new sequence
+     */
+    auto drop_final() const
+    {
+        auto result = covariant_sequence_t<ValueType, Rank - 1>();
+
+        for (std::size_t n = 0; n < Rank - 1; ++n)
+        {
+            result.memory[n] = this->operator[](n);
+        }
+        return result;
+    }
+
+
 private:
     //=========================================================================
     template<typename Function>
