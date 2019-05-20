@@ -367,15 +367,21 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
          * @brief      Return the Jacobian matrix dF / dU (Toro eqn. 3.79)
          *
          * @return     A 5x5 matrix
+         *
+         * @note       There is a typo in Toro (3rd edition) eqn. 3.79 in row 5,
+         *             column 1 of A. The expression written is 0.5 * u * ((g -
+         *             3) * H - a2), but it should read u * (0.5 * m * V2 - H)
+         *             (where m = g - 1) as it does in the 2d version in eqn.
+         *             3.70.
          */
         auto flux_jacobian() const
         {
             return matrix_t<double, 5, 5> {
-                {{0,                            1,                    0,          0, 0},
-                 {m * H - u2 - a2,              (3 - g) * u,     -m * v,     -m * w, m},
-                 {-u * v,                       v,                    u,          0, 0},
-                 {-u * w,                       w,                    0,          u, 0},
-                 {0.5 * u * ((g - 3) * H - a2), H - m * u2,  -m * u * v, -m * u * w, m * u}}
+                {{0,                      1,             0,          0,         0},
+                 {m * H - u2 - a2,        (3 - g) * u,  -m * v,     -m * w,     m},
+                 {-u * v,                 v,             u,          0,         0},
+                 {-u * w,                 w,             0,          u,         0},
+                 {u * (0.5 * m * V2 - H), H - m * u2,   -m * u * v, -m * u * w, g * u}}
             };
         }
 
@@ -404,10 +410,10 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
         auto right_eigenvectors() const
         {
             return matrix_t<double, 5, 5> {
-                {{1,      1, 0,            0, 1},
-                 {u - a,  u, 0,            0, u + a},
-                 {v,      v, 1,            0, v},
-                 {w,      w, 0,            1, w},
+                {{1,         1,        0,  0, 1},
+                 {u - a,     u,        0,  0, u + a},
+                 {v,         v,        1,  0, v},
+                 {w,         w,        0,  1, w},
                  {H - u * a, 0.5 * V2, v,  w, H + u * a}}
             };
         }

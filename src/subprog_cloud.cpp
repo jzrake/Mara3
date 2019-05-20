@@ -43,13 +43,8 @@
 #include "app_performance.hpp"
 #include "app_subprogram.hpp"
 #include "physics_srhd.hpp"
-#include "physics_euler.hpp"
 #define gamma_law_index (4. / 3)
 #define cfl_number 0.4
-
-
-
-#include "core_matrix.hpp"
 
 
 

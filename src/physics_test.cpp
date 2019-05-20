@@ -39,13 +39,18 @@
 TEST_CASE("Euler equations are written correctly", "[mara::euler::primitive_t]")
 {
     auto gamma_law_index = 5. / 3;
-    auto P = mara::euler::primitive_t().with_gas_pressure(1.0).with_mass_density(1.0).with_velocity_1(1.0);
-    // auto A = P.flux_jacobian(gamma_law_index);
-    // auto L = P.eigenvalues(gamma_law_index);
+    auto P = mara::euler::primitive_t()
+    .with_gas_pressure(1.0)
+    .with_mass_density(1.5)
+    .with_velocity_1(0.2)
+    .with_velocity_2(0.3)
+    .with_velocity_3(0.4);
+    auto A = P.flux_jacobian(gamma_law_index);
+    auto L = P.eigenvalues(gamma_law_index);
     auto K = P.right_eigenvectors(gamma_law_index);
     auto Q = P.left_eigenvectors(gamma_law_index);
 
-    // auto A1 = K * L * Q;
+    auto A1 = K * L * Q;
     auto I = mara::identity_matrix<double, 5>();
     auto I1 = K * Q;
 
@@ -53,7 +58,9 @@ TEST_CASE("Euler equations are written correctly", "[mara::euler::primitive_t]")
     {
         for (std::size_t j = 0; j < 5; ++j)
         {
+            INFO(i); INFO(j);
             CHECK(std::fabs((I - I1)(i, j)) < 1e-12);
+            CHECK(std::fabs((A - A1)(i, j)) < 1e-12);
         }
     }
 }
