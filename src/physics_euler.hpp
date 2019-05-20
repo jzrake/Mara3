@@ -29,6 +29,7 @@
 #pragma once
 #include <cmath>
 #include "core_geometric.hpp"
+#include "core_matrix.hpp"
 
 
 
@@ -72,6 +73,7 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
 
 
 
+
     /**
      * @brief      Retrieve const-references to the quantities by name.
      */
@@ -80,6 +82,7 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
     const double& velocity_2() const { return operator[](2); }
     const double& velocity_3() const { return operator[](3); }
     const double& gas_pressure() const { return operator[](4); }
+
 
 
 
@@ -95,6 +98,36 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
     primitive_t with_velocity_2(double v)   const { auto res = *this; res[2] = v; return res; }
     primitive_t with_velocity_3(double v)   const { auto res = *this; res[3] = v; return res; }
     primitive_t with_gas_pressure(double v) const { auto res = *this; res[4] = v; return res; }
+
+
+
+
+    /**
+     * @brief      Return the fluid specific enthalpy.
+     *
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     h = (u + p) / rho
+     */
+    double specific_enthalpy(double gamma_law_index) const
+    {
+        return enthalpy_density(gamma_law_index) / mass_density();
+    }
+
+
+
+
+    /**
+     * @brief      Return the fluid enthalpy density.
+     *
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     H = u + p
+     */
+    double enthalpy_density(double gamma_law_index) const
+    {
+        return gas_pressure() * (1.0 + 1.0 / (gamma_law_index - 1.0));
+    }
 
 
 
@@ -227,6 +260,7 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
 
 
 
+
     /**
      * @brief      Return the wavespeeds along a given direction
      *
@@ -244,6 +278,7 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
             make_velocity(vn + cs),
         };
     }
+
 
 
 
@@ -276,6 +311,8 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
     }
 
 
+
+
     /**
      * @brief      Special case of the above for 1d radial flow
      *
@@ -293,6 +330,201 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
         auto S = covariant_sequence_t<dimensional_value_t<-3, 1, -1, double>, 5>();
         S[1].value = (2.0 * pg + d * vq * vq) / r;
         return S;
+    }
+
+
+
+
+    /**
+     * @brief      Data structure that computes the left and right eigenvectors
+     *             of the flux Jacobian, and caches the variables involved to
+     *             reduce redundant calculations.
+     */
+    struct eigensystem_formulas_t
+    {
+
+        //=====================================================================
+        eigensystem_formulas_t(const primitive_t& p, double gamma_law_index)
+        {
+            g = gamma_law_index;
+            m = gamma_law_index - 1;
+            u = p.velocity_1();
+            v = p.velocity_2();
+            w = p.velocity_3();
+            u2 = u * u;
+            v2 = v * v;
+            w2 = w * w;
+            V2 = u2 + v2 + w2;
+            a2 = p.sound_speed_squared(gamma_law_index);
+            a = std::sqrt(a2);
+            H = 0.5 * V2 + a2 / m;
+        }
+
+
+
+
+        /**
+         * @brief      Return the Jacobian matrix dF / dU (Toro eqn. 3.79)
+         *
+         * @return     A 5x5 matrix
+         */
+        auto flux_jacobian() const
+        {
+            return matrix_t<double, 5, 5> {
+                {{0,                            1,                    0,          0, 0},
+                 {m * H - u2 - a2,              (3 - g) * u,     -m * v,     -m * w, m},
+                 {-u * v,                       v,                    u,          0, 0},
+                 {-u * w,                       w,                    0,          u, 0},
+                 {0.5 * u * ((g - 3) * H - a2), H - m * u2,  -m * u * v, -m * u * w, m * u}}
+            };
+        }
+
+
+
+
+        /**
+         * @brief      Return the eigenvalues of the flux Jacobian
+         *
+         * @return     The eigenvalues
+         */
+        auto eigenvalues() const
+        {
+            return mara::diagonal_matrix<double>(u - a, u, u, u, u + a);
+        }
+
+
+
+
+        /**
+         * @brief      Return the right eigenvectors of the Jacobian matrix
+         *             (Toro eqn. 3.82)
+         *
+         * @return     The eigenvectors as a 5x5 matrix
+         */
+        auto right_eigenvectors() const
+        {
+            return matrix_t<double, 5, 5> {
+                {{1,      1, 0,            0, 1},
+                 {u - a,  u, 0,            0, u + a},
+                 {v,      v, 1,            0, v},
+                 {w,      w, 0,            1, w},
+                 {H - u * a, 0.5 * V2, v,  w, H + u * a}}
+            };
+        }
+
+
+
+
+        /**
+         * @brief      Return the left eigenvectors of the Jacobian matrix (Toro
+         *             eqn. 3.83)
+         *
+         * @return     The eigenvectors as a 5x5 matrix
+         */
+        auto left_eigenvectors() const
+        {
+            return matrix_t<double, 5, 5> {
+                {{      H + (a / m) * (u - a), -(u + a / m), -v,         -w,           1, },
+                 { -2 * H + (4 / m) * a2,             2 * u,  2 * v,      2 * w,      -2, },
+                 {          -2 * v  * a2 / m,             0,  2 * a2 / m, 0,           0, },
+                 {          -2 * w  * a2 / m,             0,  0,          2 * a2 / m,  0, },
+                 {      H - (a / m) * (u + a), -(u - a / m), -v,         -w,           1, }},
+            } * (m / 2 / a2);
+        }
+
+
+
+
+        //=====================================================================
+        double g;
+        double m;
+        double u;
+        double v;
+        double w;
+        double u2;
+        double v2;
+        double w2;
+        double V2;
+        double a2;
+        double a;
+        double H;
+    };
+
+
+
+
+    /**
+     * @brief      Compute the flux Jacobian dF / dU
+     *
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     A 5x5 matrix
+     */
+    auto flux_jacobian(double gamma_law_index) const
+    {
+        return eigensystem_formulas_t(*this, gamma_law_index).flux_jacobian();
+    }
+
+
+
+
+    /**
+     * @brief      Compute the eigenvalues of the flux Jacobian
+     *
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     The eigenvalues
+     */
+    auto eigenvalues(double gamma_law_index) const
+    {
+        return eigensystem_formulas_t(*this, gamma_law_index).eigenvalues();
+    }
+
+
+
+
+    /**
+     * @brief      Compute the right eigenvectors of the flux Jacobian dF / dU
+     *
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     A 5x5 matrix
+     */
+    auto right_eigenvectors(double gamma_law_index) const
+    {
+        return eigensystem_formulas_t(*this, gamma_law_index).right_eigenvectors();
+    }
+
+
+
+
+    /**
+     * @brief      Compute the left eigenvectors of the flux Jacobian dF / dU
+     *
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     A 5x5 matrix
+     */
+    auto left_eigenvectors(double gamma_law_index) const
+    {
+        return eigensystem_formulas_t(*this, gamma_law_index).left_eigenvectors();
+    }
+
+
+
+
+    /**
+     * @brief      Compute eigenvalues and left and right eigenvectors all at
+     *             once (more efficient than calling the above functions
+     *             on-by-one).
+     *
+     * @return     A tuple (eigenvalues, right, left)
+     */
+    auto eigensystem(double gamma_law_index) const
+    {
+        auto sys = eigensystem_formulas_t(*this, gamma_law_index);
+
+        return std::make_tuple(sys.eigenvalues(), sys.right_eigenvectors(), sys.left_eigenvectors());
     }
 };
 

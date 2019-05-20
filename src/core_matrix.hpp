@@ -28,7 +28,7 @@
 
 #pragma once
 #include <type_traits>        // std::invoke_result_t
-#include "core_sequence.hpp"
+#include <functional>         // std::plus, std::minus, etc
 
 
 
@@ -37,13 +37,19 @@
 namespace mara
 {
     template<typename ValueType, std::size_t NumRows, std::size_t NumCols>
-    class matrix_t;
+    struct matrix_t;
 
     template<typename T1, typename T2, std::size_t NumRows, std::size_t NumCols, std::size_t NumCols1Rows2>
     auto matrix_product(matrix_t<T1, NumRows, NumCols1Rows2> M1, matrix_t<T2, NumCols1Rows2, NumCols> M2);
 
-    template<typename T1, typename T2, std::size_t NumRows, std::size_t NumCols>
-    auto matrix_vector_product(matrix_t<T1, NumRows, NumCols> A, covariant_sequence_t<T2, NumCols> x);
+    template<typename ValueType, std::size_t NumRows, std::size_t NumCols>
+    inline auto zero_matrix();
+
+    template<typename ValueType, std::size_t Rank>
+    inline auto identity_matrix();
+
+    template<typename ValueType, typename... Args>
+    inline auto diagonal_matrix(Args... args);
 }
 
 
@@ -57,88 +63,199 @@ namespace mara
  * @tparam     NumCols    The number of columns
  */
 template<typename ValueType, std::size_t NumRows, std::size_t NumCols>
-class mara::matrix_t
+struct mara::matrix_t
 {
 public:
 
     //=========================================================================
     using value_type = ValueType;
-    static constexpr std::size_t num_cols = NumCols;
     static constexpr std::size_t num_rows = NumRows;
+    static constexpr std::size_t num_cols = NumCols;
 
-    static matrix_t identity()
-    {
-        static_assert(num_rows == num_cols, "only square matrices have an identity");
-        auto result = matrix_t();
-
-        for (std::size_t i = 0; i < num_rows; ++i)
-        {
-            for (std::size_t j = 0; j < num_rows; ++j)
-            {
-                result(i, j) = i == j;
-            }
-        }
-        return result;
-    }
-
-    static matrix_t zero()
-    {
-        auto result = matrix_t();
-
-        for (std::size_t i = 0; i < num_rows; ++i)
-        {
-            for (std::size_t j = 0; j < num_rows; ++j)
-            {
-                result(i, j) = 0;
-            }
-        }
-        return result;
-    }
-
+    //=========================================================================
     const ValueType& operator()(std::size_t i, std::size_t j) const
     {
-        return memory[i * NumCols + j];
+        return memory[i][j];
     }
 
     ValueType& operator()(std::size_t i, std::size_t j)
     {
-        return memory[i * NumCols + j];
+        return memory[i][j];
     }
 
     bool operator==(const matrix_t& other) const
     {
         for (std::size_t i = 0; i < num_rows; ++i)
-        {
-            for (std::size_t j = 0; j < num_rows; ++j)
-            {
+            for (std::size_t j = 0; j < num_cols; ++j)
                 if (operator()(i, j) != other(i, j))
-                {
                     return false;
-                }
-            }
-        }
         return true;
     }
 
+    bool operator!=(const matrix_t& other) const
+    {
+        for (std::size_t i = 0; i < num_rows; ++i)
+            for (std::size_t j = 0; j < num_cols; ++j)
+                if (operator()(i, j) != other(i, j))
+                    return true;
+        return false;
+    }
+
+    template<typename T2> auto operator+(const matrix_t<T2, NumRows, NumCols>& other) const { return binary_op(other, std::plus<>()); }
+    template<typename T2> auto operator-(const matrix_t<T2, NumRows, NumCols>& other) const { return binary_op(other, std::minus<>()); }
+    template<typename T2> auto operator*(const T2& scale) const { return binary_op(scale, std::multiplies<>()); }
+    template<typename T2> auto operator/(const T2& scale) const { return binary_op(scale, std::divides<>()); }
+    template<typename T2, std::size_t NumRows2, std::size_t NumCols2>
+    auto operator*(const matrix_t<T2, NumRows2, NumCols2>& other) const
+    {
+        return matrix_product(*this, other);
+    }
+
+    //=========================================================================
+    ValueType memory[NumRows][NumCols];
+
 private:
     //=========================================================================
-    ValueType memory[NumRows * NumCols];
+    template<typename Function>
+    auto binary_op(const matrix_t& v, Function&& fn) const
+    {
+        const auto& _ = *this;
+        auto result = matrix_t();
+
+        for (std::size_t i = 0; i < NumRows; ++i)
+        {
+            for (std::size_t j = 0; j < NumCols; ++j)
+            {
+                result(i, j) = fn(_(i, j), v(i, j));
+            }
+        }
+        return result;
+    }
+
+    template<typename T, typename Function>
+    auto binary_op(const T& a, Function&& fn) const
+    {
+        const auto& _ = *this;
+        auto result = matrix_t<std::invoke_result_t<Function, ValueType, T>, NumRows, NumCols>();
+
+        for (std::size_t i = 0; i < NumRows; ++i)
+        {
+            for (std::size_t j = 0; j < NumCols; ++j)
+            {
+                result(i, j) = fn(_(i, j), a);
+            }
+        }
+        return result;
+    }
+
+    template<typename Function>
+    auto unary_op(Function&& fn) const
+    {
+        const auto& _ = *this;
+        auto result = matrix_t<std::invoke_result_t<Function, ValueType>, NumRows, NumCols>();
+
+        for (std::size_t i = 0; i < NumRows; ++i)
+        {
+            for (std::size_t j = 0; j < NumCols; ++j)
+            {
+                result(i, j) = fn(_(i, j));
+            }
+        }
+        return result;
+    }
 };
 
 
 
 
 /**
+ * @brief      Return a matrix of all zeros.
+ *
+ * @tparam     ValueType  The element type
+ * @tparam     NumRows    The number of rows
+ * @tparam     NumCols    The number of columns
+ *
+ * @return     The matrix
+ */
+template<typename ValueType, std::size_t NumRows, std::size_t NumCols>
+auto mara::zero_matrix()
+{
+    auto result = matrix_t<ValueType, NumRows, NumCols>();
+
+    for (std::size_t i = 0; i < NumRows; ++i)
+        for (std::size_t j = 0; j < NumCols; ++j)
+            result(i, j) = ValueType(0);
+
+    return result;
+}
+
+
+
+
+/**
+ * @brief      Return the identity matrix for the given value type and rank.
+ *
+ * @tparam     ValueType  { description }
+ * @tparam     Rank       { description }
+ *
+ * @return     { description_of_the_return_value }
+ */
+template<typename ValueType, std::size_t Rank>
+auto mara::identity_matrix()
+{
+    auto result = matrix_t<ValueType, Rank, Rank>();
+
+    for (std::size_t i = 0; i < Rank; ++i)
+        for (std::size_t j = 0; j < Rank; ++j)
+            result(i, j) = ValueType(i == j);
+
+    return result;
+}
+
+
+
+
+/**
+ * @brief      Return a matrix with the given values on the diagonal.
+ *
+ * @param[in]  args       The values to go on the diagonal
+ *
+ * @tparam     ValueType  The element value type (must be given explicitly)
+ * @tparam     Args       The args (must be castable to ValueType)
+ *
+ * @return     The diagonal matrix
+ */
+template<typename ValueType, typename... Args>
+auto mara::diagonal_matrix(Args... args)
+{
+    constexpr std::size_t Rank = sizeof...(args);
+    auto result = matrix_t<ValueType, Rank, Rank>();
+
+    ValueType arg_list[Rank] = {args...};
+
+    for (std::size_t i = 0; i < Rank; ++i)
+        for (std::size_t j = 0; j < Rank; ++j)
+            result(i, j) = i == j ? arg_list[i] : ValueType(0);
+
+    return result;
+}
+
+
+
+
+/**
  * @brief      Multiply two matrices of compatible value types and row and
- *             column number
+ *             column number.
  *
  * @param[in]  M1             The first matrix
  * @param[in]  M2             The second matrix
  *
  * @tparam     T1             The value type of M1
  * @tparam     T2             The value type of M2
- * @tparam     NumRows        The number of rows in the resulting matrix, and in M1
- * @tparam     NumCols        The number of columns in the result matrix, and in M2
+ * @tparam     NumRows        The number of rows in the resulting matrix, and in
+ *                            M1
+ * @tparam     NumCols        The number of columns in the result matrix, and in
+ *                            M2
  * @tparam     NumCols1Rows2  The number of columns in M1 and rows in M2
  *
  * @return     The matrix product
@@ -161,42 +278,6 @@ auto mara::matrix_product(matrix_t<T1, NumRows, NumCols1Rows2> M1, matrix_t<T2, 
             }
             result(i, j) = element;
         }
-    }
-    return result;
-}
-
-
-
-
-/**
- * @brief      Multiply a matrix and a vector (a covariant sequence type)
- *
- * @param[in]  A        The matrix
- * @param[in]  x        The vector
- *
- * @tparam     T1       The value type of the matrix
- * @tparam     T2       The value type of the vector
- * @tparam     NumRows  The number of rows in the matrix, and elements of the
- *                      resulting vector
- * @tparam     NumCols  The number of columns of the matrix, and elements of x
- *
- * @return     The product vector y = A.x
- */
-template<typename T1, typename T2, std::size_t NumRows, std::size_t NumCols>
-auto mara::matrix_vector_product(matrix_t<T1, NumRows, NumCols> A, covariant_sequence_t<T2, NumCols> x)
-{
-    using result_value_type = std::invoke_result_t<std::multiplies<>, T1, T2>;
-    auto result = covariant_sequence_t<result_value_type, NumRows>();
-
-    for (std::size_t i = 0; i < NumRows; ++i)
-    {
-        auto element = result_value_type(0);
-
-        for (std::size_t m = 0; m < NumCols; ++m)
-        {
-            element += A(i, m) * x[m];
-        }
-        result[i] = element;
     }
     return result;
 }

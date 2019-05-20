@@ -38,18 +38,27 @@
 
 
 //=============================================================================
-SCENARIO("matrix works as expected", "[matrix]")
+TEST_CASE("matrix-matrix product and matrix-vector products work", "[matrix]")
 {
-    auto M1 = mara::matrix_t<double, 2, 3>::zero();
-    auto M2 = mara::matrix_t<double, 3, 4>::zero();
+    auto M1 = mara::zero_matrix<double, 2, 3>();
+    auto M2 = mara::zero_matrix<double, 3, 4>();
     auto M3 = mara::matrix_product(M1, M2);
-    auto x = mara::covariant_sequence_t<double, 3>();
-    auto y = mara::matrix_vector_product(M1, x);
-    REQUIRE(M3 == mara::matrix_t<double, 2, 4>::zero());
-    REQUIRE(y == mara::covariant_sequence_t<double, 2>::uniform(0));
-
+    auto x = mara::zero_matrix<double, 3, 1>();
+    auto y1 = M1 * x;
+    auto y2 = mara::matrix_product(M1, x);
+    REQUIRE(y1 == y2);
+    REQUIRE(y1 == mara::zero_matrix<double, 2, 1>());
     static_assert(M3.num_rows == 2);
     static_assert(M3.num_cols == 4);
+}
+
+TEST_CASE("can construct matrix from initializer list", "[matrix]")
+{
+    auto M2 = mara::matrix_t<int, 2, 2> {{
+        {0, 0},
+        {0, 0},
+    }};
+    REQUIRE(M2.num_cols == 2);
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST

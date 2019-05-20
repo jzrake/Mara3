@@ -19,7 +19,7 @@
  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
-
+ 
  ==============================================================================
 */
 #include "app_compile_opts.hpp"
@@ -28,34 +28,34 @@
 
 
 
-#define CATCH_CONFIG_RUNNER
-#define CATCH_CONFIG_FAST_COMPILE
-#include <hdf5.h>
+#include <iostream>
 #include "catch.hpp"
-#include "app_subprogram.hpp"
+#include "physics_euler.hpp"
 
 
 
 
 //=============================================================================
-class subprog_test : public mara::sub_program_t
+TEST_CASE("Euler equations are written correctly", "[mara::euler::primitive_t]")
 {
-public:
-    int main(int argc, const char* argv[]) override
-    {
-        H5Eset_auto(H5E_DEFAULT, [] (auto...) -> herr_t { return 0; }, NULL);
-        return Catch::Session().run(argc, argv);
-    }
+    auto gamma_law_index = 5. / 3;
+    auto P = mara::euler::primitive_t().with_gas_pressure(1.0).with_mass_density(1.0).with_velocity_1(1.0);
+    // auto A = P.flux_jacobian(gamma_law_index);
+    // auto L = P.eigenvalues(gamma_law_index);
+    auto K = P.right_eigenvectors(gamma_law_index);
+    auto Q = P.left_eigenvectors(gamma_law_index);
 
-    std::string name() const override
-    {
-        return "test";
-    }
-};
+    // auto A1 = K * L * Q;
+    auto I = mara::identity_matrix<double, 5>();
+    auto I1 = K * Q;
 
-std::unique_ptr<mara::sub_program_t> make_subprog_test()
-{
-    return std::make_unique<subprog_test>();
+    for (std::size_t i = 0; i < 5; ++i)
+    {
+        for (std::size_t j = 0; j < 5; ++j)
+        {
+            CHECK(std::fabs((I - I1)(i, j)) < 1e-12);
+        }
+    }
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
