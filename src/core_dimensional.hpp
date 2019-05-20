@@ -216,6 +216,8 @@ struct mara::dimensional_value_t
     }
 
 
+    auto operator+=(dimensional_value_t<C, G, S, T> other) { value += other.value; return *this; }
+    auto operator-=(dimensional_value_t<C, G, S, T> other) { value -= other.value; return *this; }
     auto operator==(dimensional_value_t<C, G, S, T> other) const { return value == other.value; }
     auto operator!=(dimensional_value_t<C, G, S, T> other) const { return value != other.value; }
     auto operator>=(dimensional_value_t<C, G, S, T> other) const { return value >= other.value; }
@@ -224,7 +226,7 @@ struct mara::dimensional_value_t
     auto operator<(dimensional_value_t<C, G, S, T> other) const { return value < other.value; }
 
 
-    double value = 0.0;
+    T value = 0;
 };
 
 

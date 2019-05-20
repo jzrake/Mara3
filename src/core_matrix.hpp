@@ -39,9 +39,6 @@ namespace mara
     template<typename ValueType, std::size_t NumRows, std::size_t NumCols>
     struct matrix_t;
 
-    template<typename T1, typename T2, std::size_t NumRows, std::size_t NumCols, std::size_t NumCols1Rows2>
-    auto matrix_product(matrix_t<T1, NumRows, NumCols1Rows2> M1, matrix_t<T2, NumCols1Rows2, NumCols> M2);
-
     template<typename ValueType, std::size_t NumRows, std::size_t NumCols>
     inline auto zero_matrix();
 
@@ -50,6 +47,15 @@ namespace mara
 
     template<typename ValueType, typename... Args>
     inline auto diagonal_matrix(Args... args);
+
+    template<typename ContainerType>
+    inline auto row_vector(ContainerType container);
+
+    template<typename ContainerType>
+    inline auto column_vector(ContainerType container);
+
+    template<typename T1, typename T2, std::size_t NumRows, std::size_t NumCols, std::size_t NumCols1Rows2>
+    auto matrix_product(matrix_t<T1, NumRows, NumCols1Rows2> M1, matrix_t<T2, NumCols1Rows2, NumCols> M2);
 }
 
 
@@ -231,12 +237,45 @@ auto mara::diagonal_matrix(Args... args)
     constexpr std::size_t Rank = sizeof...(args);
     auto result = matrix_t<ValueType, Rank, Rank>();
 
-    ValueType arg_list[Rank] = {args...};
+    ValueType arg_list[Rank] = {ValueType(args)...};
 
     for (std::size_t i = 0; i < Rank; ++i)
         for (std::size_t j = 0; j < Rank; ++j)
-            result(i, j) = i == j ? arg_list[i] : ValueType(0);
+            result(i, j) = i == j ? arg_list[i] : ValueType();
 
+    return result;
+}
+
+
+
+
+template<typename ContainerType>
+auto mara::row_vector(ContainerType container)
+{
+    using value_type = typename ContainerType::value_type;
+    constexpr std::size_t Rank = container.size();
+
+    auto result = matrix_t<value_type, 1, Rank>();
+
+    for (std::size_t j = 0; j < Rank; ++j)
+    {
+        result(0, j) = container[j];
+    }
+    return result;
+}
+
+template<typename ContainerType>
+auto mara::column_vector(ContainerType container)
+{
+    using value_type = typename ContainerType::value_type;
+    constexpr std::size_t Rank = container.size();
+
+    auto result = matrix_t<value_type, Rank, 1>();
+
+    for (std::size_t i = 0; i < Rank; ++i)
+    {
+        result(i, 0) = container[i];
+    }
     return result;
 }
 
@@ -263,18 +302,23 @@ auto mara::diagonal_matrix(Args... args)
 template<typename T1, typename T2, std::size_t NumRows, std::size_t NumCols, std::size_t NumCols1Rows2>
 auto mara::matrix_product(matrix_t<T1, NumRows, NumCols1Rows2> M1, matrix_t<T2, NumCols1Rows2, NumCols> M2)
 {
-    using result_value_type = std::invoke_result_t<std::multiplies<>, T1, T2>;
+    // NOTE: the order of the types T1 and T2 in invoke_result_t must match the
+    // order in the computation below. Furthermore, precedence for operator* is
+    // given to the second type as a workaround for the fact that many of the
+    // arithmetic types are using member functions arithmetic operators. They
+    // really should use non-member function operators.
+    using result_value_type = std::invoke_result_t<std::multiplies<>, T2, T1>;
     auto result = matrix_t<result_value_type, NumRows, NumCols>();
 
     for (std::size_t i = 0; i < NumRows; ++i)
     {
         for (std::size_t j = 0; j < NumCols; ++j)
         {
-            auto element = result_value_type(0);
+            auto element = result_value_type();
 
             for (std::size_t m = 0; m < NumCols1Rows2; ++m)
             {
-                element += M1(i, m) * M2(m, j);
+                element += M2(m, j) * M1(i, m);
             }
             result(i, j) = element;
         }

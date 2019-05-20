@@ -57,6 +57,10 @@ struct mara::euler
         const conserved_density_t& U,
         double gamma_law_index);
 
+    static inline primitive_t roe_average(
+        const primitive_t& Pl,
+        const primitive_t& Pr);
+
     static inline flux_vector_t riemann_hlle(
         const primitive_t& Pl,
         const primitive_t& Pr,
@@ -561,6 +565,18 @@ mara::euler::primitive_t mara::euler::recover_primitive(
     P[4] = (U[4].value - 0.5 * p_squared / d) * (gamma_law_index - 1.0);
 
     return P;
+}
+
+
+
+
+mara::euler::primitive_t mara::euler::roe_average(
+    const primitive_t& Pl,
+    const primitive_t& Pr)
+{
+    auto kl = std::sqrt(Pl.mass_density());
+    auto kr = std::sqrt(Pr.mass_density());
+    return (Pl * kl + Pr * kr) / (kl + kr);
 }
 
 
