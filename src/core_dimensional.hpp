@@ -81,6 +81,8 @@ template<int C, int G, int S, typename T>
 struct mara::dimensional_value_t
 {
 
+    dimensional_value_t() {}
+    dimensional_value_t(double value) : value(value) {}
 
     /**
      * @brief      Add another value, with same dimensions

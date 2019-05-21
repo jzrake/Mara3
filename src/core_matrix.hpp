@@ -249,6 +249,16 @@ auto mara::diagonal_matrix(Args... args)
 
 
 
+/**
+ * @brief      Return a 1 x N matrix from some type of fixed-length container.
+ *             The element type is the same as that of the container.
+ *
+ * @param[in]  container      The container
+ *
+ * @tparam     ContainerType  The type of the container
+ *
+ * @return     The matrix
+ */
 template<typename ContainerType>
 auto mara::row_vector(ContainerType container)
 {
@@ -264,6 +274,19 @@ auto mara::row_vector(ContainerType container)
     return result;
 }
 
+
+
+
+/**
+ * @brief      Return a N x 1 matrix from some type of fixed-length container.
+ *             The element type is the same as that of the container.
+ *
+ * @param[in]  container      The container
+ *
+ * @tparam     ContainerType  The type of the container
+ *
+ * @return     The matrix
+ */
 template<typename ContainerType>
 auto mara::column_vector(ContainerType container)
 {
@@ -302,12 +325,7 @@ auto mara::column_vector(ContainerType container)
 template<typename T1, typename T2, std::size_t NumRows, std::size_t NumCols, std::size_t NumCols1Rows2>
 auto mara::matrix_product(matrix_t<T1, NumRows, NumCols1Rows2> M1, matrix_t<T2, NumCols1Rows2, NumCols> M2)
 {
-    // NOTE: the order of the types T1 and T2 in invoke_result_t must match the
-    // order in the computation below. Furthermore, precedence for operator* is
-    // given to the second type as a workaround for the fact that many of the
-    // arithmetic types are using member functions arithmetic operators. They
-    // really should use non-member function operators.
-    using result_value_type = std::invoke_result_t<std::multiplies<>, T2, T1>;
+    using result_value_type = std::invoke_result_t<std::multiplies<>, T1, T2>;
     auto result = matrix_t<result_value_type, NumRows, NumCols>();
 
     for (std::size_t i = 0; i < NumRows; ++i)
@@ -318,7 +336,7 @@ auto mara::matrix_product(matrix_t<T1, NumRows, NumCols1Rows2> M1, matrix_t<T2, 
 
             for (std::size_t m = 0; m < NumCols1Rows2; ++m)
             {
-                element += M2(m, j) * M1(i, m);
+                element += M1(i, m) * M2(m, j);
             }
             result(i, j) = element;
         }

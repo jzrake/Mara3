@@ -347,6 +347,7 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
     struct eigensystem_formulas_t
     {
 
+
         //=====================================================================
         eigensystem_formulas_t(const primitive_t& p, double gamma_law_index)
         {
@@ -380,7 +381,7 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
          */
         auto flux_jacobian() const
         {
-            return matrix_t<double, 5, 5> {
+            return matrix_t<unit_velocity<double>, 5, 5> {
                 {{0,                      1,             0,          0,         0},
                  {m * H - u2 - a2,        (3 - g) * u,  -m * v,     -m * w,     m},
                  {-u * v,                 v,             u,          0,         0},
@@ -399,7 +400,7 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
          */
         auto eigenvalues() const
         {
-            return mara::diagonal_matrix<double>(u - a, u, u, u, u + a);
+            return mara::diagonal_matrix<unit_velocity<double>>(u - a, u, u, u, u + a);
         }
 
 
@@ -413,7 +414,7 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
          */
         auto right_eigenvectors() const
         {
-            return matrix_t<double, 5, 5> {
+            return matrix_t<unit_scalar<double>, 5, 5> {
                 {{1,         1,        0,  0, 1},
                  {u - a,     u,        0,  0, u + a},
                  {v,         v,        1,  0, v},
@@ -433,7 +434,7 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
          */
         auto left_eigenvectors() const
         {
-            return matrix_t<double, 5, 5> {
+            return matrix_t<unit_scalar<double>, 5, 5> {
                 {{      H + (a / m) * (u - a), -(u + a / m), -v,         -w,           1, },
                  { -2 * H + (4 / m) * a2,             2 * u,  2 * v,      2 * w,      -2, },
                  {          -2 * v  * a2 / m,             0,  2 * a2 / m, 0,           0, },
@@ -570,13 +571,25 @@ mara::euler::primitive_t mara::euler::recover_primitive(
 
 
 
+/**
+ * @brief      Compute a sensible Roe-average state Q = Roe(Pr, Pl), defined
+ *             here as the primitives weighted by square root of the mass
+ *             density. This averaged state is symmetric in (Pr, Pl), and has
+ *             the property that A(Q) * (Ur - Ul) = F(Ur) - F(Ul), where A is
+ *             the flux Jacobian.
+ *
+ * @param[in]  Pr    The other state
+ * @param[in]  Pl    The first state
+ *
+ * @return     The Roe-averaged primitive state
+ */
 mara::euler::primitive_t mara::euler::roe_average(
-    const primitive_t& Pl,
-    const primitive_t& Pr)
+    const primitive_t& Pr,
+    const primitive_t& Pl)
 {
-    auto kl = std::sqrt(Pl.mass_density());
     auto kr = std::sqrt(Pr.mass_density());
-    return (Pl * kl + Pr * kr) / (kl + kr);
+    auto kl = std::sqrt(Pl.mass_density());
+    return (Pr * kr + Pl * kl) / (kr + kl);
 }
 
 
