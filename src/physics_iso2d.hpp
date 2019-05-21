@@ -49,6 +49,7 @@ struct mara::iso2d
 
     using conserved_per_area_t = covariant_sequence_t<unit_conserved_per_area, 3>;
     using conserved_t          = covariant_sequence_t<unit_conserved, 3>;
+
     using flux_vector_t        = covariant_sequence_t<unit_flux, 3>;
 
     struct primitive_t;
@@ -58,9 +59,7 @@ struct mara::iso2d
         unit_velocity<double> p;
     };
 
-    static inline primitive_t recover_primitive(
-        const conserved_per_area_t& U,
-        double gamma_law_index);
+    static inline primitive_t recover_primitive(const conserved_per_area_t& U);
 
     static inline primitive_t roe_average(
         const primitive_t& Pl,
@@ -70,7 +69,7 @@ struct mara::iso2d
         const primitive_t& Pl,
         const primitive_t& Pr,
         const unit_vector_t& nhat,
-        double gamma_law_index);
+        double sound_speed_squared);
 };
 
 
@@ -101,8 +100,8 @@ struct mara::iso2d::primitive_t : public mara::arithmetic_sequence_t<double, 3, 
      * @return     A new primitive variable state
      */
     primitive_t with_sigma(double v) const { auto res = *this; res[0] = v; return res; }
-    primitive_t with_velocity_x(double v)   const { auto res = *this; res[1] = v; return res; }
-    primitive_t with_velocity_y(double v)   const { auto res = *this; res[2] = v; return res; }
+    primitive_t with_velocity_x(double v) const { auto res = *this; res[1] = v; return res; }
+    primitive_t with_velocity_y(double v) const { auto res = *this; res[2] = v; return res; }
 
 
 
@@ -205,14 +204,11 @@ struct mara::iso2d::primitive_t : public mara::arithmetic_sequence_t<double, 3, 
  * @brief      Attempt to recover a primitive variable state from the given
  *             vector of conserved densities.
  *
- * @param[in]  U                The conserved densities
- * @param[in]  gamma_law_index  The gamma law index
+ * @param[in]  U     The conserved densities
  *
  * @return     A primitive variable state, if the recovery succeeds
  */
-mara::iso2d::primitive_t mara::iso2d::recover_primitive(
-    const conserved_per_area_t& U,
-    double gamma_law_index)
+mara::iso2d::primitive_t mara::iso2d::recover_primitive(const conserved_per_area_t& U)
 {
     auto P = primitive_t();
     P[0] = U[0].value;

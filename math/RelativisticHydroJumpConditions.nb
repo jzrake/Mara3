@@ -1,0 +1,303 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Mathematica 12.0' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       158,          7]
+NotebookDataLength[      9992,        295]
+NotebookOptionsPosition[      8747,        262]
+NotebookOutlinePosition[      9084,        277]
+CellTagsIndexPosition[      9041,        274]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell["Non-relativistic jump condition from mass flux", "Section",
+ CellChangeTimes->{{3.7670314462888393`*^9, 3.7670314534772673`*^9}, {
+  3.76709405844234*^9, 
+  3.767094060303543*^9}},ExpressionUUID->"726e6a4b-bca8-426d-a9a2-\
+911937ff143d"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{
+   RowBox[{
+    RowBox[{"\[Rho]1p", " ", "v1p"}], "\[Equal]", 
+    RowBox[{"\[Rho]2p", " ", "v2p"}]}], "/.", 
+   RowBox[{"{", "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"\[Rho]1p", "\[Rule]", "\[Rho]1"}], ",", "\[IndentingNewLine]", 
+     RowBox[{"\[Rho]2p", "\[Rule]", "\[Rho]2"}], ",", "\[IndentingNewLine]", 
+     RowBox[{"v1p", "\[Rule]", 
+      RowBox[{"v1", "-", "vs"}]}], ",", "\[IndentingNewLine]", 
+     RowBox[{"v2p", "\[Rule]", 
+      RowBox[{"v2", "-", "vs"}]}]}], "\[IndentingNewLine]", "}"}]}], "//", 
+  RowBox[{
+   RowBox[{"Solve", "[", 
+    RowBox[{"#", ",", "vs"}], "]"}], "&"}]}]], "Input",
+ CellChangeTimes->{{3.767015071577256*^9, 3.767015231185265*^9}, {
+  3.76701529540057*^9, 3.767015311429076*^9}, {3.767015349264412*^9, 
+  3.767015376680476*^9}, {3.7670155119274893`*^9, 3.767015533403694*^9}, {
+  3.767031425468278*^9, 3.7670314385381393`*^9}},
+ CellLabel->
+  "In[303]:=",ExpressionUUID->"d984035e-5046-43c9-a8fd-0f021c86b507"],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{"{", 
+   RowBox[{"vs", "\[Rule]", 
+    FractionBox[
+     RowBox[{
+      RowBox[{"v1", " ", "\[Rho]1"}], "-", 
+      RowBox[{"v2", " ", "\[Rho]2"}]}], 
+     RowBox[{"\[Rho]1", "-", "\[Rho]2"}]]}], "}"}], "}"}]], "Output",
+ CellChangeTimes->{{3.767015512387722*^9, 3.767015521662436*^9}, 
+   3.767015620901318*^9, 3.76703143987945*^9},
+ CellLabel->
+  "Out[303]=",ExpressionUUID->"b88a20aa-0d15-439c-9ddd-beb1b0946607"]
+}, Open  ]]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["Relativistic jump condition from mass flux", "Section",
+ CellChangeTimes->{{3.767031462407735*^9, 3.767031467200131*^9}, {
+  3.7670940626434402`*^9, 
+  3.767094065129343*^9}},ExpressionUUID->"0e0009ff-1b2c-4fe6-b713-\
+cce31608adb1"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[{
+ RowBox[{
+  RowBox[{
+   RowBox[{
+    RowBox[{
+     RowBox[{
+      SuperscriptBox[
+       RowBox[{"(", 
+        RowBox[{"\[Rho]1p", " ", "v1p"}], ")"}], "2"], "/", 
+      RowBox[{"(", 
+       RowBox[{"1", "-", 
+        SuperscriptBox["v1p", "2"]}], ")"}]}], "\[Equal]", 
+     RowBox[{
+      SuperscriptBox[
+       RowBox[{"(", 
+        RowBox[{"\[Rho]2p", " ", "v2p"}], ")"}], "2"], "/", 
+      RowBox[{"(", 
+       RowBox[{"1", "-", 
+        SuperscriptBox["v2p", "2"]}], ")"}]}]}], "/.", 
+    RowBox[{"{", "\[IndentingNewLine]", 
+     RowBox[{
+      RowBox[{"\[Rho]1p", "\[Rule]", "\[Rho]1"}], ",", "\[IndentingNewLine]", 
+      
+      RowBox[{"\[Rho]2p", "\[Rule]", "\[Rho]2"}], ",", "\[IndentingNewLine]", 
+      
+      RowBox[{"v1p", "\[Rule]", 
+       FractionBox[
+        RowBox[{"v1", "-", "vs"}], 
+        RowBox[{"1", "-", 
+         RowBox[{"v1", " ", "vs"}]}]]}], ",", "\[IndentingNewLine]", 
+      RowBox[{"v2p", "\[Rule]", 
+       FractionBox[
+        RowBox[{"v2", "-", "vs"}], 
+        RowBox[{"1", "-", 
+         RowBox[{"v2", " ", "vs"}]}]]}]}], "\[IndentingNewLine]", "}"}]}], "//",
+    "FullSimplify"}], ";"}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{
+   RowBox[{"Solve", "[", 
+    RowBox[{"%", ",", "vs"}], "]"}], "//", "FullSimplify"}], 
+  ";"}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"%", "/.", 
+   RowBox[{
+    RowBox[{
+     RowBox[{"-", "1"}], "+", 
+     SuperscriptBox["v1", "2"]}], "\[Rule]", 
+    RowBox[{
+     RowBox[{"-", "1"}], "/", 
+     SuperscriptBox["\[CapitalGamma]1", "2"]}]}]}], 
+  ";"}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"%", "/.", 
+   RowBox[{
+    RowBox[{
+     RowBox[{"-", "1"}], "+", 
+     SuperscriptBox["v2", "2"]}], "\[Rule]", 
+    RowBox[{
+     RowBox[{"-", "1"}], "/", 
+     SuperscriptBox["\[CapitalGamma]2", "2"]}]}]}], 
+  ";"}], "\[IndentingNewLine]", 
+ RowBox[{"FullSimplify", "[", 
+  RowBox[{
+   RowBox[{"vs", "/.", "%"}], ",", 
+   RowBox[{"Assumptions", "\[Rule]", 
+    RowBox[{"{", 
+     RowBox[{
+      RowBox[{"\[CapitalGamma]1", ">", "1"}], ",", 
+      RowBox[{"\[CapitalGamma]2", ">", "1"}], ",", 
+      RowBox[{"\[Rho]1", ">", "0"}], ",", 
+      RowBox[{"\[Rho]2", ">", "0"}], ",", 
+      RowBox[{"v1", "<", "v2"}]}], "}"}]}]}], "]"}]}], "Input",
+ CellChangeTimes->{{3.767030006225341*^9, 3.767030064386981*^9}, {
+   3.7670300995063047`*^9, 3.76703010921799*^9}, {3.767030149283184*^9, 
+   3.767030254536008*^9}, {3.767030957959721*^9, 3.767030971850583*^9}, {
+   3.767031331068862*^9, 3.7670313921433372`*^9}, 3.767034752933852*^9},
+ CellLabel->
+  "In[314]:=",ExpressionUUID->"3f4ef00f-49bb-463a-a895-1d2e10d26d95"],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{
+   FractionBox[
+    RowBox[{
+     RowBox[{"v1", " ", "\[CapitalGamma]1", " ", "\[Rho]1"}], "-", 
+     RowBox[{"v2", " ", "\[CapitalGamma]2", " ", "\[Rho]2"}]}], 
+    RowBox[{
+     RowBox[{"\[CapitalGamma]1", " ", "\[Rho]1"}], "-", 
+     RowBox[{"\[CapitalGamma]2", " ", "\[Rho]2"}]}]], ",", 
+   FractionBox[
+    RowBox[{
+     RowBox[{"v1", " ", "\[CapitalGamma]1", " ", "\[Rho]1"}], "+", 
+     RowBox[{"v2", " ", "\[CapitalGamma]2", " ", "\[Rho]2"}]}], 
+    RowBox[{
+     RowBox[{"\[CapitalGamma]1", " ", "\[Rho]1"}], "+", 
+     RowBox[{"\[CapitalGamma]2", " ", "\[Rho]2"}]}]]}], "}"}]], "Output",
+ CellChangeTimes->{{3.767031321508726*^9, 3.7670313933285427`*^9}, 
+   3.767031443539469*^9, 3.767034759937667*^9},
+ CellLabel->
+  "Out[318]=",ExpressionUUID->"9ffa5111-2146-427d-9714-8164726e5db0"]
+}, Open  ]]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell["Newtonian jump condition from energy flux", "Section",
+ CellChangeTimes->{{3.767094146827387*^9, 
+  3.767094158324808*^9}},ExpressionUUID->"56c39710-46b4-46fc-b3af-\
+558532305d8e"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{
+   RowBox[{
+    RowBox[{"v1p", 
+     RowBox[{"(", 
+      RowBox[{
+       RowBox[{
+        FractionBox["1", "2"], "\[Rho]1p", " ", 
+        SuperscriptBox["v1p", "2"]}], "+", 
+       FractionBox["p1p", 
+        RowBox[{"\[Gamma]", "-", "1"}]], "+", "p1p"}], ")"}]}], "\[Equal]", 
+    RowBox[{"v2p", 
+     RowBox[{"(", 
+      RowBox[{
+       RowBox[{
+        FractionBox["1", "2"], "\[Rho]2p", " ", 
+        SuperscriptBox["v2p", "2"]}], "+", 
+       FractionBox["p2p", 
+        RowBox[{"\[Gamma]", "-", "1"}]], "+", "p2p"}], ")"}]}]}], "/.", 
+   RowBox[{"{", "\[IndentingNewLine]", 
+    RowBox[{
+     RowBox[{"\[Rho]1p", "\[Rule]", "\[Rho]1"}], ",", "\[IndentingNewLine]", 
+     RowBox[{"\[Rho]2p", "\[Rule]", "\[Rho]2"}], ",", "\[IndentingNewLine]", 
+     RowBox[{"p1p", "\[Rule]", "p1"}], ",", "\[IndentingNewLine]", 
+     RowBox[{"p2p", "\[Rule]", "p2"}], ",", "\[IndentingNewLine]", 
+     RowBox[{"v1p", "\[Rule]", 
+      RowBox[{"v1", "-", "vs"}]}], ",", "\[IndentingNewLine]", 
+     RowBox[{"v2p", "\[Rule]", 
+      RowBox[{"v2", "-", "vs"}]}]}], "\[IndentingNewLine]", "}"}]}], "//", 
+  "FullSimplify"}]], "Input",
+ CellChangeTimes->{{3.767094070255022*^9, 3.767094132281983*^9}, {
+  3.76709417719276*^9, 3.767094259856658*^9}},
+ CellLabel->"In[6]:=",ExpressionUUID->"8b950a09-79b8-4565-93b9-939a18becce1"],
+
+Cell[BoxData[
+ RowBox[{
+  FractionBox[
+   RowBox[{
+    RowBox[{"2", " ", "p1", " ", 
+     RowBox[{"(", 
+      RowBox[{"v1", "-", "vs"}], ")"}], " ", "\[Gamma]"}], "+", 
+    RowBox[{"2", " ", "p2", " ", 
+     RowBox[{"(", 
+      RowBox[{
+       RowBox[{"-", "v2"}], "+", "vs"}], ")"}], " ", "\[Gamma]"}], "+", 
+    RowBox[{
+     RowBox[{"(", 
+      RowBox[{
+       RowBox[{"-", "1"}], "+", "\[Gamma]"}], ")"}], " ", 
+     RowBox[{"(", 
+      RowBox[{
+       RowBox[{
+        SuperscriptBox[
+         RowBox[{"(", 
+          RowBox[{"v1", "-", "vs"}], ")"}], "3"], " ", "\[Rho]1"}], "+", 
+       RowBox[{
+        SuperscriptBox[
+         RowBox[{"(", 
+          RowBox[{
+           RowBox[{"-", "v2"}], "+", "vs"}], ")"}], "3"], " ", "\[Rho]2"}]}], 
+      ")"}]}]}], 
+   RowBox[{
+    RowBox[{"-", "1"}], "+", "\[Gamma]"}]], "\[Equal]", "0"}]], "Output",
+ CellChangeTimes->{{3.767094126420392*^9, 3.767094132757072*^9}, {
+  3.7670942070880623`*^9, 3.7670942608306293`*^9}},
+ CellLabel->"Out[6]=",ExpressionUUID->"f59e20fc-354c-459e-a9f9-d7ae73cf4704"]
+}, Open  ]]
+}, Open  ]]
+},
+WindowSize->{1680, 1005},
+WindowMargins->{{0, Automatic}, {Automatic, 0}},
+FrontEndVersion->"12.0 for Mac OS X x86 (64-bit) (April 8, 2019)",
+StyleDefinitions->"Default.nb"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[CellGroupData[{
+Cell[580, 22, 243, 4, 67, "Section",ExpressionUUID->"726e6a4b-bca8-426d-a9a2-911937ff143d"],
+Cell[CellGroupData[{
+Cell[848, 30, 995, 22, 136, "Input",ExpressionUUID->"d984035e-5046-43c9-a8fd-0f021c86b507"],
+Cell[1846, 54, 455, 12, 52, "Output",ExpressionUUID->"b88a20aa-0d15-439c-9ddd-beb1b0946607"]
+}, Open  ]]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[2350, 72, 238, 4, 67, "Section",ExpressionUUID->"0e0009ff-1b2c-4fe6-b713-cce31608adb1"],
+Cell[CellGroupData[{
+Cell[2613, 80, 2609, 77, 274, "Input",ExpressionUUID->"3f4ef00f-49bb-463a-a895-1d2e10d26d95"],
+Cell[5225, 159, 836, 20, 52, "Output",ExpressionUUID->"9ffa5111-2146-427d-9714-8164726e5db0"]
+}, Open  ]]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[6110, 185, 186, 3, 67, "Section",ExpressionUUID->"56c39710-46b4-46fc-b3af-558532305d8e"],
+Cell[CellGroupData[{
+Cell[6321, 192, 1347, 33, 198, "Input",ExpressionUUID->"8b950a09-79b8-4565-93b9-939a18becce1"],
+Cell[7671, 227, 1048, 31, 57, "Output",ExpressionUUID->"f59e20fc-354c-459e-a9f9-d7ae73cf4704"]
+}, Open  ]]
+}, Open  ]]
+}
+]
+*)
+
