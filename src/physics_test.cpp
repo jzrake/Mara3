@@ -30,6 +30,7 @@
 
 #include "catch.hpp"
 #include "physics_euler.hpp"
+#include "physics_iso2d.hpp"
 #define gamma_law_index (5. / 3)
 
 
@@ -91,6 +92,20 @@ TEST_CASE("Roe average states have the correct mathematical properties")
             REQUIRE(B1(i, 0).value == Approx(B2[i].value));
         }
     }
+}
+
+TEST_CASE("Isothermal 2d system", "[mara::iso2d::primitive_t]")
+{
+    auto P = mara::iso2d::primitive_t()
+    .with_sigma(2.0)
+    .with_velocity_x(0.5)
+    .with_velocity_y(1.5);
+
+    auto U = P.to_conserved_per_area();
+    REQUIRE(P.velocity_x() == 0.5);
+    REQUIRE(U[0].value == P.sigma());
+    REQUIRE(U[1].value == P.sigma() * P.velocity_x());
+    REQUIRE(U[2].value == P.sigma() * P.velocity_y());
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
