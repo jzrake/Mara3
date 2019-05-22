@@ -197,16 +197,6 @@ struct mara::dimensional_value_t
 
 
     /**
-     * @brief      Convert this value to a double, if it's dimensionless
-     */
-    operator double() const
-    {
-        static_assert(C == 0 && G == 0 && S == 0, "cannot convert dimensional value to scalar");
-        return value;
-    }
-
-
-    /**
      * @brief      Return a compile-time tuple of this type's length/mass/time
      *             dimensions
      *

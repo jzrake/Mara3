@@ -75,6 +75,7 @@ public:
         auto d = other.den;
         return rational_number_t(a * d + b * c, b * d);
     }
+    rational_number_t& operator+=(int other) { *this = *this + other; return *this; }
 
     double operator-(double other) const { return double(*this) - other; }
     rational_number_t operator-(int other) const { return operator-(rational_number_t(other)); }
@@ -86,6 +87,7 @@ public:
         auto d = other.den;
         return rational_number_t(a * d - b * c, b * d);
     }
+    rational_number_t& operator-=(int other) { *this = *this - other; return *this; }
 
     double operator*(double other) const { return double(*this) * other; }
     rational_number_t operator*(int other) const { return operator*(rational_number_t(other)); }

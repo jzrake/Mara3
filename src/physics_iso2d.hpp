@@ -47,10 +47,9 @@ struct mara::iso2d
     using unit_conserved          = dimensional_value_t< 0, 1, 0, double>;
     using unit_flux               = dimensional_value_t<-1, 1,-1, double>;
 
-    using conserved_per_area_t = covariant_sequence_t<unit_conserved_per_area, 3>;
-    using conserved_t          = covariant_sequence_t<unit_conserved, 3>;
-
-    using flux_vector_t        = covariant_sequence_t<unit_flux, 3>;
+    using conserved_per_area_t    = covariant_sequence_t<unit_conserved_per_area, 3>;
+    using conserved_t             = covariant_sequence_t<unit_conserved, 3>;
+    using flux_t           = covariant_sequence_t<unit_flux, 3>;
 
     struct primitive_t;
     struct wavespeeds_t
@@ -65,7 +64,7 @@ struct mara::iso2d
         const primitive_t& Pl,
         const primitive_t& Pr);
 
-    static inline flux_vector_t riemann_hlle(
+    static inline flux_t riemann_hlle(
         const primitive_t& Pl,
         const primitive_t& Pr,
         const unit_vector_t& nhat,
@@ -164,11 +163,11 @@ struct mara::iso2d::primitive_t : public mara::arithmetic_sequence_t<double, 3, 
      *
      * @return     The flux F
      */
-    flux_vector_t flux(const unit_vector_t& nhat, double sound_speed_squared) const
+    flux_t flux(const unit_vector_t& nhat, double sound_speed_squared) const
     {
         auto v = velocity_along(nhat);
         auto p = sigma() * sound_speed_squared;
-        auto F = flux_vector_t();
+        auto F = flux_t();
         F[0] = v * sigma();
         F[1] = v * sigma() * velocity_x() + p * nhat.get_n1();
         F[2] = v * sigma() * velocity_y() + p * nhat.get_n2();
@@ -254,7 +253,7 @@ mara::iso2d::primitive_t mara::iso2d::roe_average(
  *
  * @return     A vector of fluxes
  */
-mara::iso2d::flux_vector_t mara::iso2d::riemann_hlle(
+mara::iso2d::flux_t mara::iso2d::riemann_hlle(
     const primitive_t& Pl,
     const primitive_t& Pr,
     const unit_vector_t& nhat,
