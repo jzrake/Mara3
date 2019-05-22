@@ -62,11 +62,14 @@ static auto config_template()
     .item("MachNumber", 10.0)
     .item("ViscousAlpha", 0.1)
     .item("BinarySeparation", 1.0)
+    .item("DomainRadius", 6.0)
+    .item("BufferDampingRate", 10.0)
     .item("CounterRotate", 0);
 }
 
 namespace binary
 {
+    //=========================================================================
     struct solution_state_t
     {
         mara::unit_time<double> time = 0.0;
@@ -76,6 +79,7 @@ namespace binary
         nd::shared_array<mara::iso2d::conserved_t, 2> conserved;
     };
 
+    //=========================================================================
     struct diagnostic_fields_t
     {
         mara::unit_time<double> time;
@@ -86,6 +90,7 @@ namespace binary
         nd::shared_array<double, 2> radial_velocity;
     };
 
+    //=========================================================================
     struct app_state_t
     {
         solution_state_t solution_state;
@@ -93,6 +98,15 @@ namespace binary
         mara::config_t run_config;
     };
 
+    //=========================================================================
+    struct solver_data_t
+    {
+        nd::shared_array<mara::iso2d::conserved_t, 2> initial_conserved_field;
+        nd::shared_array<mara::unit_rate<double>, 2> buffer_damping_rate_field;
+    };
+
+
+    //=========================================================================
     using location_2d_t     = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
     using velocity_2d_t     = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0, -1, double>, 2>;
     using acceleration_2d_t = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0, -2, double>, 2>;
@@ -100,7 +114,6 @@ namespace binary
     struct point_mass_t
     {
         acceleration_2d_t gravitational_acceleration_at_point(location_2d_t field_point) const;
-
         location_2d_t mass_location = {{ 0.0, 0.0 }};
         mara::unit_mass<double> mass = 1.0;
         mara::unit_length<double> softening_radius = 0.1;
@@ -109,9 +122,10 @@ namespace binary
 
     //=========================================================================
     template<typename VertexArrayType>auto cell_surface_area(const VertexArrayType& xv, const VertexArrayType& yv);
-    template<typename VertexArrayType>auto cell_center_coordinates(const VertexArrayType& xv, const VertexArrayType& yv);
+    template<typename VertexArrayType>auto cell_center_cartprod(const VertexArrayType& xv, const VertexArrayType& yv);
     auto make_diagnostic_fields(const solution_state_t& state);
     auto gravitational_acceleration_field(const solution_state_t& state);
+    auto buffer_damping_rate_at_position(const mara::config_t& cfg);
     auto intercell_flux_on_axis(std::size_t axis);
 
 
@@ -225,11 +239,22 @@ auto binary::cell_surface_area(const VertexArrayType& xv, const VertexArrayType&
 }
 
 template<typename VertexArrayType>
-auto binary::cell_center_coordinates(const VertexArrayType& xv, const VertexArrayType& yv)
+auto binary::cell_center_cartprod(const VertexArrayType& xv, const VertexArrayType& yv)
 {
     auto xc = xv | nd::midpoint_on_axis(0);
     auto yc = yv | nd::midpoint_on_axis(0);
-    return nd::meshgrid(xc, yc);
+    return nd::cartesian_product(xc, yc);
+}
+
+auto binary::buffer_damping_rate_at_position(const mara::config_t& cfg)
+{
+    return [cfg] (mara::unit_length<double> x, mara::unit_length<double> y)
+    {
+        constexpr double tightness = 3.0;
+        auto r = std::sqrt(std::pow(x.value, 2) + std::pow(y.value, 2));
+        auto r1 = cfg.get_double("DomainRadius");
+        return mara::make_rate(1.0 + std::tanh(tightness * (r - r1))) * cfg.get_double("BufferDampingRate");
+    };
 }
 
 auto binary::gravitational_acceleration_field(const solution_state_t& state)
@@ -258,11 +283,10 @@ auto binary::intercell_flux_on_axis(std::size_t axis)
     };
 }
 
-static auto next_solution(const solution_state_t& state)
+static auto next_solution(const solution_state_t& state, const solver_data_t& solver)
 {
     auto force_to_source_terms = [] (auto v)
     {
-        // std::cout << v[0].value << " " << v[1].value << std::endl;
         return mara::iso2d::flow_t {{0.0, v[0].value, v[1].value}};
     };
 
@@ -270,14 +294,15 @@ static auto next_solution(const solution_state_t& state)
     auto u0 = state.conserved;
     auto p0 = u0 / dA | nd::map(mara::iso2d::recover_primitive) | nd::to_shared();
     auto cell_mass = u0 | nd::map([] (auto u) { return u[0]; });
-    auto sg = gravitational_acceleration_field(state) * cell_mass | nd::map(force_to_source_terms);
+    auto sg = gravitational_acceleration_field(state) | nd::multiply(cell_mass) | nd::map(force_to_source_terms);
+    auto bz = (solver.initial_conserved_field - u0) * solver.buffer_damping_rate_field;
     auto [dx, __1] = nd::meshgrid(state.x_vertices | nd::difference_on_axis(0), state.y_vertices);
     auto [__2, dy] = nd::meshgrid(state.x_vertices, state.y_vertices | nd::difference_on_axis(0));
 
     auto lx = p0 | nd::extend_periodic_on_axis(0) | intercell_flux_on_axis(0) | nd::multiply(-dy) | nd::difference_on_axis(0);
     auto ly = p0 | nd::extend_periodic_on_axis(1) | intercell_flux_on_axis(1) | nd::multiply(-dx) | nd::difference_on_axis(1);
     auto dt = mara::make_time(dx(0, 0).value / max_speed_assumed * cfl_number); // IMPLEMENT SEARCH FOR MAX SPEED
-    auto u1 = u0 + (lx + ly + sg) * dt;
+    auto u1 = u0 + (lx + ly + sg + bz) * dt;
 
     auto next_state = state;
     next_state.iteration += 1;
@@ -294,7 +319,7 @@ auto binary::make_diagnostic_fields(const solution_state_t& state)
 {
 
     auto dA = cell_surface_area(state.x_vertices, state.y_vertices);
-    auto [xc, yc] = cell_center_coordinates(state.x_vertices, state.y_vertices);
+    auto [xc, yc] = nd::unzip_array(cell_center_cartprod(state.x_vertices, state.y_vertices));
     auto rc = xc * xc + yc * yc | nd::map([] (auto r2) { return mara::make_length(std::sqrt(r2.value)); });
     auto rhat_x =  xc / rc;
     auto rhat_y =  yc / rc;
@@ -394,13 +419,12 @@ static auto new_solution(const mara::config_t& cfg)
 {
     auto nx = cfg.get_int("N");
     auto ny = cfg.get_int("N");
+    auto R0 = cfg.get_double("DomainRadius");
 
-    auto xv = nd::linspace(-6, 6, nx + 1) | nd::map(mara::make_length<double>);
-    auto yv = nd::linspace(-6, 6, ny + 1) | nd::map(mara::make_length<double>);
-    auto xc = xv | nd::midpoint_on_axis(0);
-    auto yc = yv | nd::midpoint_on_axis(0);
+    auto xv = nd::linspace(-R0, R0, nx + 1) | nd::map(mara::make_length<double>);
+    auto yv = nd::linspace(-R0, R0, ny + 1) | nd::map(mara::make_length<double>);
 
-    auto u = nd::cartesian_product(xc, yc)
+    auto u = cell_center_cartprod(xv, yv)
     | nd::apply(initial_disk_profile(cfg))
     | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
     | nd::multiply(cell_surface_area(xv, yv));
@@ -420,6 +444,19 @@ static auto create_solution(const mara::config_t& run_config)
     return restart.empty()
     ? new_solution(run_config)
     : read_solution(h5::File(restart, "r").open_group("solution"));
+}
+
+static auto create_solver_data(const mara::config_t& cfg)
+{
+    auto initial_state = new_solution(cfg);
+    auto result = solver_data_t();
+
+    result.initial_conserved_field = initial_state.conserved;
+    result.buffer_damping_rate_field = cell_center_cartprod(initial_state.x_vertices, initial_state.y_vertices)
+    | nd::apply(buffer_damping_rate_at_position(cfg))
+    | nd::to_shared();
+
+    return result;
 }
 
 
@@ -490,12 +527,15 @@ static auto create_app_state(mara::config_t run_config)
     return state;
 }
 
-static auto next(const app_state_t& state)
+static auto create_app_state_next_function(const solver_data_t& solver_data)
 {
-    auto next_state = state;
-    next_state.solution_state = next_solution(state.solution_state);
-    next_state.schedule       = next_schedule(state.schedule, state.run_config, state.solution_state.time.value);
-    return next_state;
+    return [solver_data] (const app_state_t& state)
+    {
+        auto next_state = state;
+        next_state.solution_state = next_solution(state.solution_state, solver_data);
+        next_state.schedule       = next_schedule(state.schedule, state.run_config, state.solution_state.time.value);
+        return next_state;
+    };
 }
 
 static auto simulation_should_continue(const app_state_t& state)
@@ -568,12 +608,13 @@ public:
     int main(int argc, const char* argv[]) override
     {
         mpi::Session mpi_session;
-
         mpi::printf_master("initialized on %d mpi processes\n", mpi::comm_world().size());
 
         auto run_config = create_run_config(argc, argv);
         auto perf = mara::perf_diagnostics_t();
-        auto state = create_app_state(run_config);
+        auto state       = create_app_state(run_config);
+        auto solver_data = create_solver_data(run_config);
+        auto next        = create_app_state_next_function(solver_data);
 
         prepare_filesystem(run_config);
         mara::pretty_print(mpi::cout_master(), "config", run_config);

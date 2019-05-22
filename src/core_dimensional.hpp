@@ -42,6 +42,7 @@ namespace mara
     template<typename T> using unit_length       = dimensional_value_t< 1, 0, 0, T>;
     template<typename T> using unit_mass         = dimensional_value_t< 0, 1, 0, T>;
     template<typename T> using unit_time         = dimensional_value_t< 0, 0, 1, T>;
+    template<typename T> using unit_rate         = dimensional_value_t< 0, 0,-1, T>;
     template<typename T> using unit_area         = dimensional_value_t< 2, 0, 0, T>;
     template<typename T> using unit_velocity     = dimensional_value_t< 1, 0,-1, T>;
     template<typename T> using unit_volume       = dimensional_value_t< 3, 0, 0, T>;
@@ -54,6 +55,7 @@ namespace mara
     template<typename T> auto make_length(T value);
     template<typename T> auto make_mass(T value);
     template<typename T> auto make_time(T value);
+    template<typename T> auto make_rate(T value);
     template<typename T> auto make_area(T value);
     template<typename T> auto make_velocity(T value);
     template<typename T> auto make_volume(T value);
@@ -231,6 +233,7 @@ template<typename T> auto mara::make_scalar      (T value) { return make_dimensi
 template<typename T> auto mara::make_length      (T value) { return make_dimensional< 1, 0, 0>(value); }
 template<typename T> auto mara::make_mass        (T value) { return make_dimensional< 0, 1, 0>(value); }
 template<typename T> auto mara::make_time        (T value) { return make_dimensional< 0, 0, 1>(value); }
+template<typename T> auto mara::make_rate        (T value) { return make_dimensional< 0, 0,-1>(value); }
 template<typename T> auto mara::make_area        (T value) { return make_dimensional< 2, 0, 0>(value); }
 template<typename T> auto mara::make_volume      (T value) { return make_dimensional< 3, 0, 0>(value); }
 template<typename T> auto mara::make_velocity    (T value) { return make_dimensional< 1, 0,-1>(value); }
