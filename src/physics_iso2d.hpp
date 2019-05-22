@@ -118,6 +118,11 @@ struct mara::iso2d::primitive_t : public mara::arithmetic_sequence_t<double, 3, 
         return _[1] * _[1] + _[2] * _[2];
     }
 
+    unit_velocity<double> velocity_magnitude() const
+    {
+        return std::sqrt(velocity_squared());
+    }
+
 
 
 

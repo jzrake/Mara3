@@ -24,8 +24,6 @@
 */
 #include "app_compile_opts.hpp"
 #if MARA_COMPILE_SUBPROGRAM_BINARY
-#define cfl_number 0.4
-#define max_speed_assumed 10.0
 
 
 
@@ -43,6 +41,7 @@
 #include "app_subprogram.hpp"
 #include "app_filesystem.hpp"
 #include "physics_iso2d.hpp"
+#define cfl_number 0.4
 
 
 
@@ -293,6 +292,7 @@ static auto next_solution(const solution_state_t& state, const solver_data_t& so
     auto dA = cell_surface_area(state.x_vertices, state.y_vertices);
     auto u0 = state.conserved;
     auto p0 = u0 / dA | nd::map(mara::iso2d::recover_primitive) | nd::to_shared();
+    auto v0 = p0 | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_magnitude));
     auto cell_mass = u0 | nd::map([] (auto u) { return u[0]; });
     auto sg = gravitational_acceleration_field(state) | nd::multiply(cell_mass) | nd::map(force_to_source_terms);
     auto bz = (solver.initial_conserved_field - u0) * solver.buffer_damping_rate_field;
@@ -301,7 +301,7 @@ static auto next_solution(const solution_state_t& state, const solver_data_t& so
 
     auto lx = p0 | nd::extend_periodic_on_axis(0) | intercell_flux_on_axis(0) | nd::multiply(-dy) | nd::difference_on_axis(0);
     auto ly = p0 | nd::extend_periodic_on_axis(1) | intercell_flux_on_axis(1) | nd::multiply(-dx) | nd::difference_on_axis(1);
-    auto dt = mara::make_time(dx(0, 0).value / max_speed_assumed * cfl_number); // IMPLEMENT SEARCH FOR MAX SPEED
+    auto dt = (nd::min(dx) + nd::min(dy)) / nd::max(v0) * 0.5 * cfl_number;
     auto u1 = u0 + (lx + ly + sg + bz) * dt;
 
     auto next_state = state;
