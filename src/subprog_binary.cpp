@@ -24,6 +24,8 @@
 */
 #include "app_compile_opts.hpp"
 #if MARA_COMPILE_SUBPROGRAM_BINARY
+#define cfl_number 0.4
+#define max_speed_assumed 10.0
 
 
 
@@ -91,11 +93,26 @@ namespace binary
         mara::config_t run_config;
     };
 
+    using location_2d_t     = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
+    using velocity_2d_t     = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0, -1, double>, 2>;
+    using acceleration_2d_t = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0, -2, double>, 2>;
+
+    struct point_mass_t
+    {
+        acceleration_2d_t gravitational_acceleration_at_point(location_2d_t field_point) const;
+
+        location_2d_t mass_location = {{ 0.0, 0.0 }};
+        mara::unit_mass<double> mass = 1.0;
+        mara::unit_length<double> softening_radius = 0.1;
+    };
+
 
     //=========================================================================
     template<typename VertexArrayType>auto cell_surface_area(const VertexArrayType& xv, const VertexArrayType& yv);
     template<typename VertexArrayType>auto cell_center_coordinates(const VertexArrayType& xv, const VertexArrayType& yv);
     auto make_diagnostic_fields(const solution_state_t& state);
+    auto gravitational_acceleration_field(const solution_state_t& state);
+    auto intercell_flux_on_axis(std::size_t axis);
 
 
     //=========================================================================
@@ -119,21 +136,22 @@ using namespace binary;
 
 
 
-//=============================================================================
-template<typename VertexArrayType>
-auto binary::cell_surface_area(const VertexArrayType& xv, const VertexArrayType& yv)
+/**
+ * @brief      Return the gravitational acceleration of a point mass at the
+ *             given field point.
+ *
+ * @param[in]  field_point  The field point
+ *
+ * @return     The acceleration, whose type is ~
+ *             covariant_sequence<acceleration, 2>
+ */
+acceleration_2d_t binary::point_mass_t::gravitational_acceleration_at_point(location_2d_t field_point) const
 {
-    auto dx = xv | nd::difference_on_axis(0);
-    auto dy = yv | nd::difference_on_axis(0);
-    return nd::cartesian_product(dx, dy) | nd::apply(std::multiplies<>());
-}
-
-template<typename VertexArrayType>
-auto binary::cell_center_coordinates(const VertexArrayType& xv, const VertexArrayType& yv)
-{
-    auto xc = xv | nd::midpoint_on_axis(0);
-    auto yc = yv | nd::midpoint_on_axis(0);
-    return nd::meshgrid(xc, yc);
+    auto G   = mara::dimensional_value_t<3, -1, -2, double>(1.0);
+    auto dr  = field_point - mass_location;
+    auto dr2 = (dr[0] * dr[0] + dr[1] * dr[1]).value;
+    auto rs2 = (softening_radius * softening_radius).value;
+    return -dr / mara::make_volume(std::pow(dr2 + rs2, 1.5)) * G * mass;
 }
 
 
@@ -174,8 +192,8 @@ static auto initial_disk_profile(const mara::config_t& cfg)
         auto cavity_cutoff  = std::max(std::exp(-std::pow(r / r0, -cavity_xsi)), 1e-6);
         auto phi            = -GM * std::pow(r2 + rs * rs, -0.5);    
         auto ag             = -GM * std::pow(r2 + rs * rs, -1.5) * r;    
-        auto cs2            = std::pow(MachNumber, -2) * -phi;
-        auto cs2_deriv      = std::pow(MachNumber, -2) * ag;
+        auto cs2            = -phi / MachNumber / MachNumber;
+        auto cs2_deriv      =   ag / MachNumber / MachNumber;
         auto sigma          = sigma0 * std::pow((r + rs) / r0, -0.5) * cavity_cutoff;
         auto sigma_deriv    = sigma0 * std::pow((r + rs) / r0, -1.5) * -0.5 / r0;
         auto dp_dr          = cs2 * sigma_deriv + cs2_deriv * sigma;
@@ -197,6 +215,81 @@ static auto initial_disk_profile(const mara::config_t& cfg)
 
 
 
+//=============================================================================
+template<typename VertexArrayType>
+auto binary::cell_surface_area(const VertexArrayType& xv, const VertexArrayType& yv)
+{
+    auto dx = xv | nd::difference_on_axis(0);
+    auto dy = yv | nd::difference_on_axis(0);
+    return nd::cartesian_product(dx, dy) | nd::apply(std::multiplies<>());
+}
+
+template<typename VertexArrayType>
+auto binary::cell_center_coordinates(const VertexArrayType& xv, const VertexArrayType& yv)
+{
+    auto xc = xv | nd::midpoint_on_axis(0);
+    auto yc = yv | nd::midpoint_on_axis(0);
+    return nd::meshgrid(xc, yc);
+}
+
+auto binary::gravitational_acceleration_field(const solution_state_t& state)
+{
+    auto star = point_mass_t();
+
+    return nd::cartesian_product(
+        state.x_vertices | nd::midpoint_on_axis(0),
+        state.y_vertices | nd::midpoint_on_axis(0))
+    | nd::apply([] (auto x, auto y) { return location_2d_t {{ x, y }}; })
+    | nd::map([star] (auto field_point) { return star.gravitational_acceleration_at_point(field_point); });
+}
+
+auto binary::intercell_flux_on_axis(std::size_t axis)
+{
+    return [axis] (auto array)
+    {
+        using namespace std::placeholders;
+        double sound_speed_squared = 0.1; // DEFINE PROPERLY
+
+        auto L = array | nd::select_axis(axis).from(0).to(1).from_the_end();
+        auto R = array | nd::select_axis(axis).from(1).to(0).from_the_end();
+        auto nh = mara::unit_vector_t::on_axis(axis);
+        auto riemann = std::bind(mara::iso2d::riemann_hlle, _1, _2, nh, sound_speed_squared);
+        return nd::zip_arrays(L, R) | nd::apply(riemann);
+    };
+}
+
+static auto next_solution(const solution_state_t& state)
+{
+    auto force_to_source_terms = [] (auto v)
+    {
+        // std::cout << v[0].value << " " << v[1].value << std::endl;
+        return mara::iso2d::flow_t {{0.0, v[0].value, v[1].value}};
+    };
+
+    auto dA = cell_surface_area(state.x_vertices, state.y_vertices);
+    auto u0 = state.conserved;
+    auto p0 = u0 / dA | nd::map(mara::iso2d::recover_primitive) | nd::to_shared();
+    auto cell_mass = u0 | nd::map([] (auto u) { return u[0]; });
+    auto sg = gravitational_acceleration_field(state) * cell_mass | nd::map(force_to_source_terms);
+    auto [dx, __1] = nd::meshgrid(state.x_vertices | nd::difference_on_axis(0), state.y_vertices);
+    auto [__2, dy] = nd::meshgrid(state.x_vertices, state.y_vertices | nd::difference_on_axis(0));
+
+    auto lx = p0 | nd::extend_periodic_on_axis(0) | intercell_flux_on_axis(0) | nd::multiply(-dy) | nd::difference_on_axis(0);
+    auto ly = p0 | nd::extend_periodic_on_axis(1) | intercell_flux_on_axis(1) | nd::multiply(-dx) | nd::difference_on_axis(1);
+    auto dt = mara::make_time(dx(0, 0).value / max_speed_assumed * cfl_number); // IMPLEMENT SEARCH FOR MAX SPEED
+    auto u1 = u0 + (lx + ly + sg) * dt;
+
+    auto next_state = state;
+    next_state.iteration += 1;
+    next_state.time += dt;
+    next_state.conserved = u1 | nd::to_shared();
+    return next_state;
+}
+
+
+
+
+//=============================================================================
 auto binary::make_diagnostic_fields(const solution_state_t& state)
 {
 
@@ -214,27 +307,13 @@ auto binary::make_diagnostic_fields(const solution_state_t& state)
     auto vy = p | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_y));
 
     auto result = diagnostic_fields_t();
-    result.time = state.time;
-    result.x_vertices = state.x_vertices;
-    result.y_vertices = state.y_vertices;
+    result.time            = state.time;
+    result.x_vertices      = state.x_vertices;
+    result.y_vertices      = state.y_vertices;
     result.sigma           = sigma                     | nd::to_shared();
     result.radial_velocity = vx * rhat_x + vy * rhat_y | nd::to_shared();
     result.phi_velocity    = vx * phat_x + vy * phat_y | nd::to_shared();
     return result;
-}
-
-
-
-
-static auto gravitational_source_term(const solution_state_t& state)
-{
-    // IMPLEMENT GRAV SOURCE TERMS
-    auto [xc, yc] = cell_center_coordinates(state.x_vertices, state.y_vertices);
-
-    return nd::zip_arrays(xc, yc) | nd::apply([] (auto x, auto y)
-    {
-        return mara::iso2d::conserved_per_area_t() / mara::make_time(1.0);
-    });
 }
 
 
@@ -257,7 +336,6 @@ void binary::write_diagnostic_fields(h5::Group&& group, const diagnostic_fields_
     group.write("y_vertices", diagnostics.y_vertices);
     group.write("sigma", diagnostics.sigma);
     group.write("phi_velocity", diagnostics.phi_velocity);
-    group.write("phi_velocity", diagnostics.phi_velocity);
     group.write("radial_velocity", diagnostics.radial_velocity);
 }
 
@@ -265,6 +343,7 @@ void binary::write_checkpoint(const app_state_t& state, std::string outdir)
 {
     auto count = state.schedule.num_times_performed("write_checkpoint");
     auto file = h5::File(mara::filesystem::join(outdir, mara::create_numbered_filename("chkpt", count, "h5")), "w");
+
     write_solution(file.require_group("solution"), state.solution_state);
     mara::write_schedule(file.require_group("schedule"), state.schedule);
     mara::write_config(file.require_group("run_config"), state.run_config);
@@ -284,6 +363,7 @@ void binary::write_diagnostics(const app_state_t& state, std::string outdir)
     // {
     //     file.write(item.first, item.second);
     // }
+
     std::printf("write diagnostics: %s\n", file.filename().data());
 }
 
@@ -340,30 +420,6 @@ static auto create_solution(const mara::config_t& run_config)
     return restart.empty()
     ? new_solution(run_config)
     : read_solution(h5::File(restart, "r").open_group("solution"));
-}
-
-static auto next_solution(const solution_state_t& state)
-{
-    auto next_state = state;
-
-    auto dA = cell_surface_area(state.x_vertices, state.y_vertices);
-    auto u0 = state.conserved;
-    auto p0 = u0 / dA | nd::map(mara::iso2d::recover_primitive) | nd::to_shared();
-    auto sg = gravitational_source_term(state) * dA;
-
-    // IMPLEMENT INTERCELL FLUXES
-    // auto lx = p0 | extend_periodic_on_axis(0) | intercell_flux_on_axis(0) | nd::multiply(dy) | nd::difference_on_axis(0);
-    // auto ly = p0 | extend_periodic_on_axis(1) | intercell_flux_on_axis(1) | nd::multiply(dx) | nd::difference_on_axis(1);
-    
-    // IMPLEMENT TIME STEP CALCULATION
-    auto dt = mara::make_time(0.1);
-
-    auto u1 = u0 + (/*lx + ly + */ sg) * dt;
-
-    next_state.iteration += 1;
-    next_state.time += dt;
-    next_state.conserved = u1 | nd::to_shared();
-    return next_state;
 }
 
 

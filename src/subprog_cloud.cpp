@@ -245,7 +245,7 @@ auto CloudProblem<HydroSystem>::intercell_flux(std::size_t axis)
         using namespace std::placeholders;
         auto L = array | nd::select_axis(axis).from(0).to(1).from_the_end();
         auto R = array | nd::select_axis(axis).from(1).to(0).from_the_end();
-        auto nh = mara::unit_vector_t::on_axis(axis + 1);
+        auto nh = mara::unit_vector_t::on_axis(axis);
         auto riemann = std::bind(HydroSystem::riemann_hlle, _1, _2, nh, gamma_law_index);
         return nd::zip_arrays(L, R) | nd::apply(riemann);
     };
