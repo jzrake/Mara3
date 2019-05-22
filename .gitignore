@@ -3,7 +3,6 @@ misc
 *.o
 *.d
 *.h5
-tools
 Makefile.in
 undead
 results
