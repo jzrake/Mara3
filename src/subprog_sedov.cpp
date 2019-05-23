@@ -150,10 +150,10 @@ struct SedovProblem
     static auto intercell_flux(std::size_t axis);
     static auto extend_reflecting_inner();
     static auto extend_zero_gradient_outer();
-    static auto find_shock_radius(const solution_state_t& state);
+
+
+    //=========================================================================
     static auto make_diagnostic_fields(const solution_state_t& state);
-
-
     static auto find_shock_index(primitive_array_t primitive);
     static auto find_index_of_maximum_pressure_behind(primitive_array_t primitive, std::size_t index);
     static auto find_index_of_pressure_plateau_ahead(primitive_array_t primitive, std::size_t index);
@@ -245,20 +245,6 @@ auto SedovProblem<HydroSystem>::extend_zero_gradient_outer()
     {
         return array | nd::concat(array | nd::select_final(1, 0));
     };
-}
-
-template<typename HydroSystem>
-auto SedovProblem<HydroSystem>::find_shock_radius(const solution_state_t& state)
-{
-    using namespace std::placeholders;
-    auto cons_to_prim = std::bind(HydroSystem::recover_primitive, _1, gamma_law_index);
-
-    auto primitive = state.conserved | nd::divide(cell_volumes(state.vertices)) | nd::map(cons_to_prim);
-    auto rc = state.vertices | nd::midpoint_on_axis(0);
-    auto s0 = primitive | nd::map(std::bind(&HydroSystem::primitive_t::specific_entropy, _1, gamma_law_index));
-    auto ds = s0 | nd::difference_on_axis(0);
-    auto shock_index = nd::where(ds == nd::min(ds)) | nd::read_index(0);
-    return rc(shock_index);
 }
 
 template<typename HydroSystem>
