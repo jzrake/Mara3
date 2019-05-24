@@ -18,21 +18,23 @@ def plot_single_file(filename):
     d = h5f['mass_density'][...]
     p = h5f['gas_pressure'][...]
     u = h5f['radial_gamma_beta'][...]
-    L = u**2 * p # Fix this!
+    dL = h5f['radial_energy_flow'][...]
+    dO = h5f['solid_angle_at_theta'][...]
+    r /= r[0]
 
     R, Q = np.meshgrid(r, q)
     X = np.log10(R) * np.cos(Q)
     Y = np.log10(R) * np.sin(Q)
 
-    m0 = axes[0].pcolormesh(Y, X, np.log10(d.T), vmin=-5, vmax=0)
-    m1 = axes[1].pcolormesh(Y, X, np.log10(p.T), vmin=-8, vmax=-4)
+    m0 = axes[0].pcolormesh(Y, X, np.log10(d.T))
+    m1 = axes[1].pcolormesh(Y, X, np.log10(p.T))
     m2 = axes[2].pcolormesh(Y, X, np.log10(u.T), vmin=-3, vmax=2)
-    m3 = axes[3].pcolormesh(Y, X, L.T)
+    m3 = axes[3].pcolormesh(Y, X, np.log10(dL / dO).T)
 
-    axes[0].set_title("Log density")
-    axes[1].set_title("Log pressure")
-    axes[2].set_title("Radial gamma-beta")
-    axes[3].set_title("Energy flux")
+    axes[0].set_title(r'$\log_{10}(\rho)$')
+    axes[1].set_title(r'$\log_{10}(p)$')
+    axes[2].set_title(r'$\log_{10}(\Gamma \beta_r)$')
+    axes[3].set_title(r'Luminosity $dL / d\Omega$')
 
     for m, cax in zip([m0, m1, m2, m3], cb_axes):
         fig.colorbar(m, cax=cax, orientation='horizontal')

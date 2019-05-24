@@ -143,14 +143,14 @@ public:
 
     //=========================================================================
     config_template_t() {}
-    config_template_t(config_parameter_map_t&& parameters) : parameters(std::move(parameters)) {}
+    config_template_t(config_parameter_map_t&& parameters) : parameters(parameters) {}
 
     template<typename ValueType>
     config_template_t item(const char* key, ValueType default_value) const
     {
         auto result = parameters;
         result[key] = default_value;
-        return result;
+        return std::move(result);
     }
 
     config_t create() const
