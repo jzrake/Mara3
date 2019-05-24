@@ -36,6 +36,9 @@
 //=============================================================================
 namespace mara
 {
+    template<std::size_t NumThreads>
+    inline auto evaluate_on();
+
     template<std::size_t Rank>
     inline auto propose_block_decomposition(std::size_t number_of_subdomains);
 
@@ -52,6 +55,50 @@ namespace mara::parallel::detail
     inline std::pair<int, int> factor_once(int num);
     inline void prime_factors_impl(std::vector<int>& result, int num);
     inline std::vector<int> prime_factors(int num);
+}
+
+
+
+
+/**
+ * @brief      Return a shared-memory nd::array evaluator for the given number
+ *             of cores.
+ *
+ * @tparam     NumThreads  The number of cores to use
+ *
+ * @return     The evaluator
+ *
+ * @note       mara::evaluate_on<CoreCount>() is a drop-in replacement for
+ *             nd::to_shared().
+ */
+template<std::size_t NumThreads>
+inline auto mara::evaluate_on()
+{
+    return [] (auto array)
+    {
+        using value_type = typename decltype(array)::value_type;
+        auto provider = nd::make_unique_provider<value_type>(array.shape());
+        auto evaluate_partial = [&] (auto accessor)
+        {
+            return [accessor, array, &provider]
+            {
+                for (auto index : accessor)
+                {
+                    provider(index) = array(index);
+                }
+            };
+        };
+        auto threads = nd::basic_sequence_t<std::thread, NumThreads>();
+        auto regions = nd::partition_shape<NumThreads>(array.shape());
+
+        for (auto [n, accessor] : nd::enumerate(regions))
+            threads[n] = std::thread(evaluate_partial(accessor));
+
+        for (auto& thread : threads)
+            thread.join();
+
+        return nd::make_array(std::move(provider).shared());
+    };
 }
 
 
