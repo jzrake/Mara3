@@ -44,6 +44,7 @@
 #include "physics_srhd.hpp"
 #include "physics_euler.hpp"
 #include "math_polynomial.hpp"
+#include "post_shock_locator.hpp"
 
 #define gamma_law_index (4. / 3)
 #define cfl_number 0.4
@@ -154,9 +155,6 @@ struct SedovProblem
 
     //=========================================================================
     static auto make_diagnostic_fields(const solution_state_t& state);
-    static auto find_shock_index(primitive_array_t primitive);
-    static auto find_index_of_maximum_pressure_behind(primitive_array_t primitive, std::size_t index);
-    static auto find_index_of_pressure_plateau_ahead(primitive_array_t primitive, std::size_t index);
     static auto compute_time_series_data(const solution_state_t& state);
     static auto get_time_series_column_names();
 
@@ -271,61 +269,6 @@ auto SedovProblem<HydroSystem>::make_diagnostic_fields(const solution_state_t& s
 
 //=============================================================================
 template<typename HydroSystem>
-auto SedovProblem<HydroSystem>::find_shock_index(primitive_array_t primitive)
-{
-    using namespace std::placeholders;
-
-    auto s0 = primitive | nd::map(std::bind(&HydroSystem::primitive_t::specific_entropy, _1, gamma_law_index));
-    auto ds = s0 | nd::difference_on_axis(0);
-    auto shock_index = nd::where(ds == nd::min(ds)) | nd::read_index(0);
-    return shock_index;
-}
-
-template<typename HydroSystem>
-auto SedovProblem<HydroSystem>::find_index_of_maximum_pressure_behind(primitive_array_t primitive, std::size_t index)
-{
-    auto p = primitive
-    | nd::map(std::mem_fn(&HydroSystem::primitive_t::gas_pressure))
-    | nd::bounds_check();
-
-    try {
-        while (p(index - 1) > p(index))
-        {
-            --index;
-        }
-        return index;
-    }
-    catch (const std::exception& e)
-    {
-        std::printf("find_index_of_maximum_pressure_behind: %s\n", e.what());
-        return std::size_t(0);
-    }
-}
-
-template<typename HydroSystem>
-auto SedovProblem<HydroSystem>::find_index_of_pressure_plateau_ahead(primitive_array_t primitive, std::size_t index)
-{
-    auto dlogp = primitive
-    | nd::map(std::mem_fn(&HydroSystem::primitive_t::gas_pressure))
-    | nd::map([] (auto p) { return std::log(p); })
-    | nd::difference_on_axis(0)
-    | nd::bounds_check();
-
-    try {
-        while (dlogp(index - 1) < 0.5 * dlogp(index - 2))
-        {
-            ++index;
-        }
-        return index;
-    }
-    catch (const std::exception& e)
-    {
-        std::printf("find_index_of_pressure_plateau_ahead: %s\n", e.what());
-        return std::size_t(0);
-    }
-}
-
-template<typename HydroSystem>
 auto SedovProblem<HydroSystem>::compute_time_series_data(const solution_state_t& state)
 {
     using namespace std::placeholders;
@@ -336,9 +279,9 @@ auto SedovProblem<HydroSystem>::compute_time_series_data(const solution_state_t&
     | nd::map(cons_to_prim)
     | nd::to_shared();
 
-    auto shock_index      = find_shock_index(primitive)[0];
-    auto downstream_index = find_index_of_maximum_pressure_behind(primitive, shock_index);
-    auto upstream_index   = find_index_of_pressure_plateau_ahead(primitive, shock_index);
+    auto shock_index      = mara::find_shock_index(primitive, gamma_law_index)[0];
+    auto downstream_index = mara::find_index_of_maximum_pressure_behind(primitive, shock_index);
+    auto upstream_index   = mara::find_index_of_pressure_plateau_ahead(primitive, shock_index);
     auto rc = state.vertices | nd::midpoint_on_axis(0);
     auto vc = primitive | nd::map([] (auto p) { return radial_velocity_or_gamma_beta(p); });
 
@@ -542,7 +485,7 @@ void SedovProblem<HydroSystem>::write_checkpoint(const app_state_t& state, std::
     auto file = h5::File(mara::filesystem::join(outdir, mara::create_numbered_filename("chkpt", count, "h5")), "w");
     write_solution(file.require_group("solution"), state.solution_state);
     mara::write_schedule(file.require_group("schedule"), state.schedule);
-    mara::write_config(file.require_group("run_config"), state.run_config);
+    mara::write_config(file.require_group("config"), state.run_config);
 
     std::printf("write checkpoint: %s\n", file.filename().data());
 }

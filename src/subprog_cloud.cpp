@@ -46,6 +46,7 @@
 #include "physics_srhd.hpp"
 #include "model_atmosphere.hpp"
 #include "model_jet_nozzle.hpp"
+#include "post_shock_locator.hpp"
 
 
 
@@ -65,10 +66,10 @@ static auto config_template()
     .item("restart",      std::string())   // name of a restart file (create new run if empty)
     .item("outdir",              "data")   // directory to put output files in
     .item("nr",                     256)   // number of radial zones, per decade
-    .item("tfinal",                 1.0)   // time to stop the simulation
-    .item("cpi",                   10.0)   // checkpoint interval
-    .item("tsi",                    0.1)   // time-series interval
-    .item("dfi",                    1.0)   // diagnostic field interval (primitives and other data products)
+    .item("tfinal",                 1.0)   // time to stop the simulation (code time units: inner_radius / light_speed)
+    .item("cpi",                   10.0)   // checkpoint interval (code time units)
+    .item("tsi",                    0.1)   // time-series interval (code time units)
+    .item("dfi",                    1.0)   // diagnostic field interval (primitives and other data products, code time units)
     .item("num_decades",            2.0)   // number of radial decades to include in the domain
     .item("inner_radius",          3e08)   // inner boundary radius (in cm)
     .item("cloud_cutoff",          3e10)   // cloud radius rc (cm) where the density index changes from n to n2
@@ -137,8 +138,6 @@ struct CloudProblem
     };
 
 
-
-
     //=========================================================================
     struct unit_system_t
     {
@@ -165,6 +164,7 @@ struct CloudProblem
     static auto make_atmosphere_model(const mara::config_t& cfg);
     static auto make_jet_nozzle_model(const mara::config_t& cfg);
     static auto make_reference_units(const mara::config_t& cfg);
+    static auto make_diagnostic_fields(const solution_state_t& state, const mara::config_t& cfg);
 
 
     //=========================================================================
@@ -176,16 +176,8 @@ struct CloudProblem
 
     //=========================================================================
     static auto intercell_flux(std::size_t axis);
-    static auto extend_reflecting_inner();
     static auto extend_zero_gradient_outer();
     static auto extend_inflow_nozzle_inner(const app_state_t& app_state);
-
-
-    //=============================================================================
-    static auto find_shock_index(primitive_array_1d_t primitive);
-    static auto find_index_of_maximum_pressure_behind(primitive_array_1d_t primitive, std::size_t index);
-    static auto find_index_of_pressure_plateau_ahead(primitive_array_1d_t primitive, std::size_t index);
-    static auto make_diagnostic_fields(const solution_state_t& state, const mara::config_t& cfg);
 
 
     //=============================================================================
@@ -221,41 +213,6 @@ struct CloudProblem
     template<typename ArrayType> static auto sin(ArrayType array) { return array | nd::map([] (auto x) { return std::sin(x); }); }
     template<typename ArrayType> static auto cos(ArrayType array) { return array | nd::map([] (auto x) { return std::cos(x); }); }
 };
-
-
-
-
-//=============================================================================
-auto CloudProblem::make_atmosphere_model(const mara::config_t& cfg)
-{
-    return mara::power_law_atmosphere_model()
-    .with_inner_radius  (cfg.get_double("inner_radius"))
-    .with_cutoff_radius (cfg.get_double("cloud_cutoff"))
-    .with_inner_index   (cfg.get_double("density_index"))
-    .with_outer_index   (cfg.get_double("density_index2"))
-    .with_total_mass    (cfg.get_double("cloud_mass") * solar_mass_cgs);
-}
-
-auto CloudProblem::make_jet_nozzle_model(const mara::config_t& cfg)
-{
-    return mara::jet_nozzle_model()
-    .with_inner_radius      (cfg.get_double("inner_radius"))
-    .with_total_energy      (cfg.get_double("jet_total_energy"))
-    .with_jet_duration      (cfg.get_double("jet_duration"))
-    .with_structure_exponent(cfg.get_double("jet_structure_exp"))
-    .with_opening_angle     (cfg.get_double("jet_opening_angle"))
-    .with_lorentz_factor    (cfg.get_double("jet_gamma_beta"));
-}
-
-auto CloudProblem::make_reference_units(const mara::config_t& cfg)
-{
-    auto atmosphere_model = make_atmosphere_model(cfg);
-
-    return unit_system_t()
-    .with_length(atmosphere_model.r0)
-    .with_mass(atmosphere_model.total_mass())
-    .with_time(atmosphere_model.r0 / light_speed_cgs);
-}
 
 
 
@@ -297,6 +254,107 @@ auto CloudProblem::cell_centroids(radial_vertex_array_t r_vertices, polar_vertex
 
 
 //=============================================================================
+auto CloudProblem::make_atmosphere_model(const mara::config_t& cfg)
+{
+    return mara::power_law_atmosphere_model()
+    .with_inner_radius  (cfg.get_double("inner_radius"))
+    .with_cutoff_radius (cfg.get_double("cloud_cutoff"))
+    .with_inner_index   (cfg.get_double("density_index"))
+    .with_outer_index   (cfg.get_double("density_index2"))
+    .with_total_mass    (cfg.get_double("cloud_mass") * solar_mass_cgs);
+}
+
+auto CloudProblem::make_jet_nozzle_model(const mara::config_t& cfg)
+{
+    return mara::jet_nozzle_model()
+    .with_inner_radius      (cfg.get_double("inner_radius"))
+    .with_total_energy      (cfg.get_double("jet_total_energy"))
+    .with_jet_duration      (cfg.get_double("jet_duration"))
+    .with_structure_exponent(cfg.get_double("jet_structure_exp"))
+    .with_opening_angle     (cfg.get_double("jet_opening_angle"))
+    .with_lorentz_factor    (cfg.get_double("jet_gamma_beta"));
+}
+
+auto CloudProblem::make_reference_units(const mara::config_t& cfg)
+{
+    auto atmosphere_model = make_atmosphere_model(cfg);
+
+    return unit_system_t()
+    .with_length(atmosphere_model.r0)
+    .with_mass(atmosphere_model.total_mass())
+    .with_time(atmosphere_model.r0 / light_speed_cgs);
+}
+
+auto CloudProblem::make_diagnostic_fields(const solution_state_t& state, const mara::config_t& cfg)
+{
+    using namespace std::placeholders;
+
+    auto reference    = make_reference_units(cfg);
+    auto dv           = cell_volumes     (state.radial_vertices, state.polar_vertices);
+    auto dAr          = radial_face_areas(state.radial_vertices, state.polar_vertices);
+    auto rhat         = mara::unit_vector_t::on_axis_1();
+    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, _1, gamma_law_index);
+    auto radial_cells = state.radial_vertices | nd::midpoint_on_axis(0);
+    auto primitive    = state.conserved | nd::divide(dv) | nd::map(cons_to_prim);
+
+    auto solid_angle_at_theta  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto total_energy_at_theta = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto shock_midpoint_radius = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto shock_upstream_radius = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto shock_pressure_radius = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto postshock_flow_power  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto postshock_flow_gamma  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+
+    for (std::size_t j = 0; j < state.polar_vertices.size() - 1; ++j)
+    {
+        auto pj = primitive       | nd::freeze_axis(1).at_index(j) | nd::to_shared();
+        auto uj = state.conserved | nd::freeze_axis(1).at_index(j);
+        auto midpoint_index = mara::find_shock_index(pj, gamma_law_index)[0];
+        auto upstream_index = mara::find_index_of_pressure_plateau_ahead(pj, midpoint_index);
+        auto pressure_index = mara::find_index_of_maximum_pressure_behind(pj, midpoint_index);
+        auto pshock = primitive(pressure_index, j);
+
+        solid_angle_at_theta(j) = dAr(0, j) / state.radial_vertices(0) / state.radial_vertices(0);
+        total_energy_at_theta(j) = uj | nd::map([] (auto u) { return u[4].value; }) | nd::multiply(reference.energy()) | nd::sum();
+        shock_midpoint_radius(j) = radial_cells(midpoint_index).value * reference.length();
+        shock_upstream_radius(j) = radial_cells(upstream_index).value * reference.length();
+        shock_pressure_radius(j) = radial_cells(pressure_index).value * reference.length();
+
+        postshock_flow_power(j) = (pshock.flux(rhat, gamma_law_index)[4] * dAr(pressure_index, j)).value * reference.power();
+        postshock_flow_gamma(j) =  pshock.lorentz_factor();
+    }
+
+    auto result = diagnostic_fields_t();
+
+    result.radial_vertices    = state.radial_vertices * reference.length() | nd::to_shared();
+    result.polar_vertices     = state.polar_vertices;
+    result.solid_angle_at_theta  = std::move(solid_angle_at_theta).shared();
+    result.total_energy_at_theta = std::move(total_energy_at_theta).shared();
+    result.shock_midpoint_radius = std::move(shock_midpoint_radius).shared();
+    result.shock_upstream_radius = std::move(shock_upstream_radius).shared();
+    result.shock_pressure_radius = std::move(shock_pressure_radius).shared();
+    result.postshock_flow_power  = std::move(postshock_flow_power).shared();
+    result.postshock_flow_gamma  = std::move(postshock_flow_gamma).shared();
+
+    result.time               = state.time;
+    result.specific_entropy   = primitive | nd::map(std::bind(&mara::srhd::primitive_t::specific_entropy, _1, gamma_law_index)) | nd::to_shared();
+    result.gas_pressure       = primitive | nd::map(std::mem_fn(&mara::srhd::primitive_t::gas_pressure)) | nd::multiply(reference.energy_density()) | nd::to_shared();
+    result.mass_density       = primitive | nd::map(std::mem_fn(&mara::srhd::primitive_t::mass_density)) | nd::multiply(reference.mass_density())   | nd::to_shared();
+    result.radial_gamma_beta  = primitive | nd::map(std::mem_fn(&mara::srhd::primitive_t::gamma_beta_1)) | nd::to_shared();
+    result.radial_energy_flow = primitive
+    | nd::map([rhat] (auto p) { return p.flux(rhat, gamma_law_index); })
+    | nd::multiply(dAr | nd::select_axis(0).from(0).to(1).from_the_end())
+    | nd::map([] (auto L) { return L[4].value; })
+    | nd::multiply(reference.power())
+    | nd::to_shared();
+
+    return result;
+}
+
+
+
+
+//=============================================================================
 auto CloudProblem::intercell_flux(std::size_t axis)
 {
     return [axis] (auto array)
@@ -307,17 +365,6 @@ auto CloudProblem::intercell_flux(std::size_t axis)
         auto nh = mara::unit_vector_t::on_axis(axis);
         auto riemann = std::bind(mara::srhd::riemann_hlle, _1, _2, nh, gamma_law_index);
         return nd::zip_arrays(L, R) | nd::apply(riemann);
-    };
-}
-
-auto CloudProblem::extend_reflecting_inner()
-{
-    return [] (auto array)
-    {
-        auto xl = array
-        | nd::select_first(1, 0)
-        | nd::map([] (auto p) { return p.with_gamma_beta_1(-p.gamma_beta_1()); });
-        return xl | nd::concat(array);
     };
 }
 
@@ -354,128 +401,6 @@ auto CloudProblem::extend_zero_gradient_outer()
     {
         return array | nd::concat(array | nd::select_final(1, 0));
     };
-}
-
-
-
-
-//=============================================================================
-auto CloudProblem::find_shock_index(primitive_array_1d_t primitive)
-{
-    using namespace std::placeholders;
-
-    auto s0 = primitive | nd::map(std::bind(&mara::srhd::primitive_t::specific_entropy, _1, gamma_law_index));
-    auto ds = s0 | nd::difference_on_axis(0);
-    auto shock_index = nd::where(ds == nd::min(ds)) | nd::read_index(0);
-    return shock_index;
-}
-
-auto CloudProblem::find_index_of_maximum_pressure_behind(primitive_array_1d_t primitive, std::size_t index)
-{
-    auto p = primitive
-    | nd::map(std::mem_fn(&mara::srhd::primitive_t::gas_pressure))
-    | nd::bounds_check();
-
-    try {
-        while (p(index - 1) > p(index))
-        {
-            --index;
-        }
-        return index;
-    }
-    catch (const std::exception& e)
-    {
-        // std::printf("find_index_of_maximum_pressure_behind: %s\n", e.what());
-        return std::size_t(0);
-    }
-}
-
-auto CloudProblem::find_index_of_pressure_plateau_ahead(primitive_array_1d_t primitive, std::size_t index)
-{
-    auto dlogp = primitive
-    | nd::map(std::mem_fn(&mara::srhd::primitive_t::gas_pressure))
-    | nd::map([] (auto p) { return std::log(p); })
-    | nd::difference_on_axis(0)
-    | nd::bounds_check();
-
-    try {
-        while (dlogp(index - 1) < 0.5 * dlogp(index - 2))
-        {
-            ++index;
-        }
-        return index;
-    }
-    catch (const std::exception& e)
-    {
-        // std::printf("find_index_of_pressure_plateau_ahead: %s\n", e.what());
-        return std::size_t(0);
-    }
-}
-
-auto CloudProblem::make_diagnostic_fields(const solution_state_t& state, const mara::config_t& cfg)
-{
-    using namespace std::placeholders;
-
-    auto reference    = make_reference_units(cfg);
-    auto dv           = cell_volumes     (state.radial_vertices, state.polar_vertices);
-    auto dAr          = radial_face_areas(state.radial_vertices, state.polar_vertices);
-    auto rhat         = mara::unit_vector_t::on_axis_1();
-    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, _1, gamma_law_index);
-    auto radial_cells = state.radial_vertices | nd::midpoint_on_axis(0);
-    auto primitive    = state.conserved | nd::divide(dv) | nd::map(cons_to_prim);
-
-    auto solid_angle_at_theta  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-    auto total_energy_at_theta = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-    auto shock_midpoint_radius = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-    auto shock_upstream_radius = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-    auto shock_pressure_radius = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-    auto postshock_flow_power  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-    auto postshock_flow_gamma  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-
-    for (std::size_t j = 0; j < state.polar_vertices.size() - 1; ++j)
-    {
-        auto pj = primitive       | nd::freeze_axis(1).at_index(j) | nd::to_shared();
-        auto uj = state.conserved | nd::freeze_axis(1).at_index(j);
-        auto midpoint_index = find_shock_index(pj)[0];
-        auto upstream_index = find_index_of_pressure_plateau_ahead(pj, midpoint_index);
-        auto pressure_index = find_index_of_maximum_pressure_behind(pj, midpoint_index);
-        auto pshock = primitive(pressure_index, j);
-
-        solid_angle_at_theta(j) = dAr(0, j) / state.radial_vertices(0) / state.radial_vertices(0);
-        total_energy_at_theta(j) = uj | nd::map([] (auto u) { return u[4].value; }) | nd::multiply(reference.energy()) | nd::sum();
-        shock_midpoint_radius(j) = radial_cells(midpoint_index).value * reference.length();
-        shock_upstream_radius(j) = radial_cells(upstream_index).value * reference.length();
-        shock_pressure_radius(j) = radial_cells(pressure_index).value * reference.length();
-
-        postshock_flow_power(j) = (pshock.flux(rhat, gamma_law_index)[4] * dAr(pressure_index, j)).value * reference.power();
-        postshock_flow_gamma(j) =  pshock.lorentz_factor();
-    }
-
-    auto result = diagnostic_fields_t();
-    
-    result.radial_vertices    = state.radial_vertices * reference.length() | nd::to_shared();
-    result.polar_vertices     = state.polar_vertices;
-    result.solid_angle_at_theta  = std::move(solid_angle_at_theta).shared();
-    result.total_energy_at_theta = std::move(total_energy_at_theta).shared();
-    result.shock_midpoint_radius = std::move(shock_midpoint_radius).shared();
-    result.shock_upstream_radius = std::move(shock_upstream_radius).shared();
-    result.shock_pressure_radius = std::move(shock_pressure_radius).shared();
-    result.postshock_flow_power  = std::move(postshock_flow_power).shared();
-    result.postshock_flow_gamma  = std::move(postshock_flow_gamma).shared();
-
-    result.time               = state.time;
-    result.specific_entropy   = primitive | nd::map(std::bind(&mara::srhd::primitive_t::specific_entropy, _1, gamma_law_index)) | nd::to_shared();
-    result.gas_pressure       = primitive | nd::map(std::mem_fn(&mara::srhd::primitive_t::gas_pressure)) | nd::multiply(reference.energy_density()) | nd::to_shared();
-    result.mass_density       = primitive | nd::map(std::mem_fn(&mara::srhd::primitive_t::mass_density)) | nd::multiply(reference.mass_density())   | nd::to_shared();
-    result.radial_gamma_beta  = primitive | nd::map(std::mem_fn(&mara::srhd::primitive_t::gamma_beta_1)) | nd::to_shared();
-    result.radial_energy_flow = primitive
-    | nd::map([rhat] (auto p) { return p.flux(rhat, gamma_law_index); })
-    | nd::multiply(dAr | nd::select_axis(0).from(0).to(1).from_the_end())
-    | nd::map([] (auto L) { return L[4].value; })
-    | nd::multiply(reference.power())
-    | nd::to_shared();
-
-    return result;
 }
 
 
@@ -521,7 +446,6 @@ auto CloudProblem::new_solution(const mara::config_t& cfg)
     auto to_conserved   = std::bind(&mara::srhd::primitive_t::to_conserved_density, _1, gamma_law_index);
     auto nr             = cfg.get_int("nr");
     auto num_decades    = cfg.get_double("num_decades");
-
     auto r_vertices = nd::linspace(0.0, num_decades, int(num_decades * nr) + 1)
     | nd::map([] (auto y) { return mara::make_length(std::pow(10.0, y)); })
     | nd::to_shared();
@@ -561,6 +485,7 @@ auto CloudProblem::next_solution(const app_state_t& app_state)
         auto q = std::get<1>(position);
         return primitive.spherical_geometry_source_terms(r, q, gamma_law_index);
     };
+
     auto cons_to_prim = std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index);
     auto extend_bc    = mara::compose(extend_inflow_nozzle_inner(app_state), extend_zero_gradient_outer());
     auto evaluate     = mara::evaluate_on<12>();
@@ -638,7 +563,7 @@ static auto create_run_config(int argc, const char* argv[])
     return args.count("restart")
     ? config_template()
             .create()
-            .update(mara::read_config(h5::File(args.at("restart"), "r").open_group("cfg")))
+            .update(mara::read_config(h5::File(args.at("restart"), "r").open_group("config")))
             .update(args)
     : new_run_config(args);
 }
@@ -653,7 +578,7 @@ void CloudProblem::write_checkpoint(const app_state_t& state, std::string outdir
     auto file = h5::File(mara::filesystem::join(outdir, mara::create_numbered_filename("chkpt", count, "h5")), "w");
     write_solution(file.require_group("solution"), state.solution_state);
     mara::write_schedule(file.require_group("schedule"), state.schedule);
-    mara::write_config(file.require_group("cfg"), state.run_config);
+    mara::write_config(file.require_group("config"), state.run_config);
 
     std::printf("write checkpoint: %s\n", file.filename().data());
 }
@@ -779,7 +704,7 @@ void CloudProblem::prepare_filesystem(const mara::config_t& cfg)
 
         file.require_dataset("time", h5::Datatype::native_double(), space, plist);
         file.require_dataset("shock_radius", h5::Datatype::native_double(), space, plist);
-        mara::write_config(file.require_group("cfg"), cfg);
+        mara::write_config(file.require_group("config"), cfg);
     }
 }
 
