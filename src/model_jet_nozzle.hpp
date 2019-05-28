@@ -104,15 +104,15 @@ struct mara::jet_nozzle_model
 
     /**
      * @brief      Estimate the comoving mass density at the jet base (r0)
-     *             necessary for the jet (plus counter-jet) to have the
-     *             total energy.
+     *             necessary for the jet (plus counter-jet) to have the total
+     *             energy.
      *
      * @return     The density (g / cm^3)
      *
-     * @note       This is estimate is accurate when the jet is cold (h - 1
-     *             << 1) and ultra-relativistic (G0 >> 1), and when the
-     *             structure exponent (as) is 2. Expect errors at the ~10%
-     *             level for different values of as.
+     * @note       This estimate is accurate when the jet is cold (h - 1 << 1)
+     *             and ultra-relativistic (G0 >> 1), and when the structure
+     *             exponent (as) is 2. Expect errors at the ~10% level for
+     *             different values of as.
      */
     double density_at_base() const
     {

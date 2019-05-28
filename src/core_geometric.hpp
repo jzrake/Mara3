@@ -106,6 +106,7 @@ auto mara::make_spatial_coordinate(double x1, double x2, double x3)
 {
     return spatial_coordinate_t {{ mara::make_length(x1), mara::make_length(x2), mara::make_length(x3) }};
 }
+
 auto mara::make_area_element(double da1, double da2, double da3)
 {
     return area_element_t {{ mara::make_area(da1), mara::make_area(da2), mara::make_area(da3) }};

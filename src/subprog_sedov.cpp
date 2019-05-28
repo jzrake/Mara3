@@ -29,7 +29,6 @@
 
 
 #include <iostream>
-#include "ndmpi.hpp"
 #include "ndh5.hpp"
 #include "ndarray.hpp"
 #include "ndarray_ops.hpp"

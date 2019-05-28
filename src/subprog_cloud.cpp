@@ -176,6 +176,7 @@ struct CloudProblem
 
     //=========================================================================
     static auto intercell_flux(std::size_t axis);
+    static auto extend_zero_gradient_inner();
     static auto extend_zero_gradient_outer();
     static auto extend_inflow_nozzle_inner(const app_state_t& app_state);
 
@@ -232,7 +233,7 @@ auto CloudProblem::polar_face_areas(radial_vertex_array_t r_vertices, polar_vert
     auto dr = r | nd::difference_on_axis(0);
     auto rc = r | nd::midpoint_on_axis(0);
     auto qc = q | nd::midpoint_on_axis(0);
-    return rc * dr * sin(qc);
+    return rc * dr * sin(qc) * 2 * M_PI;
 }
 
 auto CloudProblem::cell_volumes(radial_vertex_array_t r_vertices, polar_vertex_array_t q_vertices)
@@ -336,7 +337,7 @@ auto CloudProblem::make_diagnostic_fields(const solution_state_t& state, const m
     result.postshock_flow_power  = std::move(postshock_flow_power).shared();
     result.postshock_flow_gamma  = std::move(postshock_flow_gamma).shared();
 
-    result.time               = state.time;
+    result.time               = state.time * reference.time();
     result.specific_entropy   = primitive | nd::map(std::bind(&mara::srhd::primitive_t::specific_entropy, _1, gamma_law_index)) | nd::to_shared();
     result.gas_pressure       = primitive | nd::map(std::mem_fn(&mara::srhd::primitive_t::gas_pressure)) | nd::multiply(reference.energy_density()) | nd::to_shared();
     result.mass_density       = primitive | nd::map(std::mem_fn(&mara::srhd::primitive_t::mass_density)) | nd::multiply(reference.mass_density())   | nd::to_shared();
@@ -392,6 +393,14 @@ auto CloudProblem::extend_inflow_nozzle_inner(const app_state_t& app_state)
         | nd::to_shared()
         | nd::reshape(1, polar_cells.size())
         | nd::concat(array);
+    };
+}
+
+auto CloudProblem::extend_zero_gradient_inner()
+{
+    return [] (auto array)
+    {
+        return (array | nd::select_first(1, 0)) | nd::concat(array);
     };
 }
 
@@ -488,6 +497,7 @@ auto CloudProblem::next_solution(const app_state_t& app_state)
 
     auto cons_to_prim = std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index);
     auto extend_bc    = mara::compose(extend_inflow_nozzle_inner(app_state), extend_zero_gradient_outer());
+    // auto extend_bc    = mara::compose(extend_zero_gradient_inner(), extend_zero_gradient_outer());
     auto evaluate     = mara::evaluate_on<12>();
     auto state        = app_state.solution_state;
 

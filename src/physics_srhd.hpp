@@ -270,6 +270,7 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
 
 
 
+
     /**
      * @brief      Return the wavespeeds along a given direction
      *
@@ -291,6 +292,7 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
             make_velocity((vn * (1 - c2) + k0) / (1 - vv * c2)),
         };
     }
+
 
 
 
@@ -316,11 +318,13 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
         auto H = enthalpy_density(gamma_law_index);
         auto r = spherical_radius;
         auto S = covariant_sequence_t<dimensional_value_t<-3, 1, -1, double>, 5>();
-        S[1].value = (2.0  * pg + H * (uq * uq        + up * up)) / r;
-        S[2].value = (cotq * pg + H * (up * up * cotq - ur * uq)) / r;
-        S[3].value =        -up * H * (ur + uq * cotq) / r;
+        S[1] = (2.0  * pg + H * (uq * uq        + up * up)) / r;
+        S[2] = (cotq * pg + H * (up * up * cotq - ur * uq)) / r;
+        S[3] =        -up * H * (ur + uq * cotq) / r;
         return S;
     }
+
+
 
 
     /**
