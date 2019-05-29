@@ -55,7 +55,8 @@ struct mara::euler
 
     static inline primitive_t recover_primitive(
         const conserved_density_t& U,
-        double gamma_law_index);
+        double gamma_law_index,
+        double temperature_floor);
 
     static inline primitive_t roe_average(
         const primitive_t& Pl,
@@ -546,14 +547,16 @@ struct mara::euler::primitive_t : public mara::arithmetic_sequence_t<double, 5, 
  * @brief      Attempt to recover a primitive variable state from the given
  *             vector of conserved densities.
  *
- * @param[in]  U                The conserved densities
- * @param[in]  gamma_law_index  The gamma law index
+ * @param[in]  U                  The conserved densities
+ * @param[in]  gamma_law_index    The gamma law index
+ * @param[in]  temperature_floor  If greater than 0.0, sets p = max(p, T * rho)
  *
  * @return     A primitive variable state, if the recovery succeeds
  */
 mara::euler::primitive_t mara::euler::recover_primitive(
     const conserved_density_t& U,
-    double gamma_law_index)
+    double gamma_law_index,
+    double temperature_floor)
 {
     auto p_squared = (U[1] * U[1] + U[2] * U[2] + U[3] * U[3]).value;
     auto d = U[0].value;
@@ -565,6 +568,10 @@ mara::euler::primitive_t mara::euler::recover_primitive(
     P[3] =  U[3].value / d;
     P[4] = (U[4].value - 0.5 * p_squared / d) * (gamma_law_index - 1.0);
 
+    if (P[4] < 0.0 && temperature_floor > 0.0)
+    {
+        P[4] = temperature_floor * d;
+    }
     return P;
 }
 

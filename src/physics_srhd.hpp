@@ -54,7 +54,8 @@ struct mara::srhd
 
     static inline primitive_t recover_primitive(
         const conserved_density_t& U,
-        double gamma_law_index);
+        double gamma_law_index,
+        double temperature_floor);
 
     static inline flux_vector_t riemann_hlle(
         const primitive_t& Pl,
@@ -354,16 +355,17 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
  * @brief      Attempt to recover a primitive variable state from the given
  *             vector of conserved densities.
  *
- * @param[in]  U                The conserved densities
- * @param[in]  gamma_law_index  The gamma law index
+ * @param[in]  U                  The conserved densities
+ * @param[in]  gamma_law_index    The gamma law index
+ * @param[in]  temperature_floor  If greater than 0.0, sets p = max(p, T * rho)
  *
  * @return     A primitive variable state, if the recovery succeeds
  */
 mara::srhd::primitive_t mara::srhd::recover_primitive(
     const conserved_density_t& U,
-    double gamma_law_index)
+    double gamma_law_index,
+    double temperature_floor)
 {
-    constexpr bool allowNegativePressure = false;
     constexpr int newtonIterMax          = 50;
     constexpr double errorTolerance      = 1e-10;
 
@@ -414,6 +416,11 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
 
     auto P = primitive_t();
 
+    if (temperature_floor > 0.0)
+    {
+        p = std::max(p, temperature_floor * D / W0);
+    }
+
     P[0] = D / W0;
     P[1] = W0 * U[S11].value / (tau + D + p);
     P[2] = W0 * U[S22].value / (tau + D + p);
@@ -425,10 +432,10 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
         throw std::invalid_argument("mara::srhd::recover_primitive failure: "
             "root finder not converging U=" + to_string(U));
     }
-    if (P.gas_pressure() < 0.0 && ! allowNegativePressure)
+    if (P.gas_pressure() < 0.0)
     {
         throw std::invalid_argument("mara::srhd::recover_primitive failure: "
-            "negative pressure U=" + mara::to_string(U));
+            "negative pressure p=" + std::to_string(P.gas_pressure()) + " U=" + mara::to_string(U));
     }
     if (P.mass_density() < 0.0)
     {

@@ -28,6 +28,7 @@
 
 #pragma once
 #include <vector>
+#include <thread>
 #include "ndarray.hpp"
 
 

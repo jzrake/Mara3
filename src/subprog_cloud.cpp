@@ -52,7 +52,9 @@
 
 
 #define gamma_law_index (4. / 3)
-#define cfl_number 0.4
+#define cfl_number 0.6
+#define plm_theta 1.8
+#define temperature_floor 1e-8
 #define light_speed_cgs 3e10
 #define solar_mass_cgs 2e33
 
@@ -176,6 +178,8 @@ struct CloudProblem
 
     //=========================================================================
     static auto intercell_flux(std::size_t axis);
+    static auto intercell_flux2(std::size_t axis);
+    static auto estimate_gradient_plm(double ul, double u0, double ur);
     static auto extend_zero_gradient_inner();
     static auto extend_zero_gradient_outer();
     static auto extend_inflow_nozzle_inner(const app_state_t& app_state);
@@ -294,7 +298,7 @@ auto CloudProblem::make_diagnostic_fields(const solution_state_t& state, const m
     auto dv           = cell_volumes     (state.radial_vertices, state.polar_vertices);
     auto dAr          = radial_face_areas(state.radial_vertices, state.polar_vertices);
     auto rhat         = mara::unit_vector_t::on_axis_1();
-    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, _1, gamma_law_index);
+    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, _1, gamma_law_index, temperature_floor);
     auto radial_cells = state.radial_vertices | nd::midpoint_on_axis(0);
     auto primitive    = state.conserved | nd::divide(dv) | nd::map(cons_to_prim);
 
@@ -367,6 +371,30 @@ auto CloudProblem::intercell_flux(std::size_t axis)
         auto riemann = std::bind(mara::srhd::riemann_hlle, _1, _2, nh, gamma_law_index);
         return nd::zip_arrays(L, R) | nd::apply(riemann);
     };
+}
+
+auto CloudProblem::intercell_flux2(std::size_t axis)
+{
+    return [axis] (auto left_and_right_states)
+    {
+        using namespace std::placeholders;
+        auto nh = mara::unit_vector_t::on_axis(axis);
+        auto riemann = std::bind(mara::srhd::riemann_hlle, _1, _2, nh, gamma_law_index);
+        return left_and_right_states | nd::apply(riemann);
+    };
+}
+
+auto CloudProblem::estimate_gradient_plm(double ul, double u0, double ur)
+{
+    using std::min;
+    using std::fabs;
+    auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
+    auto sgn = [] (auto x) { return std::copysign(1, x); };
+
+    const double a = plm_theta * (u0 - ul);
+    const double b =       0.5 * (ur - ul);
+    const double c = plm_theta * (ur - u0);
+    return 0.25 * fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
 }
 
 auto CloudProblem::extend_inflow_nozzle_inner(const app_state_t& app_state)
@@ -495,9 +523,25 @@ auto CloudProblem::next_solution(const app_state_t& app_state)
         return primitive.spherical_geometry_source_terms(r, q, gamma_law_index);
     };
 
-    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index);
+    auto extrapolate = [] (std::size_t axis)
+    {
+        return [axis] (auto P)
+        {
+            auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
+            auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
+            auto G = P
+            | nd::zip_adjacent3_on_axis(axis)
+            | nd::apply(mara::lift(estimate_gradient_plm))
+            | nd::extend_zeros(axis);
+
+            return nd::zip_arrays(
+                (P | L) + (G | L) * 0.5,
+                (P | R) - (G | R) * 0.5);
+        };
+    };
+
+    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index, temperature_floor);
     auto extend_bc    = mara::compose(extend_inflow_nozzle_inner(app_state), extend_zero_gradient_outer());
-    // auto extend_bc    = mara::compose(extend_zero_gradient_inner(), extend_zero_gradient_outer());
     auto evaluate     = mara::evaluate_on<12>();
     auto state        = app_state.solution_state;
 
@@ -511,8 +555,11 @@ auto CloudProblem::next_solution(const app_state_t& app_state)
     auto u0 = state.conserved;
     auto p0 = u0 / dv | nd::map(cons_to_prim) | evaluate;
     auto s0 = nd::zip_arrays(p0, rc) | nd::apply(source_terms) | multiply(dv);
-    auto lr = p0 | extend_bc | intercell_flux(0) | multiply(-dAr) | nd::difference_on_axis(0);
-    auto lq = p0 | intercell_flux(1) | nd::extend_zero_gradient(1) | multiply(-dAq) | nd::difference_on_axis(1);
+    // auto lr = p0 | extend_bc | intercell_flux(0) | multiply(-dAr) | nd::difference_on_axis(0);
+    // auto lq = p0 | intercell_flux(1) | nd::extend_zeros(1) | multiply(-dAq) | nd::difference_on_axis(1);
+    auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux2(0) | multiply(-dAr) | nd::difference_on_axis(0);
+    auto lq = p0 | extrapolate(1) | intercell_flux2(1) | nd::extend_zeros(1) | multiply(-dAq) | nd::difference_on_axis(1);
+
     auto u1 = u0 + (lr + lq + s0) * dt | evaluate;
 
     return solution_state_t {

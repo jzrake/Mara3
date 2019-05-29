@@ -248,7 +248,7 @@ template<typename HydroSystem>
 auto SedovProblem<HydroSystem>::make_diagnostic_fields(const solution_state_t& state)
 {
     using namespace std::placeholders;
-    auto cons_to_prim = std::bind(HydroSystem::recover_primitive, _1, gamma_law_index);
+    auto cons_to_prim = std::bind(HydroSystem::recover_primitive, _1, gamma_law_index, 0.0);
 
     auto primitive = state.conserved | nd::divide(cell_volumes(state.vertices)) | nd::map(cons_to_prim);
     auto result = diagnostic_fields_t();
@@ -271,7 +271,7 @@ template<typename HydroSystem>
 auto SedovProblem<HydroSystem>::compute_time_series_data(const solution_state_t& state)
 {
     using namespace std::placeholders;
-    auto cons_to_prim = std::bind(HydroSystem::recover_primitive, _1, gamma_law_index);
+    auto cons_to_prim = std::bind(HydroSystem::recover_primitive, _1, gamma_law_index, 0.0);
 
     auto primitive = state.conserved
     | nd::divide(cell_volumes(state.vertices))
@@ -393,7 +393,7 @@ auto SedovProblem<HydroSystem>::next_solution(const solution_state_t& state)
 
     auto evaluate = nd::to_shared();
     auto source_terms = std::bind(&HydroSystem::primitive_t::spherical_geometry_source_terms_radial, _1, _2, gamma_law_index);
-    auto cons_to_prim = std::bind(HydroSystem::recover_primitive, std::placeholders::_1, gamma_law_index);
+    auto cons_to_prim = std::bind(HydroSystem::recover_primitive, std::placeholders::_1, gamma_law_index, 0.0);
     auto extend_bc = mara::compose(extend_reflecting_inner(), extend_zero_gradient_outer());
 
     auto dr_min = state.vertices | nd::difference_on_axis(0) | nd::read_index(0);

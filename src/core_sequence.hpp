@@ -29,6 +29,7 @@
 #pragma once
 #include <functional> // std::plus, std::multiplies, etc...
 #include <string>     // std::to_string
+#include <array>      // std::array
 
 
 
@@ -42,8 +43,43 @@ namespace mara
 
     template<typename ValueType, std::size_t Rank, typename DerivedType>
     auto to_string(const fixed_length_sequence_t<ValueType, Rank, DerivedType>& sequence);
+
+    template<typename Function>
+    auto lift(Function f);
+
+    template<class D=void, class... Types>
+    constexpr auto make_std_array(Types&&... t);
 }
 
+
+
+
+//=============================================================================
+namespace mara::sequence::details
+{
+    template<class>
+    struct is_ref_wrapper : std::false_type {};
+
+    template<class T>
+    struct is_ref_wrapper<std::reference_wrapper<T>> : std::true_type {};
+
+    template<class T>
+    using not_ref_wrapper = std::negation<is_ref_wrapper<std::decay_t<T>>>;
+
+    template<class D, class...>
+    struct return_type_helper { using type = D; };
+
+    template<class... Types>
+    struct return_type_helper<void, Types...> : std::common_type<Types...>
+    {
+        static_assert(std::conjunction_v<not_ref_wrapper<Types>...>,
+                      "types cannot contain reference_wrapper's when D is void");
+    };
+
+    template<class D, class... Types>
+    using return_type = std::array<typename return_type_helper<D, Types...>::type, sizeof...(Types)>;
+}
+ 
 
 
 
@@ -176,6 +212,9 @@ class mara::arithmetic_sequence_t : public fixed_length_sequence_t<ValueType, Ra
 public:
 
     //=========================================================================
+    using fixed_length_sequence_t<ValueType, Rank, DerivedType>::fixed_length_sequence_t;
+
+    //=========================================================================
     DerivedType operator*(const ValueType& other) const { return binary_op(other, std::multiplies<>()); }
     DerivedType operator/(const ValueType& other) const { return binary_op(other, std::divides<>()); }
     DerivedType operator+(const DerivedType& other) const { return binary_op(other, std::plus<>()); }
@@ -246,6 +285,9 @@ template<typename ValueType, std::size_t Rank>
 class mara::covariant_sequence_t final : public fixed_length_sequence_t<ValueType, Rank, covariant_sequence_t<ValueType, Rank>>
 {
 public:
+
+    //=========================================================================
+    using fixed_length_sequence_t<ValueType, Rank, covariant_sequence_t<ValueType, Rank>>::fixed_length_sequence_t;
 
     //=========================================================================
     template <typename T> auto operator*(const T& a) const { return binary_op(a, std::multiplies<>()); }
@@ -374,4 +416,57 @@ auto mara::to_string(const mara::fixed_length_sequence_t<ValueType, Rank, Derive
         }
     }
     return result + ")";
+}
+
+
+
+
+/**
+ * @brief      Make a C++ std::array - planned for C++20
+ *
+ * @param      t     The arguments to be put in the array (must have uniform
+ *                   type)
+ *
+ * @tparam     D     Type to force conversion to
+ *
+ * @return     A std::array made from the arguments
+ *
+ * @note       See https://en.cppreference.com/w/cpp/experimental/make_array for
+ *             implementation.
+ */
+template<class D, class... Types>
+constexpr auto mara::make_std_array(Types&&... t)
+{
+    return mara::sequence::details::return_type<D, Types...> { std::forward<Types>(t)... };
+}
+
+
+
+
+/**
+ * @brief      Higher order function that turns its argument into a function
+ *             that operates element-wise on fixed length sequences.
+ *
+ * @param[in]  f         The function
+ *
+ * @tparam     Function  The type of the function: arguments and return type
+ *                       must all be the same
+ *
+ * @return     F := (a, b, ...) -> [f(a[i], b[i], ...) for i=0,rank]
+ */
+template<typename Function>
+auto mara::lift(Function f)
+{
+    return [f] (auto... args)
+    {
+        auto arg_array = make_std_array(args...);
+        auto result = typename decltype(arg_array)::value_type();
+        constexpr std::size_t size = arg_array[0].size(); // ensures sequence is fixed length
+
+        for (std::size_t n = 0; n < size; ++n)
+        {
+            result[n] = f(args[n]...);
+        }
+        return result;
+    };
 }
