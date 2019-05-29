@@ -26,8 +26,9 @@
 
 
 
-#include <map>
 #include <iostream>
+#include <map>
+#include <memory>
 #include "app_compile_opts.hpp"
 #include "app_subprogram.hpp"
 #include "app_performance.hpp"

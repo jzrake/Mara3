@@ -469,7 +469,7 @@ class h5::Link
 private:
 
     //=========================================================================
-    ~Link() { assert(id == -1); } // link must be closed before going out of scope
+    ~Link() { /*assert(id == -1);*/ } // link must be closed before going out of scope
     Link() {}
     Link(hid_t id) : id(id) {}
     Link(Link&& other)

@@ -73,7 +73,7 @@ namespace mara::parallel::detail
  *             nd::to_shared().
  */
 template<std::size_t NumThreads>
-inline auto mara::evaluate_on()
+auto mara::evaluate_on()
 {
     return [] (auto array)
     {

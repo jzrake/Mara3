@@ -29,6 +29,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <cstring>
 #include <cxxabi.h>
 #include <dirent.h>
 #include <unistd.h>

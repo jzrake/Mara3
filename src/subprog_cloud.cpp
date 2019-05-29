@@ -29,8 +29,6 @@
 
 
 #include <iostream>
-#include <thread>
-#include "ndmpi.hpp"
 #include "ndh5.hpp"
 #include "ndarray.hpp"
 #include "ndarray_ops.hpp"
@@ -52,8 +50,8 @@
 
 
 #define gamma_law_index (4. / 3)
-#define cfl_number 0.6
-#define plm_theta 1.8
+#define cfl_number 0.4
+#define plm_theta 1.2
 #define temperature_floor 1e-8
 #define light_speed_cgs 3e10
 #define solar_mass_cgs 2e33
@@ -82,7 +80,8 @@ static auto config_template()
     .item("jet_duration",           1.0)   // engine duration (in seconds)
     .item("jet_gamma_beta",        10.0)   // jet gamma-beta on-axis
     .item("jet_opening_angle",      0.1)
-    .item("jet_structure_exp",      2.0);
+    .item("jet_structure_exp",      2.0)
+    .item("reconstruct_method",       2);  // spatial reconstruction method: 1 for PCM, 2 for PLM
 }
 
 
@@ -178,7 +177,6 @@ struct CloudProblem
 
     //=========================================================================
     static auto intercell_flux(std::size_t axis);
-    static auto intercell_flux2(std::size_t axis);
     static auto estimate_gradient_plm(double ul, double u0, double ur);
     static auto extend_zero_gradient_inner();
     static auto extend_zero_gradient_outer();
@@ -362,19 +360,6 @@ auto CloudProblem::make_diagnostic_fields(const solution_state_t& state, const m
 //=============================================================================
 auto CloudProblem::intercell_flux(std::size_t axis)
 {
-    return [axis] (auto array)
-    {
-        using namespace std::placeholders;
-        auto L = array | nd::select_axis(axis).from(0).to(1).from_the_end();
-        auto R = array | nd::select_axis(axis).from(1).to(0).from_the_end();
-        auto nh = mara::unit_vector_t::on_axis(axis);
-        auto riemann = std::bind(mara::srhd::riemann_hlle, _1, _2, nh, gamma_law_index);
-        return nd::zip_arrays(L, R) | nd::apply(riemann);
-    };
-}
-
-auto CloudProblem::intercell_flux2(std::size_t axis)
-{
     return [axis] (auto left_and_right_states)
     {
         using namespace std::placeholders;
@@ -498,7 +483,7 @@ auto CloudProblem::new_solution(const mara::config_t& cfg)
     state.conserved = cell_centroids(r_vertices, q_vertices)
     | nd::apply(initial_p)
     | nd::map(to_conserved)
-    | multiply(dv)
+    | nd::multiply(dv)
     | nd::to_shared();
 
     return state;
@@ -523,23 +508,6 @@ auto CloudProblem::next_solution(const app_state_t& app_state)
         return primitive.spherical_geometry_source_terms(r, q, gamma_law_index);
     };
 
-    auto extrapolate = [] (std::size_t axis)
-    {
-        return [axis] (auto P)
-        {
-            auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
-            auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
-            auto G = P
-            | nd::zip_adjacent3_on_axis(axis)
-            | nd::apply(mara::lift(estimate_gradient_plm))
-            | nd::extend_zeros(axis);
-
-            return nd::zip_arrays(
-                (P | L) + (G | L) * 0.5,
-                (P | R) - (G | R) * 0.5);
-        };
-    };
-
     auto cons_to_prim = std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index, temperature_floor);
     auto extend_bc    = mara::compose(extend_inflow_nozzle_inner(app_state), extend_zero_gradient_outer());
     auto evaluate     = mara::evaluate_on<12>();
@@ -554,20 +522,54 @@ auto CloudProblem::next_solution(const app_state_t& app_state)
 
     auto u0 = state.conserved;
     auto p0 = u0 / dv | nd::map(cons_to_prim) | evaluate;
-    auto s0 = nd::zip_arrays(p0, rc) | nd::apply(source_terms) | multiply(dv);
-    // auto lr = p0 | extend_bc | intercell_flux(0) | multiply(-dAr) | nd::difference_on_axis(0);
-    // auto lq = p0 | intercell_flux(1) | nd::extend_zeros(1) | multiply(-dAq) | nd::difference_on_axis(1);
-    auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux2(0) | multiply(-dAr) | nd::difference_on_axis(0);
-    auto lq = p0 | extrapolate(1) | intercell_flux2(1) | nd::extend_zeros(1) | multiply(-dAq) | nd::difference_on_axis(1);
+    auto s0 = nd::zip_arrays(p0, rc) | nd::apply(source_terms) | nd::multiply(dv);
 
-    auto u1 = u0 + (lr + lq + s0) * dt | evaluate;
+    if (app_state.run_config.get_int("reconstruct_method") == 1)
+    {
+        auto extrapolate = nd::zip_adjacent2_on_axis;
+        auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux(0) | nd::multiply(-dAr) | nd::difference_on_axis(0);
+        auto lq = p0 | extrapolate(1) | intercell_flux(1) | nd::extend_zeros(1) | nd::multiply(-dAq) | nd::difference_on_axis(1);
+        auto u1 = u0 + (lr + lq + s0) * dt | evaluate;
 
-    return solution_state_t {
-        state.time + dt.value,
-        state.iteration + 1,
-        state.radial_vertices,
-        state.polar_vertices,
-        u1 };
+        return solution_state_t {
+            state.time + dt.value,
+            state.iteration + 1,
+            state.radial_vertices,
+            state.polar_vertices,
+            u1 };
+    }
+
+    if (app_state.run_config.get_int("reconstruct_method") == 2)
+    {
+        auto extrapolate = [] (std::size_t axis)
+        {
+            return [axis] (auto P)
+            {
+                auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
+                auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
+                auto G = P
+                | nd::zip_adjacent3_on_axis(axis)
+                | nd::apply(mara::lift(estimate_gradient_plm))
+                | nd::extend_zeros(axis);
+
+                return nd::zip_arrays(
+                    (P | L) + (G | L) * 0.5,
+                    (P | R) - (G | R) * 0.5);
+            };
+        };
+
+        auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux(0) | nd::multiply(-dAr) | nd::difference_on_axis(0);
+        auto lq = p0 | extrapolate(1) | intercell_flux(1) | nd::extend_zeros(1) | nd::multiply(-dAq) | nd::difference_on_axis(1);
+        auto u1 = u0 + (lr + lq + s0) * dt | evaluate;
+
+        return solution_state_t {
+            state.time + dt.value,
+            state.iteration + 1,
+            state.radial_vertices,
+            state.polar_vertices,
+            u1 };
+    }
+    throw std::invalid_argument("reconstruct_method must be 1 or 2");
 }
 
 
