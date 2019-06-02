@@ -529,14 +529,14 @@ auto CloudProblem::next_solution(const app_state_t& app_state)
         auto extrapolate = nd::zip_adjacent2_on_axis;
         auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux(0) | nd::multiply(-dAr) | nd::difference_on_axis(0);
         auto lq = p0 | extrapolate(1) | intercell_flux(1) | nd::extend_zeros(1) | nd::multiply(-dAq) | nd::difference_on_axis(1);
-        auto u1 = u0 + (lr + lq + s0) * dt | evaluate;
+        auto u1 = u0 + (lr + lq + s0) * dt;
 
         return solution_state_t {
             state.time + dt.value,
             state.iteration + 1,
             state.radial_vertices,
             state.polar_vertices,
-            u1 };
+            u1 | evaluate };
     }
 
     if (app_state.run_config.get_int("reconstruct_method") == 2)
@@ -560,14 +560,14 @@ auto CloudProblem::next_solution(const app_state_t& app_state)
 
         auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux(0) | nd::multiply(-dAr) | nd::difference_on_axis(0);
         auto lq = p0 | extrapolate(1) | intercell_flux(1) | nd::extend_zeros(1) | nd::multiply(-dAq) | nd::difference_on_axis(1);
-        auto u1 = u0 + (lr + lq + s0) * dt | evaluate;
+        auto u1 = u0 + (lr + lq + s0) * dt;
 
         return solution_state_t {
             state.time + dt.value,
             state.iteration + 1,
             state.radial_vertices,
             state.polar_vertices,
-            u1 };
+            u1 | evaluate };
     }
     throw std::invalid_argument("reconstruct_method must be 1 or 2");
 }

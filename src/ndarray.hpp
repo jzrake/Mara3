@@ -151,6 +151,7 @@ namespace nd
     template<typename... Args> auto replace_from(Args... args);
     template<std::size_t Rank> auto read_index(index_t<Rank>);
     template<typename... Args> auto read_index(Args... args);
+    template<std::size_t Index, typename ArrayType> auto get();
     template<typename Function> auto map(Function function);
     template<typename Function> auto apply(Function function);
     template<typename Function> auto binary_op(Function function);
@@ -2464,6 +2465,25 @@ auto nd::map(Function function)
 
 
 /**
+ * @brief      Map std::get through the array elements
+ *
+ * @param[in]  array      An array of std::tuple or std::array
+ *
+ * @tparam     Index      The template parameter to std::get
+ * @tparam     ArrayType  The array type
+ *
+ * @return     The array
+ */
+template<std::size_t Index, typename ArrayType>
+auto nd::get(ArrayType array)
+{
+    return array | nd::map([] (auto v) { return std::get<Index>(v); });
+}
+
+
+
+
+/**
  * @brief      Return an operator that calls std::apply(fn, arg) for each arg in
  *             the operand array. The value type of that array must be some type
  *             of std::tuple.
@@ -2739,7 +2759,7 @@ auto nd::detail::zip_apply_tuple(FunctionTuple&& fn, ArgumentTuple&& args)
 template<typename ArrayType, std::size_t... Is>
 auto nd::detail::unzip_array_impl(ArrayType array, std::index_sequence<Is...>)
 {
-    return std::make_tuple(array | nd::map([] (auto v) { return std::get<Is>(v); })...);
+    return std::make_tuple(get<Is>(array)...);
 }
 
 template<typename ResultSequence, typename SourceSequence, typename IndexContainer>
@@ -2787,7 +2807,9 @@ auto nd::detail::remove_elements(const SourceSequence& source, IndexContainer in
     auto target_n = std::size_t(0);
     auto result = ResultSequence();
 
-    for (std::size_t n = 0; n < source.size(); ++n)
+    // Check on both source.size() and result.size() os to avoid gcc warning.
+
+    for (std::size_t n = 0; n < source.size() && n < result.size(); ++n)
     {
         if (std::find(std::begin(indexes), std::end(indexes), n) == std::end(indexes))
         {

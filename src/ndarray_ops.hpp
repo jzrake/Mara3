@@ -57,13 +57,13 @@ namespace nd
 template<typename Multiplier>
 auto nd::multiply(Multiplier arg)
 {
-    return std::bind(std::multiplies<>(), std::placeholders::_1, arg);
+    return [rhs=arg] (auto lhs) { return lhs * rhs; };
 };
 
 template<typename Multiplier>
 auto nd::divide(Multiplier arg)
 {
-    return std::bind(std::divides<>(), std::placeholders::_1, arg);
+    return [rhs=arg] (auto lhs) { return lhs / rhs; };
 };
 
 auto nd::select_first(std::size_t count, std::size_t axis)

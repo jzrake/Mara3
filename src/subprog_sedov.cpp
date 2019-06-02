@@ -77,18 +77,22 @@ static double radial_velocity_or_gamma_beta(const mara::srhd::primitive_t& p)
 {
     return p.gamma_beta_1();
 }
+
 static double radial_velocity_or_gamma_beta(const mara::euler::primitive_t& p)
 {
     return p.velocity_1();
 }
+
 static auto negate_radial_velocity(const mara::srhd::primitive_t& p)
 {
     return p.with_gamma_beta_1(-p.gamma_beta_1());
 }
+
 static auto negate_radial_velocity(const mara::euler::primitive_t& p)
 {
     return p.with_velocity_1(-p.velocity_1());
 }
+
 static double solve_for_shock_velocity(const mara::srhd::primitive_t& p1, const mara::srhd::primitive_t& p2)
 {
     auto d1 = p1.mass_density();
@@ -99,6 +103,7 @@ static double solve_for_shock_velocity(const mara::srhd::primitive_t& p1, const 
     auto g2 = p2.lorentz_factor();
     return (d2 * u2 - d1 * u1) / (d2 * g2 - d1 * g1);
 }
+
 static double solve_for_shock_velocity(const mara::euler::primitive_t& p1, const mara::euler::primitive_t& p2)
 {
     auto d1 = p1.mass_density();
@@ -372,7 +377,7 @@ auto SedovProblem<HydroSystem>::new_solution(const mara::config_t& cfg)
     state.time = 0.0;
     state.iteration = 0;
     state.vertices = vertices.shared();
-    state.conserved = xc | nd::map(initial_p) | nd::map(to_conserved) | multiply(dv) | nd::to_shared();
+    state.conserved = xc | nd::map(initial_p) | nd::map(to_conserved) | nd::multiply(dv) | nd::to_shared();
 
     return state;
 }
@@ -404,8 +409,8 @@ auto SedovProblem<HydroSystem>::next_solution(const solution_state_t& state)
 
     auto u0 = state.conserved;
     auto p0 = u0 / dv | nd::map(cons_to_prim) | evaluate;
-    auto s0 = nd::zip_arrays(p0, rc) | nd::apply(source_terms) | multiply(dv);
-    auto l0 = p0 | extend_bc | intercell_flux(0) | multiply(-da) | nd::difference_on_axis(0);
+    auto s0 = nd::zip_arrays(p0, rc) | nd::apply(source_terms) | nd::multiply(dv);
+    auto l0 = p0 | extend_bc | intercell_flux(0) | nd::multiply(-da) | nd::difference_on_axis(0);
     auto u1 = u0 + (l0 + s0) * dt;
 
     return solution_state_t {
