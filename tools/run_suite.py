@@ -55,7 +55,7 @@ if __name__ == "__main__":
     parser.add_argument('suite_file', help="Python file defining a 'suite' variable")
     parser.add_argument('--machine-file', default='machine.py', help="Python file defining a 'machine' variable")
     parser.add_argument('--submit', action='store_true', help="Also launch jobs")
-    parser.add_argument('--echo', action='store_true', help="Print submit script contents to the terminal")
+    parser.add_argument('--quiet', '-q', action='store_true', help="Suppress printing of submit script contents to the terminal")
     args = parser.parse_args()
 
     suite = load_suite(args.suite_file)
@@ -90,5 +90,5 @@ if __name__ == "__main__":
         with open(readme_file, 'w') as readme: readme.write(readme_content)
         with open(submit_file, 'w') as submit: submit.write(submit_content)
 
-        if args.echo: print(submit_content)
+        if not args.quiet: print(submit_content)
         if args.submit: os.system(machine['submit_command'] + ' ' + submit_file)

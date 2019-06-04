@@ -151,7 +151,7 @@ namespace nd
     template<typename... Args> auto replace_from(Args... args);
     template<std::size_t Rank> auto read_index(index_t<Rank>);
     template<typename... Args> auto read_index(Args... args);
-    template<std::size_t Index, typename ArrayType> auto get();
+    template<std::size_t Index, typename ArrayType> auto get(ArrayType);
     template<typename Function> auto map(Function function);
     template<typename Function> auto apply(Function function);
     template<typename Function> auto binary_op(Function function);

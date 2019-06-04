@@ -43,7 +43,7 @@ class subprog_test : public mara::sub_program_t
 public:
     int main(int argc, const char* argv[]) override
     {
-        H5Eset_auto(H5E_DEFAULT, [] (auto...) -> herr_t { return 0; }, NULL);
+        H5Eset_auto(H5E_DEFAULT, [] (auto, auto) -> herr_t { return 0; }, NULL);
         return Catch::Session().run(argc, argv);
     }
 

@@ -510,7 +510,7 @@ auto CloudProblem::next_solution(const app_state_t& app_state)
 
     auto cons_to_prim = std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index, temperature_floor);
     auto extend_bc    = mara::compose(extend_inflow_nozzle_inner(app_state), extend_zero_gradient_outer());
-    auto evaluate     = mara::evaluate_on<12>();
+    auto evaluate     = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
     auto state        = app_state.solution_state;
 
     auto dr_min = state.radial_vertices | nd::difference_on_axis(0) | nd::read_index(0);
@@ -726,6 +726,7 @@ void CloudProblem::print_run_loop_message(const solution_state_t& solution, mara
 {
     auto kzps = solution.radial_vertices.size() * solution.polar_vertices.size() / perf.execution_time_ms;
     std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n", solution.iteration.as_integral(), solution.time, kzps);
+    std::fflush(stdout);
 }
 
 void CloudProblem::print_run_dimensions(std::ostream& output, const mara::config_t& cfg)

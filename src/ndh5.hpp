@@ -29,6 +29,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <stdexcept>
 #include <hdf5.h>
 
 
