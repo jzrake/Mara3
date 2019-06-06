@@ -1,10 +1,11 @@
-mara
-misc
 *.o
 *.d
 *.h5
+src/app_compile_opts.hpp
 Makefile.in
+machine.py
+mara
 undead
 results
+work
 data
-src/app_compile_opts.hpp
