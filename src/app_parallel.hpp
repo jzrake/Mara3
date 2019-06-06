@@ -92,8 +92,8 @@ auto mara::evaluate_on()
         auto threads = nd::basic_sequence_t<std::thread, NumThreads>();
         auto regions = nd::partition_shape<NumThreads>(array.shape());
 
-        for (auto [n, accessor] : nd::enumerate(regions))
-            threads[n] = std::thread(evaluate_partial(accessor));
+        for (std::size_t n = 0; n < NumThreads; ++n)
+            threads[n] = std::thread(evaluate_partial(regions[n]));
 
         for (auto& thread : threads)
             thread.join();
@@ -119,11 +119,11 @@ auto mara::evaluate_on()
 template<std::size_t Rank>
 auto mara::propose_block_decomposition(std::size_t number_of_subdomains)
 {
-    auto mult = nd::transform([] (auto g) { return nd::accumulate(g, 1, std::multiplies<>()); });
+    auto product = [] (auto g) { return std::accumulate(g.begin(), g.end(), 1, std::multiplies<>()); };
     auto result = nd::shape_t<Rank>();
     std::size_t n = 0;
 
-    for (auto dim : parallel::detail::prime_factors(number_of_subdomains) | nd::divvy(Rank) | mult)
+    for (auto dim : parallel::detail::prime_factors(number_of_subdomains) | nd::divvy(Rank) | nd::map(product))
     {
         result[n++] = dim;
     }
@@ -151,7 +151,7 @@ auto mara::create_access_pattern_array(nd::shape_t<Rank> global_shape, nd::shape
     nd::basic_sequence_t<std::vector<std::size_t>, Rank> block_start_indexes;
     nd::basic_sequence_t<std::vector<std::size_t>, Rank> block_sizes;
 
-    for (auto axis : nd::range(Rank))
+    for (std::size_t axis = 0; axis < Rank; ++axis)
     {
         for (auto index_group : nd::arange(global_shape[axis]) | nd::divvy(blocks_shape[axis]))
         {
@@ -168,7 +168,7 @@ auto mara::create_access_pattern_array(nd::shape_t<Rank> global_shape, nd::shape
     {
         auto block = nd::access_pattern_t<Rank>();
 
-        for (auto axis : nd::range(Rank))
+        for (std::size_t axis = 0; axis < Rank; ++axis)
         {
             block.start[axis] = block_start_indexes[axis][index[axis]];
             block.final[axis] = block.start[axis] + block_sizes[axis][index[axis]];
