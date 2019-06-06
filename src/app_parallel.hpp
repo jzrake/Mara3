@@ -38,13 +38,13 @@
 namespace mara
 {
     template<std::size_t NumThreads>
-    inline auto evaluate_on();
+    auto evaluate_on();
 
     template<std::size_t Rank>
-    inline auto propose_block_decomposition(std::size_t number_of_subdomains);
+    auto propose_block_decomposition(std::size_t number_of_subdomains);
 
     template<std::size_t Rank>
-    inline auto create_access_pattern_array(nd::shape_t<Rank> global_shape, nd::shape_t<Rank> blocks_shape);
+    auto create_access_pattern_array(nd::shape_t<Rank> global_shape, nd::shape_t<Rank> blocks_shape);
 }
 
 
@@ -121,9 +121,8 @@ auto mara::propose_block_decomposition(std::size_t number_of_subdomains)
 {
     auto mult = nd::transform([] (auto g) { return nd::accumulate(g, 1, std::multiplies<>()); });
     auto result = nd::shape_t<Rank>();
-    auto n = 0;
 
-    for (auto dim : nd::divvy(Rank)(parallel::detail::prime_factors(number_of_subdomains)) | mult)
+    for (auto [n, dim] : nd::enumerate(nd::divvy(Rank)(parallel::detail::prime_factors(number_of_subdomains)) | mult))
     {
         result[n++] = dim;
     }

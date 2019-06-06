@@ -472,7 +472,7 @@ auto CloudProblem::new_solution(const mara::config_t& cfg)
     | nd::map([] (auto y) { return mara::make_length(std::pow(10.0, y)); })
     | nd::to_shared();
 
-    auto q_vertices = nd::linspace(0, M_PI, nr + 1) | nd::to_shared();
+    auto q_vertices = nd::linspace(0.0, M_PI, nr + 1) | nd::to_shared();
     auto dv = cell_volumes(r_vertices, q_vertices);
     auto state = solution_state_t();
 
