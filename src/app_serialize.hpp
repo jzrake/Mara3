@@ -28,12 +28,12 @@
 
 #pragma once
 #include <variant>
-#include "ndh5.hpp"
-#include "ndarray.hpp"
-#include "app_config.hpp"
-#include "app_schedule.hpp"
+#include "core_hdf5.hpp"
+#include "core_ndarray.hpp"
 #include "core_geometric.hpp"
 #include "core_rational.hpp"
+#include "app_config.hpp"
+#include "app_schedule.hpp"
 
 
 
@@ -146,7 +146,7 @@ auto mara::make_hdf5_hyperslab(const nd::access_pattern_t<Rank>& sel)
     result.start = std::vector<hsize_t>(sel.start.begin(), sel.start.end());
     result.skips = std::vector<hsize_t>(sel.jumps.begin(), sel.jumps.end());
     result.count = std::vector<hsize_t>(sel_shape.begin(), sel_shape.end());
-    result.block = std::vector<hsize_t>(sel.rank, 1);
+    result.block = std::vector<hsize_t>(sel.rank(), 1);
     return result;
 }
 

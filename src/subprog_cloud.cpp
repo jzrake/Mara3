@@ -29,9 +29,9 @@
 
 
 #include <iostream>
-#include "ndh5.hpp"
-#include "ndarray.hpp"
-#include "ndarray_ops.hpp"
+#include "core_hdf5.hpp"
+#include "core_ndarray.hpp"
+#include "core_ndarray_ops.hpp"
 #include "core_geometric.hpp"
 #include "core_rational.hpp"
 #include "app_config.hpp"

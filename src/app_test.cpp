@@ -29,8 +29,8 @@
 
 
 #include <array>
-#include "catch.hpp"
-#include "ndh5.hpp"
+#include "core_catch.hpp"
+#include "core_hdf5.hpp"
 
 
 

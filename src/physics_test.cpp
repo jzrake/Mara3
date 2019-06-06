@@ -28,7 +28,7 @@
 
 
 
-#include "catch.hpp"
+#include "core_catch.hpp"
 #include "physics_euler.hpp"
 #include "physics_iso2d.hpp"
 #define gamma_law_index (5. / 3)

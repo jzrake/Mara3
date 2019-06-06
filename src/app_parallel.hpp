@@ -29,7 +29,7 @@
 #pragma once
 #include <vector>
 #include <thread>
-#include "ndarray.hpp"
+#include "core_ndarray.hpp"
 
 
 
@@ -55,7 +55,7 @@ namespace mara::parallel::detail
 {
     inline std::pair<int, int> factor_once(int num);
     inline void prime_factors_impl(std::vector<int>& result, int num);
-    inline std::vector<int> prime_factors(int num);
+    inline nd::shared_array<int, 1> prime_factors(int num);
 }
 
 
@@ -121,8 +121,9 @@ auto mara::propose_block_decomposition(std::size_t number_of_subdomains)
 {
     auto mult = nd::transform([] (auto g) { return nd::accumulate(g, 1, std::multiplies<>()); });
     auto result = nd::shape_t<Rank>();
+    std::size_t n = 0;
 
-    for (auto [n, dim] : nd::enumerate(nd::divvy(Rank)(parallel::detail::prime_factors(number_of_subdomains)) | mult))
+    for (auto dim : parallel::detail::prime_factors(number_of_subdomains) | nd::divvy(Rank) | mult)
     {
         result[n++] = dim;
     }
@@ -152,7 +153,7 @@ auto mara::create_access_pattern_array(nd::shape_t<Rank> global_shape, nd::shape
 
     for (auto axis : nd::range(Rank))
     {
-        for (auto index_group : nd::range(global_shape[axis]) | nd::divvy(blocks_shape[axis]))
+        for (auto index_group : nd::arange(global_shape[axis]) | nd::divvy(blocks_shape[axis]))
         {
             if (index_group.size() == 0)
             {
@@ -212,9 +213,9 @@ void mara::parallel::detail::prime_factors_impl(std::vector<int>& result, int nu
     }
 }
 
-std::vector<int> mara::parallel::detail::prime_factors(int num)
+nd::shared_array<int, 1> mara::parallel::detail::prime_factors(int num)
 {
     std::vector<int> result;
     prime_factors_impl(result, num);
-    return result;
+    return nd::make_array_from(result);
 }

@@ -28,7 +28,7 @@
 
 #pragma once
 #include <cmath>
-#include "ndarray_ops.hpp"
+#include "core_ndarray_ops.hpp"
 
 
 
@@ -45,7 +45,6 @@ namespace mara
     template<typename PrimitiveArray1d>
     auto find_index_of_pressure_plateau_ahead(PrimitiveArray1d primitive, std::size_t index);
 }
-
 
 
 
@@ -76,7 +75,6 @@ auto mara::find_shock_index(PrimitiveArray1d primitive, double gamma_law_index)
     auto shock_index = nd::where(ds == nd::min(ds)) | nd::read_index(0);
     return shock_index;
 }
-
 
 
 
@@ -112,7 +110,6 @@ auto mara::find_index_of_maximum_pressure_behind(PrimitiveArray1d primitive, std
         return std::size_t(0);
     }
 }
-
 
 
 

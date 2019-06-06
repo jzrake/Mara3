@@ -30,10 +30,10 @@
 
 #include <cmath>
 #include <iostream>
-#include "ndmpi.hpp"
-#include "ndh5.hpp"
-#include "ndarray.hpp"
-#include "ndarray_ops.hpp"
+#include "core_mpi.hpp"
+#include "core_hdf5.hpp"
+#include "core_ndarray.hpp"
+#include "core_ndarray_ops.hpp"
 #include "app_config.hpp"
 #include "app_serialize.hpp"
 #include "app_schedule.hpp"
@@ -100,7 +100,7 @@ static auto new_solution(const mara::config_t& cfg)
 {
     auto initial_u = [] (auto x) { return std::sin(2 * M_PI * x); };
     auto nx = cfg.template get<int>("N");
-    auto xv = nd::linspace(0, 1, nx + 1);
+    auto xv = nd::linspace(0.0, 1.0, nx + 1);
     auto xc = xv | nd::midpoint_on_axis(0);
     auto state = solution_state_t();
 

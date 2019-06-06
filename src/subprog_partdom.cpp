@@ -29,9 +29,9 @@
 
 
 #include <iostream>
-#include "ndarray.hpp"
-#include "ndarray_ops.hpp"
-#include "ndh5.hpp"
+#include "core_ndarray.hpp"
+#include "core_ndarray_ops.hpp"
+#include "core_hdf5.hpp"
 #include "app_config.hpp"
 #include "app_serialize.hpp"
 #include "app_subprogram.hpp"

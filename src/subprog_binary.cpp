@@ -30,10 +30,10 @@
 
 #include <cmath>
 #include <iostream>
-#include "ndmpi.hpp"
-#include "ndh5.hpp"
-#include "ndarray.hpp"
-#include "ndarray_ops.hpp"
+#include "core_mpi.hpp"
+#include "core_hdf5.hpp"
+#include "core_ndarray.hpp"
+#include "core_ndarray_ops.hpp"
 #include "app_config.hpp"
 #include "app_serialize.hpp"
 #include "app_schedule.hpp"

@@ -29,7 +29,7 @@
 
 
 #define CATCH_CONFIG_FAST_COMPILE
-#include "catch.hpp"
+#include "core_catch.hpp"
 #include "core_geometric.hpp"
 #include "core_matrix.hpp"
 #include "core_sequence.hpp"

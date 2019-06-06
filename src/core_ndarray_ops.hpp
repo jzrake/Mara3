@@ -28,7 +28,7 @@
 
 #pragma once
 #include <cmath>
-#include "ndarray.hpp"
+#include "core_ndarray.hpp"
 
 
 

@@ -31,7 +31,7 @@
 #define CATCH_CONFIG_RUNNER
 #define CATCH_CONFIG_FAST_COMPILE
 #include <hdf5.h>
-#include "catch.hpp"
+#include "core_catch.hpp"
 #include "app_subprogram.hpp"
 
 
