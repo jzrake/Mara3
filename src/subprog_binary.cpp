@@ -57,13 +57,13 @@ static auto config_template()
     .item("tsi", 0.1)                      // time series interval
     .item("tfinal", 1.0)                   // simulation stop time
     .item("N", 256)                        // grid resolution (same in x and y)
-    .item("SofteningRadius", 0.1)
-    .item("MachNumber", 10.0)
-    .item("ViscousAlpha", 0.1)
-    .item("BinarySeparation", 1.0)
-    .item("DomainRadius", 6.0)
-    .item("BufferDampingRate", 10.0)
-    .item("CounterRotate", 0);
+    .item("softening_radius", 0.1)
+    .item("mach_number", 10.0)
+    .item("viscous_alpha", 0.1)
+    .item("binary_separation", 1.0)
+    .item("domain_radius", 6.0)
+    .item("buffer_damping_rate", 10.0)
+    .item("counter_rotate", 0);
 }
 
 namespace binary
@@ -109,6 +109,7 @@ namespace binary
     using location_2d_t     = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
     using velocity_2d_t     = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0, -1, double>, 2>;
     using acceleration_2d_t = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0, -2, double>, 2>;
+    using force_2d_t        = mara::covariant_sequence_t<mara::dimensional_value_t<1, 1, -2, double>, 2>;
 
     struct point_mass_t
     {
@@ -182,41 +183,70 @@ acceleration_2d_t binary::point_mass_t::gravitational_acceleration_at_point(loca
  *             with alpha viscosity and a single point mass M located at the
  *             origin.
  */
-static auto initial_disk_profile(const mara::config_t& cfg)
+static auto initial_disk_profile_tang17(const mara::config_t& cfg)
 {
-    return [cfg] (auto x_length, auto y_length)
-    {
-        auto SofteningRadius  = cfg.get_double("SofteningRadius");
-        auto MachNumber       = cfg.get_double("MachNumber");
-        auto ViscousAlpha     = cfg.get_double("ViscousAlpha");
-        auto BinarySeparation = cfg.get_double("BinarySeparation");
-        auto CounterRotate    = cfg.get_int("CounterRotate");
+    auto softening_radius  = cfg.get_double("softening_radius");
+    auto mach_number       = cfg.get_double("mach_number");
+    auto viscous_alpha     = cfg.get_double("viscous_alpha");
+    auto binary_separation = cfg.get_double("binary_separation");
+    auto counter_rotate    = cfg.get_int("counter_rotate");
 
+    return [=] (auto x_length, auto y_length)
+    {
         auto GM = 1.0;
         auto x  = x_length.value;
         auto y  = y_length.value;
 
-        auto rs             = SofteningRadius;
-        auto r0             = BinarySeparation * 2.5;
-        auto sigma0         = GM / BinarySeparation / BinarySeparation;
+        auto rs             = softening_radius;
+        auto r0             = binary_separation * 2.5;
+        auto sigma0         = GM / binary_separation / binary_separation;
         auto r2             = x * x + y * y;
         auto r              = std::sqrt(r2);
         auto cavity_xsi     = 10.0;
         auto cavity_cutoff  = std::max(std::exp(-std::pow(r / r0, -cavity_xsi)), 1e-6);
         auto phi            = -GM * std::pow(r2 + rs * rs, -0.5);    
         auto ag             = -GM * std::pow(r2 + rs * rs, -1.5) * r;    
-        auto cs2            = -phi / MachNumber / MachNumber;
-        auto cs2_deriv      =   ag / MachNumber / MachNumber;
+        auto cs2            = -phi / mach_number / mach_number;
+        auto cs2_deriv      =   ag / mach_number / mach_number;
         auto sigma          = sigma0 * std::pow((r + rs) / r0, -0.5) * cavity_cutoff;
         auto sigma_deriv    = sigma0 * std::pow((r + rs) / r0, -1.5) * -0.5 / r0;
         auto dp_dr          = cs2 * sigma_deriv + cs2_deriv * sigma;
         auto omega2         = r < r0 ? GM / (4 * r0) : -ag / r + dp_dr / (sigma * r);        
-        auto vq             = (CounterRotate ? -1 : 1) * r * std::sqrt(omega2);
-        auto h0             = r / MachNumber;
-        auto nu             = ViscousAlpha * std::sqrt(cs2) * h0; // ViscousAlpha * cs * h0
+        auto vp             = (counter_rotate ? -1 : 1) * r * std::sqrt(omega2);
+        auto h0             = r / mach_number;
+        auto nu             = viscous_alpha * std::sqrt(cs2) * h0; // viscous_alpha * cs * h0
         auto vr             = -(3.0 / 2.0) * nu / (r + rs); // inward drift velocity (CHECK)
-        auto vx             = vq * (-y / r) + vr * (x / r);
-        auto vy             = vq * ( x / r) + vr * (y / r);
+        auto vx             = vp * (-y / r) + vr * (x / r);
+        auto vy             = vp * ( x / r) + vr * (y / r);
+
+        return mara::iso2d::primitive_t()
+            .with_sigma(sigma)
+            .with_velocity_x(vx)
+            .with_velocity_y(vy);
+    };
+}
+
+static auto initial_disk_profile_ring(const mara::config_t& cfg)
+{
+    auto softening_radius  = cfg.get_double("softening_radius");
+    auto binary_separation = cfg.get_double("binary_separation");
+    auto counter_rotate    = cfg.get_int("counter_rotate");
+
+    return [=] (auto x_length, auto y_length)
+    {
+        auto GM             = 1.0;
+        auto x              = x_length.value;
+        auto y              = y_length.value;
+        auto rs             = softening_radius;
+        auto rc             = binary_separation * 2.5;
+        auto r2             = x * x + y * y;
+        auto r              = std::sqrt(r2);
+        auto sigma          = std::exp(-std::pow(r - rc, 2) / rc / 2);
+        auto ag             = -GM * std::pow(r2 + rs * rs, -1.5) * r;    
+        auto omega2         = -ag / r;
+        auto vp             = (counter_rotate ? -1 : 1) * r * std::sqrt(omega2);
+        auto vx             = vp * (-y / r);
+        auto vy             = vp * ( x / r);
 
         return mara::iso2d::primitive_t()
             .with_sigma(sigma)
@@ -251,8 +281,8 @@ auto binary::buffer_damping_rate_at_position(const mara::config_t& cfg)
     {
         constexpr double tightness = 3.0;
         auto r = std::sqrt(std::pow(x.value, 2) + std::pow(y.value, 2));
-        auto r1 = cfg.get_double("DomainRadius");
-        return mara::make_rate(1.0 + std::tanh(tightness * (r - r1))) * cfg.get_double("BufferDampingRate");
+        auto r1 = cfg.get_double("domain_radius");
+        return mara::make_rate(1.0 + std::tanh(tightness * (r - r1))) * cfg.get_double("buffer_damping_rate");
     };
 }
 
@@ -272,7 +302,7 @@ auto binary::intercell_flux_on_axis(std::size_t axis)
     return [axis] (auto array)
     {
         using namespace std::placeholders;
-        double sound_speed_squared = 0.1; // DEFINE PROPERLY
+        double sound_speed_squared = 1e-4; // DEFINE PROPERLY
 
         auto L = array | nd::select_axis(axis).from(0).to(1).from_the_end();
         auto R = array | nd::select_axis(axis).from(1).to(0).from_the_end();
@@ -284,7 +314,7 @@ auto binary::intercell_flux_on_axis(std::size_t axis)
 
 static auto next_solution(const solution_state_t& state, const solver_data_t& solver)
 {
-    auto force_to_source_terms = [] (auto v)
+    auto force_to_source_terms = [] (force_2d_t v)
     {
         return mara::iso2d::flow_t {{0.0, v[0].value, v[1].value}};
     };
@@ -419,13 +449,13 @@ static auto new_solution(const mara::config_t& cfg)
 {
     auto nx = cfg.get_int("N");
     auto ny = cfg.get_int("N");
-    auto R0 = cfg.get_double("DomainRadius");
+    auto R0 = cfg.get_double("domain_radius");
 
     auto xv = nd::linspace(-R0, R0, nx + 1) | nd::map(mara::make_length<double>);
     auto yv = nd::linspace(-R0, R0, ny + 1) | nd::map(mara::make_length<double>);
 
     auto u = cell_center_cartprod(xv, yv)
-    | nd::apply(initial_disk_profile(cfg))
+    | nd::apply(initial_disk_profile_ring(cfg))
     | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
     | nd::multiply(cell_surface_area(xv, yv));
 

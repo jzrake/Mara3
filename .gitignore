@@ -1,6 +1,7 @@
 *.o
 *.d
 *.h5
+*.mp4
 src/app_compile_opts.hpp
 Makefile.in
 machine.py
