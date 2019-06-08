@@ -28,19 +28,19 @@ int main(int argc, const char* argv[])
 
     // Step 2: populate the template with the names and default values of your
     // runtime parameters:
-    cfg_template1 = std::move(cfg_template1).item("resolution", 1024);
-    cfg_template1 = std::move(cfg_template1).item("tfinal", 10.0);
-    cfg_template1 = std::move(cfg_template1).item("outdir", "my_data");
+    cfg_template1 = cfg_template1.item("resolution", 1024);
+    cfg_template1 = cfg_template1.item("tfinal", 10.0);
+    cfg_template1 = cfg_template1.item("outdir", "my_data");
 
 
     // This config template is now configured to load parameters named
     // 'resolution', 'tfinal', and 'outdir', with types int, double, and
     // std::string respectively. Note that the template instance is immutable:
-    // it returns a new copy each time you add an item (which is why we use
-    // std::move). Also note that the parameter types are inferred from from the
-    // value, so if you want a parameter with type double, then make sure the
-    // default value has a decimal point in it. You would typically combine the
-    // above steps like this:
+    // it returns a new copy each time you add an item. Also note that the
+    // parameter types are inferred from from the value, so if you want a
+    // parameter with type double, then make sure the default value has a
+    // decimal point in it. You would typically combine the above steps like
+    // this:
     auto cfg_template = mara::make_config_template()
     .item("resolution", 1024)
     .item("tfinal", 10.0)
@@ -62,14 +62,14 @@ int main(int argc, const char* argv[])
 
 
     // Step 4: now you can update the run config with that map:
-    run_config1 = std::move(run_config1).update(args);
+    run_config1 = run_config1.update(args);
 
 
     // If an argument was given whose key is not registered in the template,
     // you'll get an exception. Note that the mara::config_t is also immutable,
     // so you have to re-assign it to a new variable (or itself) each time you
     // update it. You can also set values manually:
-    run_config1 = std::move(run_config1).set("resolution", 4096);
+    run_config1 = run_config1.set("resolution", 4096);
 
 
     // All of the above steps could also be combined into one:

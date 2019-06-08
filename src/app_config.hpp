@@ -83,15 +83,21 @@ public:
     }
 
     template<typename Mapping>
-    config_t update(const Mapping& parameters) const &&
+    config_t update(const Mapping& parameters) &&
     {
-        auto result = *this;
+        auto result = std::move(*this);
 
         for (auto item : parameters)
         {
             result = std::move(result).set(item.first, item.second);
         }
         return result;
+    }
+
+    template<typename Mapping>
+    config_t update(const Mapping& parameters) const &
+    {
+        return config_t(*this).update(parameters);
     }
 
     config_t set(std::string key, std::string value) &&
@@ -109,6 +115,11 @@ public:
         return *this;
     }
 
+    config_t set(std::string key, std::string value) const &
+    {
+        return config_t(*this).set(key, value);
+    }
+
     config_t set(std::string key, config_parameter_t value) &&
     {
         if (! template_items.count(key))
@@ -122,6 +133,11 @@ public:
         auto result = std::move(parameters);
         result[key] = value;
         return config_t(std::move(template_items), std::move(result));
+    }
+
+    config_t set(std::string key, config_parameter_t value) const &
+    {
+        return config_t(*this).set(key, value);
     }
 
     auto begin() const { return parameters.begin(); }
@@ -146,11 +162,17 @@ public:
     config_template_t(config_parameter_map_t&& parameters) : parameters(parameters) {}
 
     template<typename ValueType>
-    config_template_t item(const char* key, ValueType default_value) const &&
+    config_template_t item(const char* key, ValueType default_value) &&
     {
         auto result = std::move(parameters);
         result[key] = default_value;
         return std::move(result);
+    }
+
+    template<typename ValueType>
+    config_template_t item(const char* key, ValueType default_value) const &
+    {
+        return config_template_t(*this).item(key, default_value);
     }
 
     config_t create() const
