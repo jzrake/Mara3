@@ -83,7 +83,7 @@ public:
     }
 
     template<typename Mapping>
-    config_t update(const Mapping& parameters) const
+    config_t update(const Mapping& parameters) const &&
     {
         auto result = *this;
 
@@ -146,9 +146,9 @@ public:
     config_template_t(config_parameter_map_t&& parameters) : parameters(parameters) {}
 
     template<typename ValueType>
-    config_template_t item(const char* key, ValueType default_value) const
+    config_template_t item(const char* key, ValueType default_value) const &&
     {
-        auto result = parameters;
+        auto result = std::move(parameters);
         result[key] = default_value;
         return std::move(result);
     }
