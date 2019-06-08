@@ -79,13 +79,52 @@ namespace binary
 
 
     //=========================================================================
+    struct solver_data_t
+    {
+        mara::unit_rate<double> sink_rate;
+        mara::unit_length<double> sink_radius;
+        mara::unit_time<double> recommended_time_step;
+
+        nd::shared_array<mara::unit_length<double>, 1> x_vertices;
+        nd::shared_array<mara::unit_length<double>, 1> y_vertices;
+        nd::shared_array<mara::iso2d::conserved_t, 2> initial_conserved_field;
+        nd::shared_array<mara::unit_rate<double>, 2> buffer_damping_rate_field;
+    };
+
+
+    //=========================================================================
     struct solution_state_t
     {
         mara::unit_time<double> time = 0.0;
         mara::rational_number_t iteration = 0;
-        nd::shared_array<mara::unit_length<double>, 1> x_vertices;
-        nd::shared_array<mara::unit_length<double>, 1> y_vertices;
         nd::shared_array<mara::iso2d::conserved_t, 2> conserved;
+
+        solution_state_t operator+(const solution_state_t& other) const
+        {
+            return {
+                time       + other.time,
+                iteration  + other.iteration,
+                conserved  + other.conserved | nd::to_shared(),
+            };
+        }
+        solution_state_t operator*(mara::rational_number_t scale) const
+        {
+            return {
+                time      * scale.as_double(),
+                iteration * scale,
+                conserved * scale.as_double() | nd::to_shared(),
+            };
+        }
+    };
+
+
+    //=========================================================================
+    struct app_state_t
+    {
+        solution_state_t solution_state;
+        solver_data_t solver_data;
+        mara::schedule_t schedule;
+        mara::config_t run_config;
     };
 
 
@@ -99,26 +138,6 @@ namespace binary
         nd::shared_array<double, 2> phi_velocity;
         nd::shared_array<double, 2> radial_velocity;
     };
-
-
-    //=========================================================================
-    struct app_state_t
-    {
-        solution_state_t solution_state;
-        mara::schedule_t schedule;
-        mara::config_t run_config;
-    };
-
-
-    //=========================================================================
-    struct solver_data_t
-    {
-        mara::unit_rate<double> sink_rate;
-        mara::unit_length<double> sink_radius;
-        nd::shared_array<mara::iso2d::conserved_t, 2> initial_conserved_field;
-        nd::shared_array<mara::unit_rate<double>, 2> buffer_damping_rate_field;
-    };
-
 
     //=========================================================================
     struct point_mass_t
@@ -136,12 +155,13 @@ namespace binary
     auto initial_disk_profile_ring  (const mara::config_t& cfg);
     auto initial_disk_profile_tang17(const mara::config_t& cfg);
 
-    auto diagnostic_fields(const solution_state_t& state);
-    auto gravitational_acceleration_field(const solution_state_t& state);
-    auto sink_rate_field(const solution_state_t& state, mara::unit_length<double> sink_radius, mara::unit_rate<double> sink_rate);
+    auto diagnostic_fields(const solution_state_t& state, const solver_data_t& solver_data);
+    auto gravitational_acceleration_field(mara::unit_time<double> time, const solver_data_t& solver_data);
+    auto sink_rate_field(mara::unit_time<double> time, const solver_data_t& solver_data);
     auto buffer_damping_rate_at_position(const mara::config_t& cfg);
     auto intercell_flux_on_axis(std::size_t axis);
-    auto next_solution(const solution_state_t& state, const solver_data_t& solver);
+    auto advance(const solution_state_t& state, const solver_data_t& solver_data, mara::unit_time<double> dt);
+    auto next_solution(const solution_state_t& state, const solver_data_t& solver_data);
 
 
     //=========================================================================
@@ -153,7 +173,7 @@ namespace binary
 
 
     //=========================================================================
-    void print_run_loop_message(const solution_state_t& solution, mara::perf_diagnostics_t perf);
+    void print_run_loop_message(const app_state_t& state, mara::perf_diagnostics_t perf);
     void prepare_filesystem(const mara::config_t& cfg);
 
 
@@ -308,28 +328,28 @@ auto binary::buffer_damping_rate_at_position(const mara::config_t& cfg)
     };
 }
 
-auto binary::gravitational_acceleration_field(const solution_state_t& state)
+auto binary::gravitational_acceleration_field(mara::unit_time<double> /*time*/, const solver_data_t& solver_data)
 {
     auto star = point_mass_t();
 
     return nd::cartesian_product(
-        state.x_vertices | nd::midpoint_on_axis(0),
-        state.y_vertices | nd::midpoint_on_axis(0))
+        solver_data.x_vertices | nd::midpoint_on_axis(0),
+        solver_data.y_vertices | nd::midpoint_on_axis(0))
     | nd::apply([] (auto x, auto y) { return location_2d_t {{ x, y }}; })
     | nd::map([star] (auto field_point) { return star.gravitational_acceleration_at_point(field_point); });
 }
 
-auto binary::sink_rate_field(const solution_state_t& state, mara::unit_length<double> sink_radius, mara::unit_rate<double> sink_rate)
+auto binary::sink_rate_field(mara::unit_time<double> time, const solver_data_t& solver_data)
 {
     // IMPLEMENT: sink position dependent on binary position
 
-    auto sink_rate_at_position = [sink_radius, sink_rate] (auto x, auto y)
+    auto sink_rate_at_position = [sink_radius=solver_data.sink_radius, sink_rate=solver_data.sink_rate] (auto x, auto y)
     {
         auto r2 = x * x + y * y;
         auto s2 = sink_radius * sink_radius;
         return sink_rate * std::exp(-r2 / s2 / 2.0);
     };
-    return cell_center_cartprod(state.x_vertices, state.y_vertices) | nd::apply(sink_rate_at_position);
+    return cell_center_cartprod(solver_data.x_vertices, solver_data.y_vertices) | nd::apply(sink_rate_at_position);
 }
 
 auto binary::intercell_flux_on_axis(std::size_t axis)
@@ -347,27 +367,26 @@ auto binary::intercell_flux_on_axis(std::size_t axis)
     };
 }
 
-auto binary::next_solution(const solution_state_t& state, const solver_data_t& solver)
+auto binary::advance(const solution_state_t& state, const solver_data_t& solver_data, mara::unit_time<double> dt)
 {
     auto force_to_source_terms = [] (force_2d_t v)
     {
         return mara::iso2d::flow_t {{0.0, v[0].value, v[1].value}};
     };
 
-    auto dA = cell_surface_area(state.x_vertices, state.y_vertices);
+    auto dA = cell_surface_area(solver_data.x_vertices, solver_data.y_vertices);
     auto u0 = state.conserved;
     auto p0 = u0 / dA | nd::map(mara::iso2d::recover_primitive) | nd::to_shared();
-    auto v0 = p0 | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_magnitude));
+
+    auto [dx, __1] = nd::meshgrid(solver_data.x_vertices | nd::difference_on_axis(0), solver_data.y_vertices);
+    auto [__2, dy] = nd::meshgrid(solver_data.x_vertices, solver_data.y_vertices | nd::difference_on_axis(0));
     auto cell_mass = u0 | nd::map([] (auto u) { return u[0]; });
-    auto sg = gravitational_acceleration_field(state) | nd::multiply(cell_mass) | nd::map(force_to_source_terms);
-    auto ss = -u0 * sink_rate_field(state, solver.sink_radius, solver.sink_rate);
-    auto bz = (solver.initial_conserved_field - u0) * solver.buffer_damping_rate_field;
-    auto [dx, __1] = nd::meshgrid(state.x_vertices | nd::difference_on_axis(0), state.y_vertices);
-    auto [__2, dy] = nd::meshgrid(state.x_vertices, state.y_vertices | nd::difference_on_axis(0));
 
     auto lx = p0 | nd::extend_periodic_on_axis(0) | intercell_flux_on_axis(0) | nd::multiply(-dy) | nd::difference_on_axis(0);
     auto ly = p0 | nd::extend_periodic_on_axis(1) | intercell_flux_on_axis(1) | nd::multiply(-dx) | nd::difference_on_axis(1);
-    auto dt = (nd::min(dx) + nd::min(dy)) / nd::max(v0) * 0.5 * cfl_number;
+    auto sg = gravitational_acceleration_field(state.time, solver_data) | nd::multiply(cell_mass) | nd::map(force_to_source_terms);
+    auto ss = -u0 * sink_rate_field(state.time, solver_data);
+    auto bz = (solver_data.initial_conserved_field - u0) * solver_data.buffer_damping_rate_field;
     auto u1 = u0 + (lx + ly + sg + ss + bz) * dt;
 
     auto next_state = state;
@@ -377,14 +396,24 @@ auto binary::next_solution(const solution_state_t& state, const solver_data_t& s
     return next_state;
 }
 
+auto binary::next_solution(const solution_state_t& state, const solver_data_t& solver_data)
+{
+    auto b0 = mara::make_rational(1, 2);
+    auto dt = solver_data.recommended_time_step;
+    auto s0 = state;
+    auto s1 = advance(s0, solver_data, dt);
+    auto s2 = advance(s1, solver_data, dt);
+    return s0 * b0 + s2 * (1 - b0);
+}
+
 
 
 
 //=============================================================================
-auto binary::diagnostic_fields(const solution_state_t& state)
+auto binary::diagnostic_fields(const solution_state_t& state, const solver_data_t& solver_data)
 {
-    auto dA = cell_surface_area(state.x_vertices, state.y_vertices);
-    auto [xc, yc] = nd::unzip_array(cell_center_cartprod(state.x_vertices, state.y_vertices));
+    auto dA = cell_surface_area(solver_data.x_vertices, solver_data.y_vertices);
+    auto [xc, yc] = nd::unzip_array(cell_center_cartprod(solver_data.x_vertices, solver_data.y_vertices));
     auto rc = xc * xc + yc * yc | nd::map([] (auto r2) { return mara::make_length(std::sqrt(r2.value)); });
     auto rhat_x =  xc / rc;
     auto rhat_y =  yc / rc;
@@ -398,8 +427,8 @@ auto binary::diagnostic_fields(const solution_state_t& state)
 
     auto result = diagnostic_fields_t();
     result.time            = state.time;
-    result.x_vertices      = state.x_vertices;
-    result.y_vertices      = state.y_vertices;
+    result.x_vertices      = solver_data.x_vertices;
+    result.y_vertices      = solver_data.y_vertices;
     result.sigma           = sigma                     | nd::to_shared();
     result.radial_velocity = vx * rhat_x + vy * rhat_y | nd::to_shared();
     result.phi_velocity    = vx * phat_x + vy * phat_y | nd::to_shared();
@@ -414,8 +443,6 @@ void binary::write_solution(h5::Group&& group, const solution_state_t& state)
 {
     group.write("time", state.time);
     group.write("iteration", state.iteration);
-    group.write("x_vertices", state.x_vertices);
-    group.write("y_vertices", state.y_vertices);
     group.write("conserved", state.conserved);
 }
 
@@ -445,7 +472,7 @@ void binary::write_diagnostics(const app_state_t& state, std::string outdir)
 {
     auto count = state.schedule.num_times_performed("write_diagnostics");
     auto file = h5::File(mara::filesystem::join(outdir, mara::create_numbered_filename("diagnostics", count, "h5")), "w");
-    auto diagnostics = diagnostic_fields(state.solution_state);
+    auto diagnostics = diagnostic_fields(state.solution_state, state.solver_data);
 
     write_diagnostic_fields(file.open_group("/"), diagnostics);
 
@@ -475,17 +502,11 @@ void binary::write_time_series(const app_state_t& state, std::string outdir)
 
 
 //=============================================================================
-auto binary::read_solution(h5::Group&& group)
-{
-    return solution_state_t(); // IMPLEMENT READING SOLUTION FROM CHECKPOINT
-}
-
-auto binary::new_solution(const mara::config_t& cfg)
+auto binary::create_solver_data(const mara::config_t& cfg)
 {
     auto nx = cfg.get_int("N");
     auto ny = cfg.get_int("N");
     auto R0 = cfg.get_double("domain_radius");
-
     auto xv = nd::linspace(-R0, R0, nx + 1) | nd::map(mara::make_length<double>);
     auto yv = nd::linspace(-R0, R0, ny + 1) | nd::map(mara::make_length<double>);
 
@@ -494,12 +515,37 @@ auto binary::new_solution(const mara::config_t& cfg)
     | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
     | nd::multiply(cell_surface_area(xv, yv));
 
+    auto b = cell_center_cartprod(xv, yv)
+    | nd::apply(buffer_damping_rate_at_position(cfg));
+
+    auto dA = cell_surface_area(xv, yv);
+    auto p0 = u / dA | nd::map(mara::iso2d::recover_primitive);
+    auto v0 = p0 | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_magnitude));
+    auto dt = mara::make_length(2 * R0) / std::max(nx, ny) / nd::max(v0) * cfl_number;
+
+    auto result = solver_data_t();
+    result.sink_radius = cfg.get_double("sink_radius");
+    result.sink_rate = cfg.get_double("sink_rate");
+    result.recommended_time_step = dt;
+    result.x_vertices = xv | nd::to_shared();
+    result.y_vertices = yv | nd::to_shared();
+    result.initial_conserved_field   = u | nd::to_shared();
+    result.buffer_damping_rate_field = b | nd::to_shared();
+
+    return result;
+}
+
+auto binary::read_solution(h5::Group&& group)
+{
+    return solution_state_t(); // IMPLEMENT READING SOLUTION FROM CHECKPOINT
+}
+
+auto binary::new_solution(const mara::config_t& cfg)
+{
     auto state = solution_state_t();
     state.time = 0.0;
     state.iteration = 0;
-    state.x_vertices = xv | nd::to_shared();
-    state.y_vertices = yv | nd::to_shared();
-    state.conserved = u | nd::to_shared();
+    state.conserved = create_solver_data(cfg).initial_conserved_field;
     return state;
 }
 
@@ -509,21 +555,6 @@ auto binary::create_solution(const mara::config_t& run_config)
     return restart.empty()
     ? new_solution(run_config)
     : read_solution(h5::File(restart, "r").open_group("solution"));
-}
-
-auto binary::create_solver_data(const mara::config_t& cfg)
-{
-    auto initial_state = new_solution(cfg);
-    auto result = solver_data_t();
-
-    result.sink_radius = cfg.get_double("sink_radius");
-    result.sink_rate = cfg.get_double("sink_rate");
-    result.initial_conserved_field = initial_state.conserved;
-    result.buffer_damping_rate_field = cell_center_cartprod(initial_state.x_vertices, initial_state.y_vertices)
-    | nd::apply(buffer_damping_rate_at_position(cfg))
-    | nd::to_shared();
-
-    return result;
 }
 
 
@@ -591,6 +622,7 @@ auto binary::create_app_state(const mara::config_t& run_config)
     state.run_config     = run_config;
     state.solution_state = create_solution(run_config);
     state.schedule       = create_schedule(run_config);
+    state.solver_data    = create_solver_data(run_config);
     return state;
 }
 
@@ -639,10 +671,15 @@ auto binary::run_tasks(const app_state_t& state)
 
 
 //=============================================================================
-void binary::print_run_loop_message(const solution_state_t& solution, mara::perf_diagnostics_t perf)
+void binary::print_run_loop_message(const app_state_t& state, mara::perf_diagnostics_t perf)
 {
-    auto kzps = solution.x_vertices.size() * solution.y_vertices.size() / perf.execution_time_ms;
-    std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n", solution.iteration.as_integral(), solution.time.value, kzps);
+    auto kzps =
+    state.solver_data.x_vertices.size() *
+    state.solver_data.y_vertices.size() / perf.execution_time_ms;
+
+    std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n",
+        state.solution_state.iteration.as_integral(),
+        state.solution_state.time.value, kzps);
 }
 
 void binary::prepare_filesystem(const mara::config_t& cfg)
@@ -675,10 +712,9 @@ public:
     int main(int argc, const char* argv[]) override
     {
         auto run_config  = create_run_config(argc, argv);
-        auto perf        = mara::perf_diagnostics_t();
         auto state       = create_app_state(run_config);
-        auto solver_data = create_solver_data(run_config);
-        auto next        = create_app_state_next_function(solver_data);
+        auto next        = create_app_state_next_function(state.solver_data);
+        auto perf        = mara::perf_diagnostics_t();
 
         prepare_filesystem(run_config);
         mara::pretty_print(std::cout, "config", run_config);
@@ -687,7 +723,7 @@ public:
         while (simulation_should_continue(state))
         {
             std::tie(state, perf) = mara::time_execution(mara::compose(run_tasks, next), state);
-            print_run_loop_message(state.solution_state, perf);
+            print_run_loop_message(state, perf);
         }
 
         run_tasks(next(state));

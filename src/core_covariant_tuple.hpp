@@ -62,15 +62,14 @@ public:
     template<typename Function>
     auto transform(Function&& fn) const
     {
-        auto is = std::make_index_sequence<sizeof...(Types)>();
-        return transform_impl(std::forward<Function>(fn), std::move(is));
+        return transform_impl(std::forward<Function>(fn), std::make_index_sequence<sizeof...(Types)>());
     }
 
     template<typename Function>
     auto transform(const DerivedClass& other, Function&& fn) const
     {
         auto is = std::make_index_sequence<sizeof...(Types)>();
-        return transform_impl(other, std::forward<Function>(fn), std::move(is));
+        return transform_impl(other, std::forward<Function>(fn), std::make_index_sequence<sizeof...(Types)>());
     }
 
 private:

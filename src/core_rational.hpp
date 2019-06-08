@@ -65,7 +65,10 @@ public:
         reduce();
     }
 
-    double operator+(double other) const { return double(*this) + other; }
+    rational_number_t operator+() const { return rational_number_t(+num, den); }
+    rational_number_t operator-() const { return rational_number_t(-num, den); }
+
+    double operator+(double other) const { return as_double() + other; }
     rational_number_t operator+(int other) const { return operator+(rational_number_t(other)); }
     rational_number_t operator+(const rational_number_t& other) const
     {
@@ -77,7 +80,7 @@ public:
     }
     rational_number_t& operator+=(int other) { *this = *this + other; return *this; }
 
-    double operator-(double other) const { return double(*this) - other; }
+    double operator-(double other) const { return as_double() - other; }
     rational_number_t operator-(int other) const { return operator-(rational_number_t(other)); }
     rational_number_t operator-(const rational_number_t& other) const
     {
@@ -89,7 +92,7 @@ public:
     }
     rational_number_t& operator-=(int other) { *this = *this - other; return *this; }
 
-    double operator*(double other) const { return double(*this) * other; }
+    double operator*(double other) const { return as_double() * other; }
     rational_number_t operator*(int other) const { return operator*(rational_number_t(other)); }
     rational_number_t operator*(const rational_number_t& other) const
     {
@@ -100,7 +103,7 @@ public:
         return rational_number_t(a * c, b * d);
     }
 
-    double operator/(double other) const { return double(*this) / other; }
+    double operator/(double other) const { return as_double() / other; }
     rational_number_t operator/(int other) const { return operator/(rational_number_t(other)); }
     rational_number_t operator/(const rational_number_t& other) const
     {
@@ -147,11 +150,6 @@ public:
         return (*this - other).num >= 0;
     }
 
-    operator double() const
-    {
-        return double(num) / den;
-    }
-
     bool is_integral() const
     {
         return den == 1;
@@ -168,6 +166,11 @@ public:
                 + " to integer");
         }
         return num;
+    }
+
+    double as_double() const
+    {
+        return double(num) / den;
     }
 
     const int& get_numerator() const { return num; }
@@ -239,4 +242,10 @@ auto mara::make_rational(int numerator, int denominator)
 auto mara::to_string(const rational_number_t& value)
 {
     return std::to_string(value.get_numerator()) + " / " + std::to_string(value.get_denominator());
+}
+
+namespace mara
+{
+    inline rational_number_t operator+(int a, const rational_number_t& b) { return  b + a; }
+    inline rational_number_t operator-(int a, const rational_number_t& b) { return -b + a; }
 }
