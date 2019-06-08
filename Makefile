@@ -40,10 +40,18 @@ DEP      := $(SRC:%.cpp=%.d)
 # Build rules
 # =====================================================================
 #
+
+all: mara tutorial
+
 mara: $(OBJ)
 	$(CXX) -o $@ $^ $(LDFLAGS)
+
+tutorial:
+	$(MAKE) -C tutorial
 
 clean:
 	$(RM) $(OBJ) $(DEP) mara
 
 -include $(DEP)
+
+.PHONY: tutorial

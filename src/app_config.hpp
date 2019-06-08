@@ -38,9 +38,9 @@
 //=============================================================================
 namespace mara
 {
-    using config_parameter_t = std::variant<int, double, std::string>;
+    using config_parameter_t     = std::variant<int, double, std::string>;
     using config_parameter_map_t = std::map<std::string, config_parameter_t>;
-    using config_string_map_t = std::map<std::string, std::string>;
+    using config_string_map_t    = std::map<std::string, std::string>;
 
     //=========================================================================
     class config_t;

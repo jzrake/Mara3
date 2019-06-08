@@ -3,6 +3,7 @@
 *.h5
 *.mp4
 src/app_compile_opts.hpp
+tutorial/tut1
 Makefile.in
 machine.py
 mara

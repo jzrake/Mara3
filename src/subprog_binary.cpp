@@ -52,13 +52,13 @@ static auto config_template()
     .item("restart",             std::string())
     .item("outdir",              "data")        // directory where data products are written to
     .item("cpi",                 10.0)          // checkpoint interval (chkpt.????.h5 - snapshot of app_state)
-    .item("dfi",                 1.0)           // diagnostic field interval (diagnostics.????.h5 - for plotting 2d solution data)
+    .item("dfi",                  1.0)          // diagnostic field interval (diagnostics.????.h5 - for plotting 2d solution data)
     .item("tsi",                  0.1)          // time series interval
     .item("tfinal",               1.0)          // simulation stop time
     .item("N",                    256)          // grid resolution (same in x and y)
     .item("softening_radius",     0.1)
     .item("sink_radius",          0.1)
-    .item("sink_rate",            1e3)          // max sink rate (orbital angular frequency)
+    .item("sink_rate",            1e2)          // sink rate at the point masses (orbital angular frequency)
     .item("mach_number",         10.0)
     .item("viscous_alpha",        0.1)
     .item("domain_radius",        6.0)
