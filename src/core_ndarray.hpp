@@ -101,6 +101,7 @@ namespace nd
     template<typename ValueType, typename... Args>     auto make_shared_array(Args... args);
     template<typename ValueType, std::size_t Rank>     auto make_unique_array(shape_t<Rank> shape);
     template<typename ValueType, typename... Args>     auto make_unique_array(Args... args);
+    template<std::size_t Index, typename ArrayType>    auto get(ArrayType array);
     template<std::size_t Rank>                         auto index_array(shape_t<Rank> shape);
     template<typename... Args>                         auto index_array(Args... args);
     template<typename... ArrayTypes>                   auto zip_arrays(ArrayTypes... arrays);
@@ -1510,6 +1511,26 @@ template<typename ValueType, typename... Args>
 auto nd::make_shared_array(Args... args)
 {
     return make_array(make_shared_provider<ValueType>(args...));
+}
+
+
+
+
+/**
+ * @brief      Return an array with the i-th tuple index of all the elements
+ *             (maps std::get<Index>) over the array).
+ *
+ * @param[in]  array      The array of std::tuple (or std::array)
+ *
+ * @tparam     Index      The tuple index
+ * @tparam     ArrayType  The type of the array
+ *
+ * @return     The array
+ */
+template<std::size_t Index, typename ArrayType>
+auto nd::get(ArrayType array)
+{
+    return detail::get_through<Index>(array);
 }
 
 
