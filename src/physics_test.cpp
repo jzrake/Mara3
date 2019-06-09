@@ -29,6 +29,7 @@
 
 
 #include "core_catch.hpp"
+#include "core_geometric.hpp"
 #include "physics_euler.hpp"
 #include "physics_iso2d.hpp"
 #define gamma_law_index (5. / 3)
@@ -106,6 +107,18 @@ TEST_CASE("Isothermal 2d system", "[mara::iso2d::primitive_t]")
     REQUIRE(U[0].value == P.sigma());
     REQUIRE(U[1].value == P.sigma() * P.velocity_x());
     REQUIRE(U[2].value == P.sigma() * P.velocity_y());
+
+    SECTION("HLLC gets zero contact speed for zero-velocity, equal pressure states")
+    {
+        auto Pl = mara::iso2d::primitive_t().with_sigma(1.0).with_velocity_x(0.0).with_velocity_y(0.0);
+        auto Pr = Pl.with_sigma(2.0);
+        auto al2 = 1.0;
+        auto ar2 = 1.0 / 2.0;
+        auto vars = mara::iso2d::compute_hllc_variables(Pl, Pr, al2, ar2, mara::unit_vector_t::on_axis_1());
+
+        REQUIRE(Pl.gas_pressure(al2) == Approx(Pr.gas_pressure(ar2)));
+        REQUIRE(vars.contact_speed() == 0.0);
+    }
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST

@@ -73,6 +73,7 @@ public:
         throw std::invalid_argument("can only construct unit vector on axis 0, 1, or 2");
     }
 
+    unit_vector_t() {}
     unit_vector_t(double n1, double n2, double n3) : n1(n1), n2(n2), n3(n3)
     {
         auto n = std::sqrt(n1 * n1 + n2 * n2 + n3 * n3);

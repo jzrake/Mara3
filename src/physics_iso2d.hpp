@@ -59,6 +59,7 @@ struct mara::iso2d
         unit_velocity<double> m;
         unit_velocity<double> p;
     };
+    struct riemann_hllc_variables_t;
 
     static inline primitive_t recover_primitive(const conserved_per_area_t& U);
 
@@ -74,6 +75,13 @@ struct mara::iso2d
         const unit_vector_t& nhat);
 
     static inline flux_t riemann_hllc(
+        const primitive_t& Pl,
+        const primitive_t& Pr,
+        double sound_speed_squared_l,
+        double sound_speed_squared_r,
+        const unit_vector_t& nhat);
+
+    static inline riemann_hllc_variables_t compute_hllc_variables(
         const primitive_t& Pl,
         const primitive_t& Pr,
         double sound_speed_squared_l,
@@ -157,6 +165,22 @@ struct mara::iso2d::primitive_t : public mara::arithmetic_sequence_t<double, 3, 
 
 
     /**
+     * @brief      Return the (vertically integrated) gas pressure, given the
+     *             sound speed squared.
+     *
+     * @param[in]  sound_speed_squared  The sound speed squared
+     *
+     * @return     The vertically integrated gas pressure
+     */
+    double gas_pressure(double sound_speed_squared) const
+    {
+        return sigma() * sound_speed_squared;
+    }
+
+
+
+
+    /**
      * @brief      Convert this state to conserved mass and momentum, per unit
      *             area.
      *
@@ -186,7 +210,7 @@ struct mara::iso2d::primitive_t : public mara::arithmetic_sequence_t<double, 3, 
     flux_t flux(const unit_vector_t& nhat, double sound_speed_squared) const
     {
         auto v = velocity_along(nhat);
-        auto p = sigma() * sound_speed_squared;
+        auto p = gas_pressure(sound_speed_squared);
         auto F = flux_t();
         F[0] = v * sigma();
         F[1] = v * sigma() * velocity_x() + p * nhat.get_n1();
@@ -299,23 +323,122 @@ mara::iso2d::flux_t mara::iso2d::riemann_hlle(
 
 
 /**
- * @brief      Return the HLLC flux for the given pair of states, following Toro
- *             3rd ed. Sec 10.6.
+ * @brief      Data structure containing variables used in an HLLC calculation.
+ *             It's nice to have this, as opposed to defining all the variables
+ *             in the HLLC flux function, because we can use it in unit tests to
+ *             check the intermediate results. It might also be used to derive
+ *             other quantities, like the flux through a moving face, or the
+ *             star-state itself, in case that's needed in addition to the flux.
+ *
+ * @note       Use compute_hllc_variables below to create an instance of this
+ *             struct from left and right states.
+ */
+struct mara::iso2d::riemann_hllc_variables_t
+{
+    mara::unit_vector_t nhat;
+    mara::iso2d::primitive_t Pl;
+    mara::iso2d::primitive_t Pr;
+    mara::covariant_sequence_t<double, 3> v_para_l;
+    mara::covariant_sequence_t<double, 3> v_para_r;
+    mara::covariant_sequence_t<double, 3> v_perp_l;
+    mara::covariant_sequence_t<double, 3> v_perp_r;
+
+    double ul;
+    double ur;
+    double sigma_l;
+    double sigma_r;
+    double sigma_bar;
+    double al;
+    double ar;
+    double a_bar;
+    double press_l;
+    double press_r;
+    double ppvrs;
+    double pstar;
+    double ql;
+    double qr;
+    double sl;
+    double sr;
+    double sstar;
+
+    auto contact_speed() const { return sstar; }
+    auto Ul() const { return Pl.to_conserved_per_area(); }
+    auto Ur() const { return Pr.to_conserved_per_area(); }
+
+    auto Ul_star() const
+    {
+        return conserved_per_area_t
+        {
+            sigma_l * (sl - ul) / (sl - sstar),
+            sigma_l * (sl - ul) / (sl - sstar) * (sstar * nhat[0] + v_perp_l[0]),
+            sigma_l * (sl - ul) / (sl - sstar) * (sstar * nhat[1] + v_perp_l[1]),
+        };
+    }
+
+    auto Ur_star() const
+    {
+        return conserved_per_area_t
+        {
+            sigma_r * (sr - ur) / (sr - sstar),
+            sigma_r * (sr - ur) / (sr - sstar) * (sstar * nhat[0] + v_perp_r[0]),
+            sigma_r * (sr - ur) / (sr - sstar) * (sstar * nhat[1] + v_perp_r[1]),
+        };
+    }
+
+    auto interface_flux() const
+    {
+        auto Ul = Pl.to_conserved_per_area();
+        auto Ur = Pr.to_conserved_per_area();
+        auto Fl = Pl.flux(nhat, al * al);
+        auto Fr = Pr.flux(nhat, ar * ar);
+        auto Ulstar = Ul_star();
+        auto Urstar = Ur_star();
+
+        if      (0.0   <= sl                 ) return Fl;
+        else if (sl    <= 0.0 && 0.0 <= sstar) return Fl + (Ulstar - Ul) * make_velocity(sl);
+        else if (sstar <= 0.0 && 0.0 <= sr   ) return Fr + (Urstar - Ur) * make_velocity(sr);
+        else if (sr    <= 0.0                ) return Fr;
+
+        throw;
+    }
+
+    auto interface_conserved_state() const
+    {
+        auto Ul = Pl.to_conserved_per_area();
+        auto Ur = Pr.to_conserved_per_area();
+        auto Ulstar = Ul_star();
+        auto Urstar = Ur_star();
+
+        if      (0.0   <= sl                 ) return Ul;
+        else if (sl    <= 0.0 && 0.0 <= sstar) return Ulstar;
+        else if (sstar <= 0.0 && 0.0 <= sr   ) return Urstar;
+        else if (sr    <= 0.0                ) return Ur;
+
+        throw;
+    }
+};
+
+
+
+
+/**
+ * @brief      Return the HLLC variables for the given pair of states, following
+ *             Toro 3rd ed. Sec 10.6.
  *
  * @param[in]  Pl                     The state to the left of the interface
  * @param[in]  Pr                     The state to the right
- * @param[in]  sound_speed_squared_l  The isothermal sound speed squared
- * @param[in]  sound_speed_squared_r  The sound speed squared r
+ * @param[in]  sound_speed_squared_l  The Sound speed squared to the left
+ * @param[in]  sound_speed_squared_r  The Sound speed squared to the right
  * @param[in]  nhat                   The normal vector to the interface
  *
  * @return     A vector of fluxes
  */
-mara::iso2d::flux_t mara::iso2d::riemann_hllc(
-    const primitive_t& Pl,
-    const primitive_t& Pr,
+inline mara::iso2d::riemann_hllc_variables_t mara::iso2d::compute_hllc_variables(
+    const mara::iso2d::primitive_t& Pl,
+    const mara::iso2d::primitive_t& Pr,
     double sound_speed_squared_l,
     double sound_speed_squared_r,
-    const unit_vector_t& nhat)
+    const mara::unit_vector_t& nhat)
 {
     // left and right parallel velocity magnitudes
     auto ul = Pl.velocity_along(nhat);
@@ -355,25 +478,53 @@ mara::iso2d::flux_t mara::iso2d::riemann_hllc(
     auto sstar = (press_r - press_l + ul * sigma_l * (sl - ul) - ur * sigma_r * (sr - ur)) /
                  (                         sigma_l * (sl - ul) -      sigma_r * (sr - ur));
 
-    auto Ulstar = conserved_per_area_t();
-    auto Urstar = conserved_per_area_t();
+    //=========================================================================
+    auto r = riemann_hllc_variables_t();
+    r.ul = ul;
+    r.ur = ur;
+    r.v_para_l = v_para_l;
+    r.v_para_r = v_para_r;
+    r.v_perp_l = v_perp_l;
+    r.v_perp_r = v_perp_r;
+    r.sigma_l = sigma_l;
+    r.sigma_r = sigma_r;
+    r.sigma_bar = sigma_bar;
+    r.al = al;
+    r.ar = ar;
+    r.a_bar = a_bar;
+    r.press_l = press_l;
+    r.press_r = press_r;
+    r.ppvrs = ppvrs;
+    r.pstar = pstar;
+    r.ql = ql;
+    r.qr = qr;
+    r.sl = sl;
+    r.sr = sr;
+    r.sstar = sstar;
+    return r;
+}
 
-    Ulstar[0] = sigma_l * (sl - ul) / (sl - sstar);
-    Ulstar[1] = sigma_l * (sl - ul) / (sl - sstar) * (sstar * nhat[0] + v_perp_l[0]);
-    Ulstar[2] = sigma_l * (sl - ul) / (sl - sstar) * (sstar * nhat[1] + v_perp_l[1]);
-    Urstar[0] = sigma_r * (sr - ur) / (sr - sstar);
-    Urstar[1] = sigma_r * (sr - ur) / (sr - sstar) * (sstar * nhat[0] + v_perp_r[0]);
-    Urstar[2] = sigma_r * (sr - ur) / (sr - sstar) * (sstar * nhat[1] + v_perp_r[1]);
 
-    auto Ul = Pl.to_conserved_per_area();
-    auto Ur = Pr.to_conserved_per_area();
-    auto Fl = Pl.flux(nhat, sound_speed_squared_l);
-    auto Fr = Pr.flux(nhat, sound_speed_squared_r);
 
-    if      (0.0   <= sl                 ) return Fl;
-    else if (sl    <= 0.0 && 0.0 <= sstar) return Fl + (Ulstar - Ul) * make_velocity(sl);
-    else if (sstar <= 0.0 && 0.0 <= sr   ) return Fr + (Urstar - Ur) * make_velocity(sr);
-    else if (sr    <= 0.0                ) return Fr;
 
-    throw;
+/**
+ * @brief      Return the HLLC flux for the given pair of states, following Toro
+ *             3rd ed. Sec 10.6.
+ *
+ * @param[in]  Pl                     The state to the left of the interface
+ * @param[in]  Pr                     The state to the right
+ * @param[in]  sound_speed_squared_l  The Sound speed squared to the left
+ * @param[in]  sound_speed_squared_r  The Sound speed squared to the right
+ * @param[in]  nhat                   The normal vector to the interface
+ *
+ * @return     A vector of fluxes
+ */
+mara::iso2d::flux_t mara::iso2d::riemann_hllc(
+    const primitive_t& Pl,
+    const primitive_t& Pr,
+    double sound_speed_squared_l,
+    double sound_speed_squared_r,
+    const unit_vector_t& nhat)
+{
+    return compute_hllc_variables(Pl, Pr, sound_speed_squared_l, sound_speed_squared_r, nhat).interface_flux();
 }
