@@ -362,7 +362,7 @@ auto binary::intercell_flux_on_axis(std::size_t axis)
         auto L = array | nd::select_axis(axis).from(0).to(1).from_the_end();
         auto R = array | nd::select_axis(axis).from(1).to(0).from_the_end();
         auto nh = mara::unit_vector_t::on_axis(axis);
-        auto riemann = std::bind(mara::iso2d::riemann_hlle, _1, _2, nh, sound_speed_squared);
+        auto riemann = std::bind(mara::iso2d::riemann_hlle, _1, _2, sound_speed_squared, sound_speed_squared, nh);
         return nd::zip_arrays(L, R) | nd::apply(riemann);
     };
 }

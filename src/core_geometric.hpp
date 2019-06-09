@@ -87,9 +87,31 @@ public:
         return v1 * n1 + v2 * n2 + v3 * n3;
     }
 
+    template<typename ScalarType>
+    auto operator*(ScalarType scale) const
+    {
+        return covariant_sequence_t<ScalarType, 3>
+        {
+            n1 * scale,
+            n2 * scale,
+            n3 * scale,   
+        };
+    }
+
     const double& get_n1() const { return n1; }
     const double& get_n2() const { return n2; }
     const double& get_n3() const { return n3; }
+
+    const double& operator[](std::size_t index) const
+    {
+        switch (index)
+        {
+            case 0: return n1;
+            case 1: return n2;
+            case 2: return n3;
+        }
+        throw std::invalid_argument("mara::unit_vector_t::operator[]");
+    }
 
 private:
     //=========================================================================
