@@ -40,6 +40,7 @@
 #include "app_subprogram.hpp"
 #include "app_filesystem.hpp"
 #include "physics_iso2d.hpp"
+#include "model_two_body.hpp"
 #define cfl_number 0.4
 #define plm_theta 1.5
 
