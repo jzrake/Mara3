@@ -466,12 +466,14 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
                 case riemann_solver_t::hlle: next_state.conserved = advance_with(mara::iso2d::riemann_hlle, extrapolate_pcm); break;
                 case riemann_solver_t::hllc: next_state.conserved = advance_with(mara::iso2d::riemann_hllc, extrapolate_pcm); break;
             }
+            break;
         case reconstruct_method_t::plm:
             switch (solver_data.riemann_solver)
             {
                 case riemann_solver_t::hlle: next_state.conserved = advance_with(mara::iso2d::riemann_hlle, extrapolate_plm); break;
                 case riemann_solver_t::hllc: next_state.conserved = advance_with(mara::iso2d::riemann_hllc, extrapolate_plm); break;
             }
+            break;
     }
     return next_state;
 }
