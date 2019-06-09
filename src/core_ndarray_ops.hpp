@@ -45,7 +45,7 @@ namespace nd
     inline auto difference_on_axis(std::size_t axis);
     inline auto zip_adjacent2_on_axis(std::size_t axis);
     inline auto zip_adjacent3_on_axis(std::size_t axis);
-    inline auto extend_periodic_on_axis(std::size_t axis);
+    inline auto extend_periodic_on_axis(std::size_t axis, std::size_t guard_count=1);
     inline auto extend_zero_gradient(std::size_t axis);
     inline auto extend_zeros(std::size_t axis);
 }
@@ -135,12 +135,12 @@ auto nd::zip_adjacent3_on_axis(std::size_t axis)
     };
 }
 
-auto nd::extend_periodic_on_axis(std::size_t axis)
+auto nd::extend_periodic_on_axis(std::size_t axis, std::size_t guard_count)
 {
-    return [axis] (auto array)
+    return [axis, guard_count] (auto array)
     {
-        auto xl = array | select_first(1, axis);
-        auto xr = array | select_final(1, axis);
+        auto xl = array | select_first(guard_count, axis);
+        auto xr = array | select_final(guard_count, axis);
         return xr | nd::concat(array).on_axis(axis) | nd::concat(xl).on_axis(axis);
     };
 }

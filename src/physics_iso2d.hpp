@@ -393,7 +393,6 @@ struct mara::iso2d::riemann_hllc_variables_t
         else if (sl    <= 0.0 && 0.0 <= sstar) return Fl() + (Ul_star() - Ul()) * make_velocity(sl);
         else if (sstar <= 0.0 && 0.0 <= sr   ) return Fr() + (Ur_star() - Ur()) * make_velocity(sr);
         else if (sr    <= 0.0                ) return Fr();
-
         throw;
     }
 

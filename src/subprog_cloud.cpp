@@ -376,9 +376,9 @@ auto CloudProblem::estimate_gradient_plm(double ul, double u0, double ur)
     auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
     auto sgn = [] (auto x) { return std::copysign(1, x); };
 
-    const double a = plm_theta * (u0 - ul);
-    const double b =       0.5 * (ur - ul);
-    const double c = plm_theta * (ur - u0);
+    auto a = plm_theta * (u0 - ul);
+    auto b =       0.5 * (ur - ul);
+    auto c = plm_theta * (ur - u0);
     return 0.25 * fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
 }
 
@@ -550,7 +550,8 @@ auto CloudProblem::next_solution(const app_state_t& app_state)
                 auto G = P
                 | nd::zip_adjacent3_on_axis(axis)
                 | nd::apply(mara::lift(estimate_gradient_plm))
-                | nd::extend_zeros(axis);
+                | nd::extend_zeros(axis)
+                | nd::to_shared();
 
                 return nd::zip_arrays(
                     (P | L) + (G | L) * 0.5,

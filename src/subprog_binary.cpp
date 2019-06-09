@@ -19,7 +19,7 @@
  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
- 
+
  ==============================================================================
 */
 #include "app_compile_opts.hpp"
@@ -41,6 +41,7 @@
 #include "app_filesystem.hpp"
 #include "physics_iso2d.hpp"
 #define cfl_number 0.4
+#define plm_theta 1.5
 
 
 
@@ -56,8 +57,8 @@ static auto config_template()
     .item("tsi",                  0.1)          // time series interval
     .item("tfinal",               1.0)          // simulation stop time
     .item("N",                    256)          // grid resolution (same in x and y)
-    .item("reconstruct_method",     1)          // 1=pcm 2=plm
-    .item("rk_order",               2)          // 1=rk1 2=rk2
+    .item("rk_order",               1)          // 1 or 2
+    .item("reconstruct_method", "plm")          // pcm or plm
     .item("riemann",           "hllc")          // hlle or hllc
     .item("softening_radius",     0.1)
     .item("sink_radius",          0.1)
@@ -80,6 +81,12 @@ namespace binary
     using acceleration_2d_t = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0, -2, double>, 2>;
     using force_2d_t        = mara::covariant_sequence_t<mara::dimensional_value_t<1, 1, -2, double>, 2>;
 
+    enum class reconstruct_method_t
+    {
+        plm,
+        pcm,
+    };
+
     enum class riemann_solver_t
     {
         hlle,
@@ -94,7 +101,7 @@ namespace binary
         mara::unit_time<double> recommended_time_step;
 
         int rk_order;
-        int reconstruct_method;
+        reconstruct_method_t reconstruct_method;
         riemann_solver_t riemann_solver;
 
         nd::shared_array<mara::unit_length<double>, 1> x_vertices;
@@ -171,6 +178,7 @@ namespace binary
     auto gravitational_acceleration_field(mara::unit_time<double> time, const solver_data_t& solver_data);
     auto sink_rate_field(mara::unit_time<double> time, const solver_data_t& solver_data);
     auto buffer_damping_rate_at_position(const mara::config_t& cfg);
+    auto estimate_gradient_plm(double ul, double u0, double ur);
     auto advance(const solution_state_t& state, const solver_data_t& solver_data, mara::unit_time<double> dt);
     auto next_solution(const solution_state_t& state, const solver_data_t& solver_data);
 
@@ -258,14 +266,14 @@ auto binary::initial_disk_profile_tang17(const mara::config_t& cfg)
         auto r              = std::sqrt(r2);
         auto cavity_xsi     = 10.0;
         auto cavity_cutoff  = std::max(std::exp(-std::pow(r / r0, -cavity_xsi)), 1e-6);
-        auto phi            = -GM * std::pow(r2 + rs * rs, -0.5);    
-        auto ag             = -GM * std::pow(r2 + rs * rs, -1.5) * r;    
+        auto phi            = -GM * std::pow(r2 + rs * rs, -0.5);
+        auto ag             = -GM * std::pow(r2 + rs * rs, -1.5) * r;
         auto cs2            = -phi / mach_number / mach_number;
         auto cs2_deriv      =   ag / mach_number / mach_number;
         auto sigma          = sigma0 * std::pow((r + rs) / r0, -0.5) * cavity_cutoff;
         auto sigma_deriv    = sigma0 * std::pow((r + rs) / r0, -1.5) * -0.5 / r0;
         auto dp_dr          = cs2 * sigma_deriv + cs2_deriv * sigma;
-        auto omega2         = r < r0 ? GM / (4 * r0) : -ag / r + dp_dr / (sigma * r);        
+        auto omega2         = r < r0 ? GM / (4 * r0) : -ag / r + dp_dr / (sigma * r);
         auto vp             = (counter_rotate ? -1 : 1) * r * std::sqrt(omega2);
         auto h0             = r / mach_number;
         auto nu             = viscous_alpha * std::sqrt(cs2) * h0; // viscous_alpha * cs * h0
@@ -295,7 +303,7 @@ auto binary::initial_disk_profile_ring(const mara::config_t& cfg)
         auto r2             = x * x + y * y;
         auto r              = std::sqrt(r2);
         auto sigma          = std::exp(-std::pow(r - rc, 2) / rc / 2);
-        auto ag             = -GM * std::pow(r2 + rs * rs, -1.5) * r;    
+        auto ag             = -GM * std::pow(r2 + rs * rs, -1.5) * r;
         auto omega2         = -ag / r;
         auto vp             = (counter_rotate ? -1 : 1) * r * std::sqrt(omega2);
         auto vx             = vp * (-y / r);
@@ -363,6 +371,19 @@ auto binary::sink_rate_field(mara::unit_time<double> time, const solver_data_t& 
     return cell_center_cartprod(solver_data.x_vertices, solver_data.y_vertices) | nd::apply(sink_rate_at_position);
 }
 
+auto binary::estimate_gradient_plm(double ul, double u0, double ur)
+{
+    using std::min;
+    using std::fabs;
+    auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
+    auto sgn = [] (auto x) { return std::copysign(1, x); };
+
+    auto a = plm_theta * (u0 - ul);
+    auto b =       0.5 * (ur - ul);
+    auto c = plm_theta * (ur - u0);
+    return 0.25 * fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
+}
+
 auto binary::advance(const solution_state_t& state, const solver_data_t& solver_data, mara::unit_time<double> dt)
 {
     auto force_to_source_terms = [] (force_2d_t v)
@@ -370,22 +391,48 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
         return mara::iso2d::flow_t {{0.0, v[0].value, v[1].value}};
     };
 
-    auto intercell_flux = [] (auto riemann_solver, std::size_t axis)
+    auto extrapolate_pcm = [] (std::size_t axis)
     {
-        return [axis, riemann_solver] (auto array)
+        return [axis] (auto P)
         {
-            using namespace std::placeholders;
-            double sound_speed_squared = 1e-4; // DEFINE PROPERLY
-
-            auto L = array | nd::select_axis(axis).from(0).to(1).from_the_end();
-            auto R = array | nd::select_axis(axis).from(1).to(0).from_the_end();
-            auto nh = mara::unit_vector_t::on_axis(axis);
-            auto riemann = std::bind(riemann_solver, _1, _2, sound_speed_squared, sound_speed_squared, nh);
-            return nd::zip_arrays(L, R) | nd::apply(riemann);
+            auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
+            auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
+            return nd::zip_arrays(P | L, P | R);
         };
     };
 
-    auto advance_with = [&] (auto riemann_solver)
+    auto extrapolate_plm = [] (std::size_t axis)
+    {
+        return [axis] (auto P)
+        {
+            auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
+            auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
+            auto G = P
+            | nd::zip_adjacent3_on_axis(axis)
+            | nd::apply(mara::lift(estimate_gradient_plm))
+            | nd::extend_zeros(axis)
+            | nd::to_shared();
+
+            return nd::zip_arrays(
+                (P | L) + (G | L) * 0.5,
+                (P | R) - (G | R) * 0.5);
+        };
+    };
+
+    auto intercell_flux = [] (auto riemann_solver, std::size_t axis)
+    {
+        return [axis, riemann_solver] (auto left_and_right_states)
+        {
+            using namespace std::placeholders;
+            double sound_speed_squared = 1e-4; // IMPLEMENT: position-dependent sound speed
+
+            auto nh = mara::unit_vector_t::on_axis(axis);
+            auto riemann = std::bind(riemann_solver, _1, _2, sound_speed_squared, sound_speed_squared, nh);
+            return left_and_right_states | nd::apply(riemann);
+        };
+    };
+
+    auto advance_with = [&] (auto riemann_solver, auto extrapolate)
     {
         auto fhat_x = intercell_flux(riemann_solver, 0);
         auto fhat_y = intercell_flux(riemann_solver, 1);
@@ -398,12 +445,12 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
         auto [__2, dy] = nd::meshgrid(solver_data.x_vertices, solver_data.y_vertices | nd::difference_on_axis(0));
         auto cell_mass = u0 | nd::map([] (auto u) { return u[0]; });
 
-        auto lx = p0 | nd::extend_periodic_on_axis(0) | fhat_x | nd::multiply(-dy) | nd::difference_on_axis(0);
-        auto ly = p0 | nd::extend_periodic_on_axis(1) | fhat_y | nd::multiply(-dx) | nd::difference_on_axis(1);
+        auto lx = p0 | nd::extend_periodic_on_axis(0) | extrapolate(0) | fhat_x | nd::multiply(-dy) | nd::difference_on_axis(0);
+        auto ly = p0 | nd::extend_periodic_on_axis(1) | extrapolate(1) | fhat_y | nd::multiply(-dx) | nd::difference_on_axis(1);
         auto sg = gravitational_acceleration_field(state.time, solver_data) | nd::multiply(cell_mass) | nd::map(force_to_source_terms);
         auto ss = -u0 * sink_rate_field(state.time, solver_data);
         auto bz = (solver_data.initial_conserved_field - u0) * solver_data.buffer_damping_rate_field;
-        auto u1 = u0 + (lx + ly + sg + ss + bz) * dt;       
+        auto u1 = u0 + (lx + ly + sg + ss + bz) * dt;
         return u1 | nd::to_shared();
     };
 
@@ -411,10 +458,20 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
     next_state.iteration = state.iteration + 1;
     next_state.time      = state.time + dt;
 
-    switch (solver_data.riemann_solver)
+    switch (solver_data.reconstruct_method)
     {
-        case riemann_solver_t::hlle: next_state.conserved = advance_with(mara::iso2d::riemann_hlle); break;
-        case riemann_solver_t::hllc: next_state.conserved = advance_with(mara::iso2d::riemann_hllc); break;
+        case reconstruct_method_t::pcm:
+            switch (solver_data.riemann_solver)
+            {
+                case riemann_solver_t::hlle: next_state.conserved = advance_with(mara::iso2d::riemann_hlle, extrapolate_pcm); break;
+                case riemann_solver_t::hllc: next_state.conserved = advance_with(mara::iso2d::riemann_hllc, extrapolate_pcm); break;
+            }
+        case reconstruct_method_t::plm:
+            switch (solver_data.riemann_solver)
+            {
+                case riemann_solver_t::hlle: next_state.conserved = advance_with(mara::iso2d::riemann_hlle, extrapolate_plm); break;
+                case riemann_solver_t::hllc: next_state.conserved = advance_with(mara::iso2d::riemann_hllc, extrapolate_plm); break;
+            }
     }
     return next_state;
 }
@@ -563,7 +620,6 @@ auto binary::create_solver_data(const mara::config_t& cfg)
     result.sink_radius           = cfg.get_double("sink_radius");
     result.sink_rate             = cfg.get_double("sink_rate");
     result.rk_order              = cfg.get_int("rk_order");
-    result.reconstruct_method    = cfg.get_int("reconstruct_method");
     result.recommended_time_step = dt;
     result.x_vertices = xv | nd::to_shared();
     result.y_vertices = yv | nd::to_shared();
@@ -573,6 +629,10 @@ auto binary::create_solver_data(const mara::config_t& cfg)
     if      (cfg.get_string("riemann") == "hlle") result.riemann_solver = riemann_solver_t::hlle;
     else if (cfg.get_string("riemann") == "hllc") result.riemann_solver = riemann_solver_t::hllc;
     else throw std::invalid_argument("invalid riemann solver '" + cfg.get_string("riemann") + "', must be hlle or hllc");
+
+    if      (cfg.get_string("reconstruct_method") == "pcm") result.reconstruct_method = reconstruct_method_t::pcm;
+    else if (cfg.get_string("reconstruct_method") == "plm") result.reconstruct_method = reconstruct_method_t::plm;
+    else throw std::invalid_argument("invalid reconstruct_method '" + cfg.get_string("reconstruct_method") + "', must be plm or pcm");
 
     return result;
 }
@@ -737,7 +797,7 @@ void binary::prepare_filesystem(const mara::config_t& cfg)
 
         // for (auto column_name : get_time_series_column_names())
         // {
-        //     file.require_dataset(column_name, h5::Datatype::native_double(), space, plist);            
+        //     file.require_dataset(column_name, h5::Datatype::native_double(), space, plist);
         // }
         mara::write_config(file.require_group("run_config"), cfg);
     }
