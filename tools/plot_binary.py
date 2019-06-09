@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 
 def get_ranges(args):
     return dict(
-        sigma_range=eval(args.sigma, dict(auto=[None, None])),
-        vr_range=eval(args.vr, dict(auto=[None, None])),
-        vp_range=eval(args.vp, dict(auto=[None, None])))
+        sigma_range=eval(args.sigma, dict(auto=[None, None], fiducial=[  0.0, 1.0])),
+        vr_range   =eval(args.vr,    dict(auto=[None, None], fiducial=[-1e-2, 0.0])),
+        vp_range   =eval(args.vp,    dict(auto=[None, None], fiducial=[  0.0, 2.0])))
 
 
 
@@ -91,9 +91,9 @@ if __name__ == "__main__":
     parser.add_argument("filenames", nargs='+')
     parser.add_argument("--movie", action='store_true')
     parser.add_argument("--output", default="output.mp4")
-    parser.add_argument("--sigma", default="auto", type=str)
-    parser.add_argument("--vr", default="auto", type=str)
-    parser.add_argument("--vp", default="auto", type=str)
+    parser.add_argument("--sigma", default="fiducial", type=str)
+    parser.add_argument("--vr", default="fiducial", type=str)
+    parser.add_argument("--vp", default="fiducial", type=str)
 
     args = parser.parse_args()
 

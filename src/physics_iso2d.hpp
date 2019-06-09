@@ -364,6 +364,8 @@ struct mara::iso2d::riemann_hllc_variables_t
     auto contact_speed() const { return sstar; }
     auto Ul() const { return Pl.to_conserved_per_area(); }
     auto Ur() const { return Pr.to_conserved_per_area(); }
+    auto Fl() const { return Pl.flux(nhat, al * al); }
+    auto Fr() const { return Pr.flux(nhat, ar * ar); }
 
     auto Ul_star() const
     {
@@ -387,17 +389,10 @@ struct mara::iso2d::riemann_hllc_variables_t
 
     auto interface_flux() const
     {
-        auto Ul = Pl.to_conserved_per_area();
-        auto Ur = Pr.to_conserved_per_area();
-        auto Fl = Pl.flux(nhat, al * al);
-        auto Fr = Pr.flux(nhat, ar * ar);
-        auto Ulstar = Ul_star();
-        auto Urstar = Ur_star();
-
-        if      (0.0   <= sl                 ) return Fl;
-        else if (sl    <= 0.0 && 0.0 <= sstar) return Fl + (Ulstar - Ul) * make_velocity(sl);
-        else if (sstar <= 0.0 && 0.0 <= sr   ) return Fr + (Urstar - Ur) * make_velocity(sr);
-        else if (sr    <= 0.0                ) return Fr;
+        if      (0.0   <= sl                 ) return Fl();
+        else if (sl    <= 0.0 && 0.0 <= sstar) return Fl() + (Ul_star() - Ul()) * make_velocity(sl);
+        else if (sstar <= 0.0 && 0.0 <= sr   ) return Fr() + (Ur_star() - Ur()) * make_velocity(sr);
+        else if (sr    <= 0.0                ) return Fr();
 
         throw;
     }
@@ -448,7 +443,7 @@ inline mara::iso2d::riemann_hllc_variables_t mara::iso2d::compute_hllc_variables
     auto v_para_l = nhat * ul;
     auto v_para_r = nhat * ur;
     auto v_perp_l = Pl.velocity() - v_para_l;
-    auto v_perp_r = Pl.velocity() - v_para_r;
+    auto v_perp_r = Pr.velocity() - v_para_r;
 
     // left, right, and average sigma's
     auto sigma_l   = Pl.sigma();
@@ -480,12 +475,15 @@ inline mara::iso2d::riemann_hllc_variables_t mara::iso2d::compute_hllc_variables
 
     //=========================================================================
     auto r = riemann_hllc_variables_t();
-    r.ul = ul;
-    r.ur = ur;
+    r.nhat = nhat;
+    r.Pl = Pl;
+    r.Pr = Pr;
     r.v_para_l = v_para_l;
     r.v_para_r = v_para_r;
     r.v_perp_l = v_perp_l;
     r.v_perp_r = v_perp_r;
+    r.ul = ul;
+    r.ur = ur;
     r.sigma_l = sigma_l;
     r.sigma_r = sigma_r;
     r.sigma_bar = sigma_bar;

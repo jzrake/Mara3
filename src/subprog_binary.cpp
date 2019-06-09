@@ -56,6 +56,9 @@ static auto config_template()
     .item("tsi",                  0.1)          // time series interval
     .item("tfinal",               1.0)          // simulation stop time
     .item("N",                    256)          // grid resolution (same in x and y)
+    .item("reconstruct_method",     1)          // 1=pcm 2=plm
+    .item("rk_order",               2)          // 1=rk1 2=rk2
+    .item("riemann",           "hllc")          // hlle or hllc
     .item("softening_radius",     0.1)
     .item("sink_radius",          0.1)
     .item("sink_rate",            1e2)          // sink rate at the point masses (orbital angular frequency)
@@ -77,6 +80,11 @@ namespace binary
     using acceleration_2d_t = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0, -2, double>, 2>;
     using force_2d_t        = mara::covariant_sequence_t<mara::dimensional_value_t<1, 1, -2, double>, 2>;
 
+    enum class riemann_solver_t
+    {
+        hlle,
+        hllc,
+    };
 
     //=========================================================================
     struct solver_data_t
@@ -84,6 +92,10 @@ namespace binary
         mara::unit_rate<double> sink_rate;
         mara::unit_length<double> sink_radius;
         mara::unit_time<double> recommended_time_step;
+
+        int rk_order;
+        int reconstruct_method;
+        riemann_solver_t riemann_solver;
 
         nd::shared_array<mara::unit_length<double>, 1> x_vertices;
         nd::shared_array<mara::unit_length<double>, 1> y_vertices;
@@ -159,7 +171,6 @@ namespace binary
     auto gravitational_acceleration_field(mara::unit_time<double> time, const solver_data_t& solver_data);
     auto sink_rate_field(mara::unit_time<double> time, const solver_data_t& solver_data);
     auto buffer_damping_rate_at_position(const mara::config_t& cfg);
-    auto intercell_flux_on_axis(std::size_t axis);
     auto advance(const solution_state_t& state, const solver_data_t& solver_data, mara::unit_time<double> dt);
     auto next_solution(const solution_state_t& state, const solver_data_t& solver_data);
 
@@ -352,21 +363,6 @@ auto binary::sink_rate_field(mara::unit_time<double> time, const solver_data_t& 
     return cell_center_cartprod(solver_data.x_vertices, solver_data.y_vertices) | nd::apply(sink_rate_at_position);
 }
 
-auto binary::intercell_flux_on_axis(std::size_t axis)
-{
-    return [axis] (auto array)
-    {
-        using namespace std::placeholders;
-        double sound_speed_squared = 1e-4; // DEFINE PROPERLY
-
-        auto L = array | nd::select_axis(axis).from(0).to(1).from_the_end();
-        auto R = array | nd::select_axis(axis).from(1).to(0).from_the_end();
-        auto nh = mara::unit_vector_t::on_axis(axis);
-        auto riemann = std::bind(mara::iso2d::riemann_hlle, _1, _2, sound_speed_squared, sound_speed_squared, nh);
-        return nd::zip_arrays(L, R) | nd::apply(riemann);
-    };
-}
-
 auto binary::advance(const solution_state_t& state, const solver_data_t& solver_data, mara::unit_time<double> dt)
 {
     auto force_to_source_terms = [] (force_2d_t v)
@@ -374,36 +370,75 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
         return mara::iso2d::flow_t {{0.0, v[0].value, v[1].value}};
     };
 
-    auto dA = cell_surface_area(solver_data.x_vertices, solver_data.y_vertices);
-    auto u0 = state.conserved;
-    auto p0 = u0 / dA | nd::map(mara::iso2d::recover_primitive) | nd::to_shared();
+    auto intercell_flux = [] (auto riemann_solver, std::size_t axis)
+    {
+        return [axis, riemann_solver] (auto array)
+        {
+            using namespace std::placeholders;
+            double sound_speed_squared = 1e-4; // DEFINE PROPERLY
 
-    auto [dx, __1] = nd::meshgrid(solver_data.x_vertices | nd::difference_on_axis(0), solver_data.y_vertices);
-    auto [__2, dy] = nd::meshgrid(solver_data.x_vertices, solver_data.y_vertices | nd::difference_on_axis(0));
-    auto cell_mass = u0 | nd::map([] (auto u) { return u[0]; });
+            auto L = array | nd::select_axis(axis).from(0).to(1).from_the_end();
+            auto R = array | nd::select_axis(axis).from(1).to(0).from_the_end();
+            auto nh = mara::unit_vector_t::on_axis(axis);
+            auto riemann = std::bind(riemann_solver, _1, _2, sound_speed_squared, sound_speed_squared, nh);
+            return nd::zip_arrays(L, R) | nd::apply(riemann);
+        };
+    };
 
-    auto lx = p0 | nd::extend_periodic_on_axis(0) | intercell_flux_on_axis(0) | nd::multiply(-dy) | nd::difference_on_axis(0);
-    auto ly = p0 | nd::extend_periodic_on_axis(1) | intercell_flux_on_axis(1) | nd::multiply(-dx) | nd::difference_on_axis(1);
-    auto sg = gravitational_acceleration_field(state.time, solver_data) | nd::multiply(cell_mass) | nd::map(force_to_source_terms);
-    auto ss = -u0 * sink_rate_field(state.time, solver_data);
-    auto bz = (solver_data.initial_conserved_field - u0) * solver_data.buffer_damping_rate_field;
-    auto u1 = u0 + (lx + ly + sg + ss + bz) * dt;
+    auto advance_with = [&] (auto riemann_solver)
+    {
+        auto fhat_x = intercell_flux(riemann_solver, 0);
+        auto fhat_y = intercell_flux(riemann_solver, 1);
 
-    auto next_state = state;
-    next_state.iteration += 1;
-    next_state.time += dt;
-    next_state.conserved = u1 | nd::to_shared();
+        auto dA = cell_surface_area(solver_data.x_vertices, solver_data.y_vertices);
+        auto u0 = state.conserved;
+        auto p0 = u0 / dA | nd::map(mara::iso2d::recover_primitive) | nd::to_shared();
+
+        auto [dx, __1] = nd::meshgrid(solver_data.x_vertices | nd::difference_on_axis(0), solver_data.y_vertices);
+        auto [__2, dy] = nd::meshgrid(solver_data.x_vertices, solver_data.y_vertices | nd::difference_on_axis(0));
+        auto cell_mass = u0 | nd::map([] (auto u) { return u[0]; });
+
+        auto lx = p0 | nd::extend_periodic_on_axis(0) | fhat_x | nd::multiply(-dy) | nd::difference_on_axis(0);
+        auto ly = p0 | nd::extend_periodic_on_axis(1) | fhat_y | nd::multiply(-dx) | nd::difference_on_axis(1);
+        auto sg = gravitational_acceleration_field(state.time, solver_data) | nd::multiply(cell_mass) | nd::map(force_to_source_terms);
+        auto ss = -u0 * sink_rate_field(state.time, solver_data);
+        auto bz = (solver_data.initial_conserved_field - u0) * solver_data.buffer_damping_rate_field;
+        auto u1 = u0 + (lx + ly + sg + ss + bz) * dt;       
+        return u1 | nd::to_shared();
+    };
+
+    auto next_state = solution_state_t();
+    next_state.iteration = state.iteration + 1;
+    next_state.time      = state.time + dt;
+
+    switch (solver_data.riemann_solver)
+    {
+        case riemann_solver_t::hlle: next_state.conserved = advance_with(mara::iso2d::riemann_hlle); break;
+        case riemann_solver_t::hllc: next_state.conserved = advance_with(mara::iso2d::riemann_hllc); break;
+    }
     return next_state;
 }
 
 auto binary::next_solution(const solution_state_t& state, const solver_data_t& solver_data)
 {
-    auto b0 = mara::make_rational(1, 2);
     auto dt = solver_data.recommended_time_step;
     auto s0 = state;
-    auto s1 = advance(s0, solver_data, dt);
-    auto s2 = advance(s1, solver_data, dt);
-    return s0 * b0 + s2 * (1 - b0);
+
+    switch (solver_data.rk_order)
+    {
+        case 1:
+        {
+            return advance(s0, solver_data, dt);
+        }
+        case 2:
+        {
+            auto b0 = mara::make_rational(1, 2);
+            auto s1 = advance(s0, solver_data, dt);
+            auto s2 = advance(s1, solver_data, dt);
+            return s0 * b0 + s2 * (1 - b0);
+        }
+    }
+    throw std::invalid_argument("binary::next_solution");
 }
 
 
@@ -521,16 +556,23 @@ auto binary::create_solver_data(const mara::config_t& cfg)
     auto dA = cell_surface_area(xv, yv);
     auto p0 = u / dA | nd::map(mara::iso2d::recover_primitive);
     auto v0 = p0 | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_magnitude));
-    auto dt = mara::make_length(2 * R0) / std::max(nx, ny) / nd::max(v0) * cfl_number;
+    auto dx = mara::make_length(2 * R0) / std::max(nx, ny);
+    auto dt = dx / nd::max(v0) * 0.5 * cfl_number;
 
     auto result = solver_data_t();
-    result.sink_radius = cfg.get_double("sink_radius");
-    result.sink_rate = cfg.get_double("sink_rate");
+    result.sink_radius           = cfg.get_double("sink_radius");
+    result.sink_rate             = cfg.get_double("sink_rate");
+    result.rk_order              = cfg.get_int("rk_order");
+    result.reconstruct_method    = cfg.get_int("reconstruct_method");
     result.recommended_time_step = dt;
     result.x_vertices = xv | nd::to_shared();
     result.y_vertices = yv | nd::to_shared();
     result.initial_conserved_field   = u | nd::to_shared();
     result.buffer_damping_rate_field = b | nd::to_shared();
+
+    if      (cfg.get_string("riemann") == "hlle") result.riemann_solver = riemann_solver_t::hlle;
+    else if (cfg.get_string("riemann") == "hllc") result.riemann_solver = riemann_solver_t::hllc;
+    else throw std::invalid_argument("invalid riemann solver '" + cfg.get_string("riemann") + "', must be hlle or hllc");
 
     return result;
 }
