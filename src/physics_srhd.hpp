@@ -366,8 +366,8 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
     double gamma_law_index,
     double temperature_floor)
 {
-    constexpr int newtonIterMax          = 50;
-    constexpr double errorTolerance      = 1e-10;
+    constexpr int newton_iter_max         = 50;
+    constexpr double error_tolerance      = 1e-10;
 
     // indexes to conserved quanitites
     enum {
@@ -391,7 +391,7 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
     double W0 = 1.0;
     double p = 0.0; // guess pressure
 
-    while (iteration < newtonIterMax)
+    while (iteration < newton_iter_max)
     {
         auto v2  = std::min(SS / std::pow(tau + D + p, 2), 1.0 - 1e-10);
         auto W2  = 1.0 / (1.0 - v2);
@@ -405,7 +405,7 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
         auto g = v2 * cs2 - 1.0;
         p -= f / g;
 
-        if (std::fabs(f) < errorTolerance)
+        if (std::fabs(f) < error_tolerance)
         {
             W0 = W;
             solution_found = true;

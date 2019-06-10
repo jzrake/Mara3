@@ -61,7 +61,9 @@ struct mara::iso2d
     };
     struct riemann_hllc_variables_t;
 
-    static inline primitive_t recover_primitive(const conserved_per_area_t& U);
+    static inline primitive_t recover_primitive(
+        const conserved_per_area_t& U,
+        double density_floor);
 
     static inline primitive_t roe_average(
         const primitive_t& Pl,
@@ -251,12 +253,28 @@ struct mara::iso2d::primitive_t : public mara::arithmetic_sequence_t<double, 3, 
  *
  * @return     A primitive variable state, if the recovery succeeds
  */
-mara::iso2d::primitive_t mara::iso2d::recover_primitive(const conserved_per_area_t& U)
+mara::iso2d::primitive_t mara::iso2d::recover_primitive(const conserved_per_area_t& U, double density_floor)
 {
+    if (U[0] < 0.0)
+    {
+        if (density_floor == 0.0)
+        {
+            throw std::invalid_argument("mara::iso2d::recover_primitive (negative density)");
+        }
+        else
+        {
+            // This is a pretty extreme measure. If it happens too often you
+            // should expect other things to go wrong.
+            return primitive_t()
+            .with_sigma(density_floor)
+            .with_velocity_x(0.0)
+            .with_velocity_y(0.0);
+        }
+    }
     auto P = primitive_t();
     P[0] = U[0].value;
-    P[1] = U[1].value / U[0].value;
-    P[2] = U[2].value / U[0].value;
+    P[1] = U[1].value / P[0];
+    P[2] = U[2].value / P[0];
     return P;
 }
 
@@ -393,7 +411,7 @@ struct mara::iso2d::riemann_hllc_variables_t
         else if (sl    <= 0.0 && 0.0 <= sstar) return Fl() + (Ul_star() - Ul()) * make_velocity(sl);
         else if (sstar <= 0.0 && 0.0 <= sr   ) return Fr() + (Ur_star() - Ur()) * make_velocity(sr);
         else if (sr    <= 0.0                ) return Fr();
-        throw;
+        throw std::invalid_argument("riemann_hllc_variables_t::interface_flux");
     }
 
     auto interface_conserved_state() const
@@ -402,7 +420,7 @@ struct mara::iso2d::riemann_hllc_variables_t
         else if (sl    <= 0.0 && 0.0 <= sstar) return Ul_star();
         else if (sstar <= 0.0 && 0.0 <= sr   ) return Ur_star();
         else if (sr    <= 0.0                ) return Ur();
-        throw;
+        throw std::invalid_argument("riemann_hllc_variables_t::interface_conserved_state");
     }
 };
 
@@ -463,8 +481,13 @@ inline mara::iso2d::riemann_hllc_variables_t mara::iso2d::compute_hllc_variables
     auto sr = ur + ar * qr;
 
     // Equation 10.70 for the contact speed
-    auto sstar = (press_r - press_l + ul * sigma_l * (sl - ul) - ur * sigma_r * (sr - ur)) /
-                 (                         sigma_l * (sl - ul) -      sigma_r * (sr - ur));
+    auto den = sigma_l * (sl - ul) - sigma_r * (sr - ur);
+    auto sstar = (press_r - press_l + ul * sigma_l * (sl - ul) - ur * sigma_r * (sr - ur)) / den;
+
+    if (std::isnan(sstar)) //den == 0.0)
+    {
+        throw std::invalid_argument("mara::iso2d::compute_hllc_variables (probably hitting too many density floors)");
+    }
 
     //=========================================================================
     auto r = riemann_hllc_variables_t();

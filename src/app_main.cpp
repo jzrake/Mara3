@@ -79,7 +79,7 @@ int main(int argc, const char* argv[])
         }
         catch (const std::exception& e)
         {
-            std::cout << "mara: " << e.what() << std::endl;
+            std::cout << e.what() << std::endl;
             return 1;
         }
     }

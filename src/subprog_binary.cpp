@@ -42,7 +42,7 @@
 #include "physics_iso2d.hpp"
 #include "model_two_body.hpp"
 #define cfl_number 0.4
-#define plm_theta 1.5
+#define density_floor 1e-6
 
 
 
@@ -60,6 +60,7 @@ static auto config_template()
     .item("N",                    256)          // grid resolution (same in x and y)
     .item("rk_order",               1)          // 1 or 2
     .item("reconstruct_method", "plm")          // pcm or plm
+    .item("plm_theta",            1.2)          // theta value (less than 1.4 seems to be safe)
     .item("riemann",           "hllc")          // hlle or hllc
     .item("softening_radius",     0.1)
     .item("sink_radius",          0.1)
@@ -107,30 +108,32 @@ namespace binary
     //=========================================================================
     struct solver_data_t
     {
-        mara::unit_rate<double> sink_rate;
-        mara::unit_length<double> sink_radius;
-        mara::unit_length<double> softening_radius;
-        mara::unit_time<double> recommended_time_step;
+        mara::unit_rate  <double>                      sink_rate;
+        mara::unit_length<double>                      sink_radius;
+        mara::unit_length<double>                      softening_radius;
+        mara::unit_time  <double>                      recommended_time_step;
 
-        int rk_order;
-        reconstruct_method_t reconstruct_method;
-        riemann_solver_t riemann_solver;
-        mara::two_body_parameters_t binary_params;
+        double                                         plm_theta;
+        int                                            rk_order;
+        reconstruct_method_t                           reconstruct_method;
+        riemann_solver_t                               riemann_solver;
+        mara::two_body_parameters_t                    binary_params;
 
         nd::shared_array<mara::unit_length<double>, 1> x_vertices;
         nd::shared_array<mara::unit_length<double>, 1> y_vertices;
-        nd::shared_array<mara::iso2d::conserved_t, 2> initial_conserved_field;
-        nd::shared_array<mara::unit_rate<double>, 2> buffer_damping_rate_field;
+        nd::shared_array<mara::unit_rate  <double>, 2> buffer_damping_rate_field;
+        nd::shared_array<mara::iso2d::conserved_t,  2> initial_conserved_field;
     };
 
 
     //=========================================================================
     struct solution_state_t
     {
-        mara::unit_time<double> time = 0.0;
-        mara::rational_number_t iteration = 0;
+        mara::unit_time<double>                       time = 0.0;
+        mara::rational_number_t                       iteration = 0;
         nd::shared_array<mara::iso2d::conserved_t, 2> conserved;
 
+        //=====================================================================
         solution_state_t operator+(const solution_state_t& other) const
         {
             return {
@@ -182,7 +185,8 @@ namespace binary
     auto gravitational_acceleration_field(mara::unit_time<double> time, const solver_data_t& solver_data);
     auto sink_rate_field(mara::unit_time<double> time, const solver_data_t& solver_data);
     auto buffer_damping_rate_at_position(const mara::config_t& cfg);
-    auto estimate_gradient_plm(double ul, double u0, double ur);
+    auto estimate_gradient_plm(double plm_theta);
+    auto recover_primitive(const mara::iso2d::conserved_per_area_t& conserved);
     auto advance(const solution_state_t& state, const solver_data_t& solver_data, mara::unit_time<double> dt);
     auto next_solution(const solution_state_t& state, const solver_data_t& solver_data);
 
@@ -372,17 +376,25 @@ auto binary::sink_rate_field(mara::unit_time<double> time, const solver_data_t& 
     return cell_center_cartprod(solver_data.x_vertices, solver_data.y_vertices) | nd::apply(sink);
 }
 
-auto binary::estimate_gradient_plm(double ul, double u0, double ur)
+auto binary::estimate_gradient_plm(double plm_theta)
 {
-    using std::min;
-    using std::fabs;
-    auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
-    auto sgn = [] (auto x) { return std::copysign(1, x); };
+    return [plm_theta] (double ul, double u0, double ur)
+    {
+        using std::min;
+        using std::fabs;
+        auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
+        auto sgn = [] (auto x) { return std::copysign(1, x); };
 
-    auto a = plm_theta * (u0 - ul);
-    auto b =       0.5 * (ur - ul);
-    auto c = plm_theta * (ur - u0);
-    return 0.25 * fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
+        auto a = plm_theta * (u0 - ul);
+        auto b =       0.5 * (ur - ul);
+        auto c = plm_theta * (ur - u0);
+        return 0.25 * fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
+    };
+}
+
+auto binary::recover_primitive(const mara::iso2d::conserved_per_area_t& conserved)
+{
+    return mara::iso2d::recover_primitive(conserved, density_floor);
 }
 
 auto binary::advance(const solution_state_t& state, const solver_data_t& solver_data, mara::unit_time<double> dt)
@@ -402,15 +414,15 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
         };
     };
 
-    auto extrapolate_plm = [] (std::size_t axis)
+    auto extrapolate_plm = [plm_theta=solver_data.plm_theta] (std::size_t axis)
     {
-        return [axis] (auto P)
+        return [plm_theta, axis] (auto P)
         {
             auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
             auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
             auto G = P
             | nd::zip_adjacent3_on_axis(axis)
-            | nd::apply(mara::lift(estimate_gradient_plm))
+            | nd::apply(mara::lift(estimate_gradient_plm(plm_theta)))
             | nd::extend_zeros(axis)
             | nd::to_shared();
 
@@ -440,7 +452,7 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
 
         auto dA = cell_surface_area(solver_data.x_vertices, solver_data.y_vertices);
         auto u0 = state.conserved;
-        auto p0 = u0 / dA | nd::map(mara::iso2d::recover_primitive) | nd::to_shared();
+        auto p0 = u0 / dA | nd::map(recover_primitive) | nd::to_shared();
 
         auto [dx, __1] = nd::meshgrid(solver_data.x_vertices | nd::difference_on_axis(0), solver_data.y_vertices);
         auto [__2, dy] = nd::meshgrid(solver_data.x_vertices, solver_data.y_vertices | nd::difference_on_axis(0));
@@ -515,7 +527,7 @@ auto binary::diagnostic_fields(const solution_state_t& state, const solver_data_
     auto phat_x = -yc / rc;
     auto phat_y =  xc / rc;
     auto u = state.conserved;
-    auto p = u / dA | nd::map(mara::iso2d::recover_primitive);
+    auto p = u / dA | nd::map(recover_primitive);
     auto sigma = p | nd::map(std::mem_fn(&mara::iso2d::primitive_t::sigma));
     auto vx = p | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_x));
     auto vy = p | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_y));
@@ -614,7 +626,7 @@ auto binary::create_solver_data(const mara::config_t& cfg)
     | nd::apply(buffer_damping_rate_at_position(cfg));
 
     auto dA = cell_surface_area(xv, yv);
-    auto p0 = u / dA | nd::map(mara::iso2d::recover_primitive);
+    auto p0 = u / dA | nd::map(recover_primitive);
     auto v0 = p0 | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_magnitude));
     auto dx = mara::make_length(2 * R0) / std::max(nx, ny);
     auto dt = dx / nd::max(v0) * 0.5 * cfl_number;
@@ -623,6 +635,7 @@ auto binary::create_solver_data(const mara::config_t& cfg)
     result.sink_rate             = cfg.get_double("sink_rate");
     result.sink_radius           = cfg.get_double("sink_radius");
     result.softening_radius      = cfg.get_double("softening_radius");
+    result.plm_theta             = cfg.get_double("plm_theta");
     result.rk_order              = cfg.get_int("rk_order");
     result.recommended_time_step = dt;
 
