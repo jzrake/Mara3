@@ -28,6 +28,7 @@
 
 #pragma once
 #include <string>
+#include <cmath>
 
 
 
@@ -195,6 +196,31 @@ struct mara::dimensional_value_t
     double operator/(dimensional_value_t other) const
     {
         return value / other.value;
+    }
+
+
+    /**
+     * @brief      Take the power of this dimensional number, preserving the
+     *             units.
+     *
+     * @tparam     E     The exponent
+     *
+     * @return     value^E
+     *
+     * @note       Since non-integer dimensions are not supported, all units
+     *             must divide the exponent, if it is negative.
+     */
+    template<int N, unsigned D=1>
+    auto pow() const
+    {
+        static_assert((C * N) % D == 0, "non-integer dimensions not supported");
+        static_assert((G * N) % D == 0, "non-integer dimensions not supported");
+        static_assert((S * N) % D == 0, "non-integer dimensions not supported");
+
+        return dimensional_value_t<C * N / D, G * N / D, S * N / D, T>
+        {
+            std::pow(value, double(N) / D)
+        };
     }
 
 

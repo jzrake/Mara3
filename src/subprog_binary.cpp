@@ -344,8 +344,7 @@ auto binary::gravitational_acceleration_field(mara::unit_time<double> time, cons
         auto dr  = field_point - mass_location;
         auto dr2 = dr[0] * dr[0] + dr[1] * dr[1];
         auto rs2 = softening_radius * softening_radius;
-        auto den = mara::make_dimensional<3, 0, 0>(std::pow((dr2 + rs2).value, 1.5)); // TODO: write this in a nicer format
-        return -dr / den * G * M;
+        return -dr / (dr2 + rs2).pow<3, 2>() * G * M;
     };
     auto acceleration = [binary, accel] (auto x, auto y)
     {
