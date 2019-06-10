@@ -41,8 +41,11 @@
 #include "app_filesystem.hpp"
 #include "physics_iso2d.hpp"
 #include "model_two_body.hpp"
-#define cfl_number 0.4
-#define density_floor 1e-6
+#define cfl_number                    0.4
+#define density_floor                 0.0
+#define sound_speed_squared          1e-3
+#define log10_sigma_diffusive_below  -4.0
+#define log10_sigma_aggressive_above -2.0
 
 
 
@@ -53,14 +56,14 @@ static auto config_template()
     return mara::make_config_template()
     .item("restart",             std::string())
     .item("outdir",              "data")        // directory where data products are written to
-    .item("cpi",                 10.0)          // checkpoint interval (chkpt.????.h5 - snapshot of app_state)
-    .item("dfi",                  1.0)          // diagnostic field interval (diagnostics.????.h5 - for plotting 2d solution data)
-    .item("tsi",                  0.1)          // time series interval
-    .item("tfinal",               1.0)          // simulation stop time
+    .item("cpi",                 10.0)          // checkpoint interval (orbits; chkpt.????.h5 - snapshot of app_state)
+    .item("dfi",                  1.0)          // diagnostic field interval (orbits; diagnostics.????.h5 - for plotting 2d solution data)
+    .item("tsi",                  0.1)          // time series interval (orbits)
+    .item("tfinal",               1.0)          // simulation stop time (orbits)
     .item("N",                    256)          // grid resolution (same in x and y)
-    .item("rk_order",               1)          // 1 or 2
+    .item("rk_order",               2)          // 1 or 2
     .item("reconstruct_method", "plm")          // pcm or plm
-    .item("plm_theta",            1.2)          // theta value (less than 1.4 seems to be safe)
+    .item("plm_theta",            1.6)          // maximum plm_theta value: [1.0, 2.0] (goes to 1.0 at low density)
     .item("riemann",           "hllc")          // hlle or hllc
     .item("softening_radius",     0.1)
     .item("sink_radius",          0.1)
@@ -378,18 +381,45 @@ auto binary::sink_rate_field(mara::unit_time<double> time, const solver_data_t& 
 
 auto binary::estimate_gradient_plm(double plm_theta)
 {
-    return [plm_theta] (double ul, double u0, double ur)
+    return [plm_theta] (
+        const mara::iso2d::primitive_t& pl,
+        const mara::iso2d::primitive_t& p0,
+        const mara::iso2d::primitive_t& pr)
     {
         using std::min;
         using std::fabs;
         auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
         auto sgn = [] (auto x) { return std::copysign(1, x); };
 
-        auto a = plm_theta * (u0 - ul);
-        auto b =       0.5 * (ur - ul);
-        auto c = plm_theta * (ur - u0);
-        return 0.25 * fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
+        auto clamp = [plm_theta] (double x) { return std::max(1.0, std::min(x, plm_theta)); };
+        double s0 = log10_sigma_diffusive_below;
+        double s1 = log10_sigma_aggressive_above;
+        double th = clamp(1.0 + (std::log10(p0.sigma()) - s0) / (s1 - s0));
+
+        auto result = mara::iso2d::primitive_t();
+
+        for (std::size_t i = 0; i < 3; ++i)
+        {
+            auto a =  th * (p0[i] - pl[i]);
+            auto b = 0.5 * (pr[i] - pl[i]);
+            auto c =  th * (pr[i] - p0[i]);
+            result[i] = 0.25 * fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
+        }
+        return result;
     };
+
+    // return [plm_theta] (double ul, double u0, double ur)
+    // {
+    //     using std::min;
+    //     using std::fabs;
+    //     auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
+    //     auto sgn = [] (auto x) { return std::copysign(1, x); };
+
+    //     auto a = plm_theta * (u0 - ul);
+    //     auto b =       0.5 * (ur - ul);
+    //     auto c = plm_theta * (ur - u0);
+    //     return 0.25 * fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
+    // };
 }
 
 auto binary::recover_primitive(const mara::iso2d::conserved_per_area_t& conserved)
@@ -422,7 +452,7 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
             auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
             auto G = P
             | nd::zip_adjacent3_on_axis(axis)
-            | nd::apply(mara::lift(estimate_gradient_plm(plm_theta)))
+            | nd::apply(estimate_gradient_plm(plm_theta))
             | nd::extend_zeros(axis)
             | nd::to_shared();
 
@@ -437,8 +467,6 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
         return [axis, riemann_solver] (auto left_and_right_states)
         {
             using namespace std::placeholders;
-            double sound_speed_squared = 1e-4; // IMPLEMENT: position-dependent sound speed
-
             auto nh = mara::unit_vector_t::on_axis(axis);
             auto riemann = std::bind(riemann_solver, _1, _2, sound_speed_squared, sound_speed_squared, nh);
             return left_and_right_states | nd::apply(riemann);
@@ -706,9 +734,9 @@ static auto create_schedule(const mara::config_t& run_config)
 static auto next_schedule(const mara::schedule_t& schedule, const mara::config_t& run_config, double time)
 {
     auto next_schedule = schedule;
-    auto cpi = run_config.get_double("cpi");
-    auto dfi = run_config.get_double("dfi");
-    auto tsi = run_config.get_double("tsi");
+    auto cpi = run_config.get_double("cpi") * 2 * M_PI;
+    auto dfi = run_config.get_double("dfi") * 2 * M_PI;
+    auto tsi = run_config.get_double("tsi") * 2 * M_PI;
 
     if (time - schedule.last_performed("write_checkpoint")  >= cpi) next_schedule.mark_as_due("write_checkpoint",  cpi);
     if (time - schedule.last_performed("write_diagnostics") >= dfi) next_schedule.mark_as_due("write_diagnostics", dfi);
@@ -764,9 +792,8 @@ auto binary::create_app_state_next_function(const solver_data_t& solver_data)
 
 auto binary::simulation_should_continue(const app_state_t& state)
 {
-    auto time = state.solution_state.time;
-    auto tfinal = state.run_config.get<double>("tfinal");
-    return time < tfinal;
+    auto orbits = state.solution_state.time / (2 * M_PI);
+    return orbits < state.run_config.get<double>("tfinal");
 }
 
 auto binary::run_tasks(const app_state_t& state)
@@ -802,9 +829,9 @@ void binary::print_run_loop_message(const app_state_t& state, mara::perf_diagnos
     state.solver_data.x_vertices.size() *
     state.solver_data.y_vertices.size() / perf.execution_time_ms;
 
-    std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n",
+    std::printf("[%04d] orbits=%3.7lf kzps=%3.2lf\n",
         state.solution_state.iteration.as_integral(),
-        state.solution_state.time.value, kzps);
+        state.solution_state.time.value / (2 * M_PI), kzps);
 }
 
 void binary::prepare_filesystem(const mara::config_t& cfg)

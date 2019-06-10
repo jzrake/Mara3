@@ -484,10 +484,10 @@ inline mara::iso2d::riemann_hllc_variables_t mara::iso2d::compute_hllc_variables
     auto den = sigma_l * (sl - ul) - sigma_r * (sr - ur);
     auto sstar = (press_r - press_l + ul * sigma_l * (sl - ul) - ur * sigma_r * (sr - ur)) / den;
 
-    if (std::isnan(sstar)) //den == 0.0)
-    {
-        throw std::invalid_argument("mara::iso2d::compute_hllc_variables (probably hitting too many density floors)");
-    }
+    // if (std::isnan(sstar))
+    // {
+    //     throw std::invalid_argument("mara::iso2d::compute_hllc_variables (probably hitting too many density floors)");
+    // }
 
     //=========================================================================
     auto r = riemann_hllc_variables_t();
