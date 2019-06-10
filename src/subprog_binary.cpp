@@ -43,9 +43,9 @@
 #include "model_two_body.hpp"
 #define cfl_number                    0.4
 #define density_floor                 0.0
-#define sound_speed_squared          1e-3
-#define log10_sigma_diffusive_below  -4.0
-#define log10_sigma_aggressive_above -2.0
+#define sound_speed_squared          1e-4
+// #define log10_sigma_diffusive_below  -6.0
+// #define log10_sigma_aggressive_above -2.0
 
 
 
@@ -61,21 +61,21 @@ static auto config_template()
     .item("tsi",                  0.1)          // time series interval (orbits)
     .item("tfinal",               1.0)          // simulation stop time (orbits)
     .item("N",                    256)          // grid resolution (same in x and y)
-    .item("rk_order",               2)          // 1 or 2
-    .item("reconstruct_method", "plm")          // pcm or plm
-    .item("plm_theta",            1.6)          // maximum plm_theta value: [1.0, 2.0] (goes to 1.0 at low density)
-    .item("riemann",           "hllc")          // hlle or hllc
-    .item("softening_radius",     0.1)
-    .item("sink_radius",          0.1)
+    .item("rk_order",               2)          // time-stepping Runge-Kutta order: 1 or 2
+    .item("reconstruct_method", "plm")          // zone extrapolation method: pcm or plm
+    .item("plm_theta",            1.8)          // plm theta parameter: [1.0, 2.0]
+    .item("riemann",           "hllc")          // riemann solver to use: hlle or hllc
+    .item("softening_radius",     0.1)          // gravitational softening radius
+    .item("sink_radius",          0.1)          // radius of mass (and momentum) subtraction region
     .item("sink_rate",            1e2)          // sink rate at the point masses (orbital angular frequency)
-    .item("mach_number",         10.0)
-    .item("viscous_alpha",        0.1)
-    .item("domain_radius",        6.0)
-    .item("separation",           1.0)          // binary separation (set to zero to emulate a single body)
+    // .item("mach_number",         10.0)       // not implemented yet
+    // .item("viscous_alpha",        0.1)       // not implemented yet
+    .item("domain_radius",        6.0)          // half-size of square domain
+    .item("separation",           1.0)          // binary separation: 0.0 or 1.0 (zero emulates a single body)
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
-    .item("buffer_damping_rate", 10.0)
-    .item("counter_rotate",         0);
+    .item("buffer_damping_rate", 10.0)          // maximum rate of buffer zone, where solution is driven to initial state
+    .item("counter_rotate",         0);         // retrograde disk option: 0 or 1
 }
 
 
@@ -170,6 +170,8 @@ namespace binary
     struct diagnostic_fields_t
     {
         mara::unit_time<double> time;
+        location_2d_t position_of_mass1;
+        location_2d_t position_of_mass2;
         nd::shared_array<mara::unit_length<double>, 1> x_vertices;
         nd::shared_array<mara::unit_length<double>, 1> y_vertices;
         nd::shared_array<double, 2> sigma;
@@ -370,11 +372,11 @@ auto binary::sink_rate_field(mara::unit_time<double> time, const solver_data_t& 
         auto dx2 = x - mara::make_length(binary.body2.position_x);
         auto dy2 = y - mara::make_length(binary.body2.position_y);
 
-        auto a2 = dx1 * dx1 + dy1 * dy1;
-        auto b2 = dx2 * dx2 + dy2 * dy2;
         auto s2 = sink_radius * sink_radius;
+        auto a2 = (dx1 * dx1 + dy1 * dy1) / s2 / 2.0;
+        auto b2 = (dx2 * dx2 + dy2 * dy2) / s2 / 2.0;
 
-        return sink_rate * 0.5 * (std::exp(-a2 / s2 / 2.0) + std::exp(-b2 / s2 / 2.0));
+        return sink_rate * 0.5 * (std::exp(-a2) + std::exp(-b2));
     };
     return cell_center_cartprod(solver_data.x_vertices, solver_data.y_vertices) | nd::apply(sink);
 }
@@ -391,10 +393,14 @@ auto binary::estimate_gradient_plm(double plm_theta)
         auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
         auto sgn = [] (auto x) { return std::copysign(1, x); };
 
-        auto clamp = [plm_theta] (double x) { return std::max(1.0, std::min(x, plm_theta)); };
-        double s0 = log10_sigma_diffusive_below;
-        double s1 = log10_sigma_aggressive_above;
-        double th = clamp(1.0 + (std::log10(p0.sigma()) - s0) / (s1 - s0));
+        // VARIABLE THETA IS DISABLED
+        // --------------------------
+        // auto clamp = [plm_theta] (double x) { return std::max(1.0, std::min(x, plm_theta)); };
+        // double s0 = log10_sigma_diffusive_below;
+        // double s1 = log10_sigma_aggressive_above;
+        // double th = clamp(1.0 + (std::log10(p0.sigma()) - s0) / (s1 - s0));
+
+        double th = plm_theta;
 
         auto result = mara::iso2d::primitive_t();
 
@@ -407,19 +413,6 @@ auto binary::estimate_gradient_plm(double plm_theta)
         }
         return result;
     };
-
-    // return [plm_theta] (double ul, double u0, double ur)
-    // {
-    //     using std::min;
-    //     using std::fabs;
-    //     auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
-    //     auto sgn = [] (auto x) { return std::copysign(1, x); };
-
-    //     auto a = plm_theta * (u0 - ul);
-    //     auto b =       0.5 * (ur - ul);
-    //     auto c = plm_theta * (ur - u0);
-    //     return 0.25 * fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
-    // };
 }
 
 auto binary::recover_primitive(const mara::iso2d::conserved_per_area_t& conserved)
@@ -559,6 +552,7 @@ auto binary::diagnostic_fields(const solution_state_t& state, const solver_data_
     auto sigma = p | nd::map(std::mem_fn(&mara::iso2d::primitive_t::sigma));
     auto vx = p | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_x));
     auto vy = p | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_y));
+    auto binary = mara::compute_two_body_state(solver_data.binary_params, state.time.value);
 
     auto result = diagnostic_fields_t();
     result.time            = state.time;
@@ -567,6 +561,9 @@ auto binary::diagnostic_fields(const solution_state_t& state, const solver_data_
     result.sigma           = sigma                     | nd::to_shared();
     result.radial_velocity = vx * rhat_x + vy * rhat_y | nd::to_shared();
     result.phi_velocity    = vx * phat_x + vy * phat_y | nd::to_shared();
+    result.position_of_mass1 = location_2d_t {{ binary.body1.position_x, binary.body1.position_y }};
+    result.position_of_mass2 = location_2d_t {{ binary.body2.position_x, binary.body2.position_y }};
+
     return result;
 }
 
@@ -589,6 +586,8 @@ void binary::write_diagnostic_fields(h5::Group&& group, const diagnostic_fields_
     group.write("sigma", diagnostics.sigma);
     group.write("phi_velocity", diagnostics.phi_velocity);
     group.write("radial_velocity", diagnostics.radial_velocity);
+    group.write("position_of_mass1", diagnostics.position_of_mass1);
+    group.write("position_of_mass2", diagnostics.position_of_mass2);
 }
 
 void binary::write_checkpoint(const app_state_t& state, std::string outdir)
