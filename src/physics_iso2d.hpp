@@ -398,16 +398,10 @@ struct mara::iso2d::riemann_hllc_variables_t
 
     auto interface_conserved_state() const
     {
-        auto Ul = Pl.to_conserved_per_area();
-        auto Ur = Pr.to_conserved_per_area();
-        auto Ulstar = Ul_star();
-        auto Urstar = Ur_star();
-
-        if      (0.0   <= sl                 ) return Ul;
-        else if (sl    <= 0.0 && 0.0 <= sstar) return Ulstar;
-        else if (sstar <= 0.0 && 0.0 <= sr   ) return Urstar;
-        else if (sr    <= 0.0                ) return Ur;
-
+        if      (0.0   <= sl                 ) return Ul();
+        else if (sl    <= 0.0 && 0.0 <= sstar) return Ul_star();
+        else if (sstar <= 0.0 && 0.0 <= sr   ) return Ur_star();
+        else if (sr    <= 0.0                ) return Ur();
         throw;
     }
 };

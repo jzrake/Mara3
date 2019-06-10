@@ -43,8 +43,8 @@ namespace mara
     {
         double separation     = 1.0;
         double total_mass     = 1.0;
-        double eccentricity   = 0.0;
         double mass_ratio     = 1.0;
+        double eccentricity   = 0.0;
     };
 
 

@@ -67,6 +67,9 @@ static auto config_template()
     .item("mach_number",         10.0)
     .item("viscous_alpha",        0.1)
     .item("domain_radius",        6.0)
+    .item("separation",           1.0)          // binary separation (set to zero to emulate a single body)
+    .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
+    .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
     .item("buffer_damping_rate", 10.0)
     .item("counter_rotate",         0);
 }
@@ -76,34 +79,43 @@ static auto config_template()
 
 namespace binary
 {
+
+
     //=========================================================================
     using location_2d_t     = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
     using velocity_2d_t     = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0, -1, double>, 2>;
     using acceleration_2d_t = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0, -2, double>, 2>;
     using force_2d_t        = mara::covariant_sequence_t<mara::dimensional_value_t<1, 1, -2, double>, 2>;
 
+
+    //=========================================================================
     enum class reconstruct_method_t
     {
         plm,
         pcm,
     };
 
+
+    //=========================================================================
     enum class riemann_solver_t
     {
         hlle,
         hllc,
     };
 
+
     //=========================================================================
     struct solver_data_t
     {
         mara::unit_rate<double> sink_rate;
         mara::unit_length<double> sink_radius;
+        mara::unit_length<double> softening_radius;
         mara::unit_time<double> recommended_time_step;
 
         int rk_order;
         reconstruct_method_t reconstruct_method;
         riemann_solver_t riemann_solver;
+        mara::two_body_parameters_t binary_params;
 
         nd::shared_array<mara::unit_length<double>, 1> x_vertices;
         nd::shared_array<mara::unit_length<double>, 1> y_vertices;
@@ -159,15 +171,6 @@ namespace binary
         nd::shared_array<double, 2> radial_velocity;
     };
 
-    //=========================================================================
-    struct point_mass_t
-    {
-        acceleration_2d_t gravitational_acceleration_at_point(location_2d_t field_point) const;
-        location_2d_t mass_location = {{ 0.0, 0.0 }};
-        mara::unit_mass<double> mass = 1.0;
-        mara::unit_length<double> softening_radius = 0.1;
-    };
-
 
     //=========================================================================
     template<typename VertexArrayType>auto cell_surface_area(const VertexArrayType& xv, const VertexArrayType& yv);
@@ -210,27 +213,6 @@ namespace binary
 }
 
 using namespace binary;
-
-
-
-
-/**
- * @brief      Return the gravitational acceleration of a point mass at the
- *             given field point.
- *
- * @param[in]  field_point  The field point
- *
- * @return     The acceleration, whose type is ~
- *             covariant_sequence<acceleration, 2>
- */
-acceleration_2d_t binary::point_mass_t::gravitational_acceleration_at_point(location_2d_t field_point) const
-{
-    auto G   = mara::dimensional_value_t<3, -1, -2, double>(1.0);
-    auto dr  = field_point - mass_location;
-    auto dr2 = (dr[0] * dr[0] + dr[1] * dr[1]).value;
-    auto rs2 = (softening_radius * softening_radius).value;
-    return -dr / mara::make_volume(std::pow(dr2 + rs2, 1.5)) * G * mass;
-}
 
 
 
@@ -348,28 +330,47 @@ auto binary::buffer_damping_rate_at_position(const mara::config_t& cfg)
     };
 }
 
-auto binary::gravitational_acceleration_field(mara::unit_time<double> /*time*/, const solver_data_t& solver_data)
+auto binary::gravitational_acceleration_field(mara::unit_time<double> time, const solver_data_t& solver_data)
 {
-    auto star = point_mass_t();
+    auto binary = mara::compute_two_body_state(solver_data.binary_params, time.value);
+    auto softening_radius = solver_data.softening_radius;
+    auto accel = [softening_radius] (const mara::point_mass_t& body, auto x, auto y)
+    {
+        auto field_point   = location_2d_t {{ x, y }};
+        auto mass_location = location_2d_t {{ body.position_x, body.position_y }};
 
-    return nd::cartesian_product(
-        solver_data.x_vertices | nd::midpoint_on_axis(0),
-        solver_data.y_vertices | nd::midpoint_on_axis(0))
-    | nd::apply([] (auto x, auto y) { return location_2d_t {{ x, y }}; })
-    | nd::map([star] (auto field_point) { return star.gravitational_acceleration_at_point(field_point); });
+        auto G   = mara::dimensional_value_t<3, -1, -2, double>(1.0);
+        auto M   = mara::make_mass(body.mass);
+        auto dr  = field_point - mass_location;
+        auto dr2 = dr[0] * dr[0] + dr[1] * dr[1];
+        auto rs2 = softening_radius * softening_radius;
+        auto den = mara::make_dimensional<3, 0, 0>(std::pow((dr2 + rs2).value, 1.5)); // TODO: write this in a nicer format
+        return -dr / den * G * M;
+    };
+    auto acceleration = [binary, accel] (auto x, auto y)
+    {
+        return accel(binary.body1, x, y) + accel(binary.body2, x, y);
+    };
+    return cell_center_cartprod(solver_data.x_vertices, solver_data.y_vertices) | nd::apply(acceleration);
 }
 
 auto binary::sink_rate_field(mara::unit_time<double> time, const solver_data_t& solver_data)
 {
-    // IMPLEMENT: sink position dependent on binary position
-
-    auto sink_rate_at_position = [sink_radius=solver_data.sink_radius, sink_rate=solver_data.sink_rate] (auto x, auto y)
+    auto binary = mara::compute_two_body_state(solver_data.binary_params, time.value);
+    auto sink = [binary, sink_radius=solver_data.sink_radius, sink_rate=solver_data.sink_rate] (auto x, auto y)
     {
-        auto r2 = x * x + y * y;
+        auto dx1 = x - mara::make_length(binary.body1.position_x);
+        auto dy1 = y - mara::make_length(binary.body1.position_y);
+        auto dx2 = x - mara::make_length(binary.body2.position_x);
+        auto dy2 = y - mara::make_length(binary.body2.position_y);
+
+        auto a2 = dx1 * dx1 + dy1 * dy1;
+        auto b2 = dx2 * dx2 + dy2 * dy2;
         auto s2 = sink_radius * sink_radius;
-        return sink_rate * std::exp(-r2 / s2 / 2.0);
+
+        return sink_rate * 0.5 * (std::exp(-a2 / s2 / 2.0) + std::exp(-b2 / s2 / 2.0));
     };
-    return cell_center_cartprod(solver_data.x_vertices, solver_data.y_vertices) | nd::apply(sink_rate_at_position);
+    return cell_center_cartprod(solver_data.x_vertices, solver_data.y_vertices) | nd::apply(sink);
 }
 
 auto binary::estimate_gradient_plm(double ul, double u0, double ur)
@@ -620,10 +621,12 @@ auto binary::create_solver_data(const mara::config_t& cfg)
     auto dt = dx / nd::max(v0) * 0.5 * cfl_number;
 
     auto result = solver_data_t();
-    result.sink_radius           = cfg.get_double("sink_radius");
     result.sink_rate             = cfg.get_double("sink_rate");
+    result.sink_radius           = cfg.get_double("sink_radius");
+    result.softening_radius      = cfg.get_double("softening_radius");
     result.rk_order              = cfg.get_int("rk_order");
     result.recommended_time_step = dt;
+
     result.x_vertices = xv | nd::to_shared();
     result.y_vertices = yv | nd::to_shared();
     result.initial_conserved_field   = u | nd::to_shared();
@@ -636,6 +639,11 @@ auto binary::create_solver_data(const mara::config_t& cfg)
     if      (cfg.get_string("reconstruct_method") == "pcm") result.reconstruct_method = reconstruct_method_t::pcm;
     else if (cfg.get_string("reconstruct_method") == "plm") result.reconstruct_method = reconstruct_method_t::plm;
     else throw std::invalid_argument("invalid reconstruct_method '" + cfg.get_string("reconstruct_method") + "', must be plm or pcm");
+
+    result.binary_params.total_mass   = 1.0;
+    result.binary_params.separation   = cfg.get_double("separation");
+    result.binary_params.mass_ratio   = cfg.get_double("mass_ratio");
+    result.binary_params.eccentricity = cfg.get_double("eccentricity");
 
     return result;
 }
