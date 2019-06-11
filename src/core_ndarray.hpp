@@ -356,6 +356,11 @@ public:
         }
         return result;
     }
+
+    shape_t operator*(std::size_t scale) const
+    {
+        return this->transform([scale] (auto ni) { return ni * scale; });
+    }
 };
 
 
@@ -2434,7 +2439,8 @@ public:
     template<typename T> auto operator>=(T&& A) const { return bin_op(std::forward<T>(A), std::greater_equal<>()); }
     template<typename T> auto operator<(T&& A) const { return bin_op(std::forward<T>(A), std::less<>()); }
     template<typename T> auto operator>(T&& A) const { return bin_op(std::forward<T>(A), std::greater<>()); }
-    auto operator-() const { return *this | map(std::negate<>()); }
+    auto operator+() const { return *this | map([] (auto&& x) { return +x; }); }
+    auto operator-() const { return *this | map([] (auto&& x) { return -x; }); }
     auto operator!() const { return *this | map(std::logical_not<>()); }
 
 

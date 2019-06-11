@@ -33,6 +33,7 @@
 #include "core_geometric.hpp"
 #include "core_matrix.hpp"
 #include "core_sequence.hpp"
+#include "core_alternative.hpp"
 
 
 
@@ -59,6 +60,31 @@ TEST_CASE("can construct matrix from initializer list", "[matrix]")
         {0, 0},
     }};
     REQUIRE(M2.num_cols == 2);
+}
+
+TEST_CASE("alternative types work correctly", "[arithmetic_alternative]")
+{
+    struct meta_data_t
+    {
+        bool operator==(const meta_data_t& other) const { return value == other.value; }
+        int value = 0;
+    };
+
+    auto A = mara::arithmetic_alternative_t<double, meta_data_t>(1.0);
+    auto B = mara::arithmetic_alternative_t<int, meta_data_t>(2);
+    auto C = A + B;
+    static_assert(std::is_same<decltype(C)::value_type, double>::value);
+    static_assert(std::is_same<decltype(C)::alternative_type, meta_data_t>::value);
+    REQUIRE(C.value() == 3.0);
+    REQUIRE_THROWS(C.alt());
+
+    auto D1 = mara::arithmetic_alternative_t<int, meta_data_t>(meta_data_t{1});
+    auto D2 = mara::arithmetic_alternative_t<int, meta_data_t>(meta_data_t{2});
+    REQUIRE_NOTHROW(D1.alt());  // OK, no value
+    REQUIRE_NOTHROW(D1 + D1);   // OK, same alternate
+    REQUIRE_THROWS(D1.value()); // Bad, no value
+    REQUIRE_THROWS(C + D1);     // Bad, primary and alternate
+    REQUIRE_THROWS(D1 + D2);    // Bad, different alternates
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
