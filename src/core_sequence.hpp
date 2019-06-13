@@ -37,9 +37,9 @@
 //=============================================================================
 namespace mara
 {
-    template<typename ValueType, std::size_t Rank, typename DerivedType> class fixed_length_sequence_t;
-    template<typename ValueType, std::size_t Rank, typename DerivedType> class arithmetic_sequence_t;
-    template<typename ValueType, std::size_t Rank> class covariant_sequence_t;
+    template<typename ValueType, std::size_t Rank, typename DerivedType> struct fixed_length_sequence_t;
+    template<typename ValueType, std::size_t Rank, typename DerivedType> struct arithmetic_sequence_t;
+    template<typename ValueType, std::size_t Rank> struct covariant_sequence_t;
 
     template<typename ValueType, std::size_t Rank, typename DerivedType>
     auto to_string(const fixed_length_sequence_t<ValueType, Rank, DerivedType>& sequence);
@@ -47,39 +47,13 @@ namespace mara
     template<typename Function>
     auto lift(Function f);
 
-    template<class D=void, class... Types>
-    constexpr auto make_std_array(Types&&... t);
+    template<typename... Args, typename ValueType=std::common_type_t<Args...>>
+    auto make_std_array(Args... args);
+
+    template<typename... Args, typename ValueType=std::common_type_t<Args...>>
+    auto make_sequence(Args&&... args);
 }
 
-
-
-
-//=============================================================================
-namespace mara::sequence::details
-{
-    template<class>
-    struct is_ref_wrapper : std::false_type {};
-
-    template<class T>
-    struct is_ref_wrapper<std::reference_wrapper<T>> : std::true_type {};
-
-    template<class T>
-    using not_ref_wrapper = std::negation<is_ref_wrapper<std::decay_t<T>>>;
-
-    template<class D, class...>
-    struct return_type_helper { using type = D; };
-
-    template<class... Types>
-    struct return_type_helper<void, Types...> : std::common_type<Types...>
-    {
-        static_assert(std::conjunction_v<not_ref_wrapper<Types>...>,
-                      "types cannot contain reference_wrapper's when D is void");
-    };
-
-    template<class D, class... Types>
-    using return_type = std::array<typename return_type_helper<D, Types...>::type, sizeof...(Types)>;
-}
- 
 
 
 
@@ -94,62 +68,11 @@ namespace mara::sequence::details
  * @tparam     DerivedType  The CRTP class (google 'curiously recurring template pattern')
  */
 template<typename ValueType, std::size_t Rank, typename DerivedType>
-class mara::fixed_length_sequence_t
+struct mara::fixed_length_sequence_t
 {
-public:
     using value_type = ValueType;
 
     //=========================================================================
-    template<typename Container>
-    static DerivedType from_range(Container container)
-    {
-        DerivedType result;
-        std::size_t n = 0;
-
-        if (container.size() != Rank)
-        {
-            throw std::invalid_argument("size of container does not match rank");
-        }
-        for (auto item : container)
-        {
-            result.memory[n++] = item;
-        }
-        return result;
-    }
-
-    static DerivedType uniform(ValueType arg)
-    {
-        DerivedType result;
-
-        for (std::size_t n = 0; n < Rank; ++n)
-        {
-            result.memory[n] = arg;
-        }
-        return result;
-    }
-
-    fixed_length_sequence_t()
-    {
-        for (std::size_t n = 0; n < Rank; ++n)
-        {
-            memory[n] = ValueType();
-        }
-    }
-
-    fixed_length_sequence_t(std::initializer_list<ValueType> args)
-    {
-        if (args.size() != Rank)
-        {
-            throw std::invalid_argument("size of initializer list does not match rank");
-        }
-        std::size_t n = 0;
-
-        for (auto a : args)
-        {
-            memory[n++] = a;
-        }
-    }
-
     bool operator==(const DerivedType& other) const
     { for (std::size_t n = 0; n < Rank; ++n) { if (memory[n] != other[n]) return false; } return true; }
 
@@ -170,7 +93,7 @@ public:
     template<typename Function>
     auto transform(Function&& fn) const
     {
-        DerivedType result;
+        auto result = DerivedType();
 
         for (std::size_t n = 0; n < Rank; ++n)
         {
@@ -179,8 +102,6 @@ public:
         return result;
     }
 
-private:
-    //=========================================================================
     ValueType memory[Rank];
 };
 
@@ -207,7 +128,7 @@ private:
  *             type are not considered equal by the compiler).
  */
 template<typename ValueType, std::size_t Rank, typename DerivedType>
-class mara::arithmetic_sequence_t : public fixed_length_sequence_t<ValueType, Rank, DerivedType>
+struct mara::arithmetic_sequence_t : public fixed_length_sequence_t<ValueType, Rank, DerivedType>
 {
 public:
 
@@ -219,7 +140,8 @@ public:
     DerivedType operator/(const ValueType& other) const { return binary_op(other, std::divides<>()); }
     DerivedType operator+(const DerivedType& other) const { return binary_op(other, std::plus<>()); }
     DerivedType operator-(const DerivedType& other) const { return binary_op(other, std::minus<>()); }
-    DerivedType operator-() const { return unary_op(std::negate<>()); }
+    DerivedType operator+() const { return unary_op([] (auto&& x) { return x; }); }
+    DerivedType operator-() const { return unary_op([] (auto&& x) { return x; }); }
 
 private:
     //=========================================================================
@@ -282,12 +204,9 @@ private:
  *             type.
  */
 template<typename ValueType, std::size_t Rank>
-class mara::covariant_sequence_t final : public fixed_length_sequence_t<ValueType, Rank, covariant_sequence_t<ValueType, Rank>>
+struct mara::covariant_sequence_t final : public fixed_length_sequence_t<ValueType, Rank, covariant_sequence_t<ValueType, Rank>>
 {
 public:
-
-    //=========================================================================
-    using fixed_length_sequence_t<ValueType, Rank, covariant_sequence_t<ValueType, Rank>>::fixed_length_sequence_t;
 
     //=========================================================================
     template <typename T> auto operator*(const T& a) const { return binary_op(a, std::multiplies<>()); }
@@ -353,11 +272,11 @@ public:
 
 private:
     //=========================================================================
-    template<typename Function>
-    auto binary_op(const covariant_sequence_t& v, Function&& fn) const
+    template<typename T, typename Function>
+    auto binary_op(const covariant_sequence_t<T, Rank>& v, Function&& fn) const
     {
         const auto& _ = *this;
-        auto result = covariant_sequence_t();
+        auto result = covariant_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>();
 
         for (std::size_t n = 0; n < Rank; ++n)
         {
@@ -434,10 +353,31 @@ auto mara::to_string(const mara::fixed_length_sequence_t<ValueType, Rank, Derive
  * @note       See https://en.cppreference.com/w/cpp/experimental/make_array for
  *             implementation.
  */
-template<class D, class... Types>
-constexpr auto mara::make_std_array(Types&&... t)
+template<typename... Args, typename ValueType>
+auto mara::make_std_array(Args... args)
 {
-    return mara::sequence::details::return_type<D, Types...> { std::forward<Types>(t)... };
+    return std::array<ValueType, sizeof...(Args)> {ValueType(args)...};
+}
+
+
+
+
+/**
+ * @brief      Make a new sequence with inferred type and size.
+ *
+ * @param[in]  args       The elements
+ *
+ * @tparam     Args       The element types
+ * @tparam     ValueType  The inferred type, if a common type can be inferred
+ *
+ * @return     The sequence
+ * @note       You can override the inferred value type by doing e.g.
+ *             make_sequence<size_t>(1, 2).
+ */
+template<typename... Args, typename ValueType>
+auto mara::make_sequence(Args&&... args)
+{
+    return covariant_sequence_t<ValueType, sizeof...(Args)> {{ValueType(args)...}};
 }
 
 

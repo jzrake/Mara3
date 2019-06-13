@@ -409,7 +409,7 @@ auto binary::estimate_gradient_plm(double plm_theta)
             auto a =  th * (p0[i] - pl[i]);
             auto b = 0.5 * (pr[i] - pl[i]);
             auto c =  th * (pr[i] - p0[i]);
-            result[i] = 0.25 * fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
+            result[i] = 0.25 * std::fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
         }
         return result;
     };
@@ -474,9 +474,8 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
         auto dA = cell_surface_area(solver_data.x_vertices, solver_data.y_vertices);
         auto u0 = state.conserved;
         auto p0 = u0 / dA | nd::map(recover_primitive) | nd::to_shared();
-
-        auto [dx, __1] = nd::meshgrid(solver_data.x_vertices | nd::difference_on_axis(0), solver_data.y_vertices);
-        auto [__2, dy] = nd::meshgrid(solver_data.x_vertices, solver_data.y_vertices | nd::difference_on_axis(0));
+        auto dx = nd::get<0>(nd::cartesian_product(solver_data.x_vertices | nd::difference_on_axis(0), solver_data.y_vertices));
+        auto dy = nd::get<1>(nd::cartesian_product(solver_data.x_vertices, solver_data.y_vertices | nd::difference_on_axis(0)));
         auto cell_mass = u0 | nd::map([] (auto u) { return u[0]; });
 
         auto lx = p0 | nd::extend_periodic_on_axis(0) | extrapolate(0) | fhat_x | nd::multiply(-dy) | nd::difference_on_axis(0);

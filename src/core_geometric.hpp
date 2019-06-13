@@ -92,11 +92,11 @@ public:
     auto operator*(ScalarType scale) const
     {
         return covariant_sequence_t<ScalarType, 3>
-        {
+        {{
             n1 * scale,
             n2 * scale,
             n3 * scale,   
-        };
+        }};
     }
 
     const double& get_n1() const { return n1; }

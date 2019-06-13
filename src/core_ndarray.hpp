@@ -251,6 +251,16 @@ public:
         return result;
     }
 
+    static DerivedType range()
+    {
+        auto result = DerivedType();
+
+        for (std::size_t n = 0; n < Rank; ++n)
+            result[n] = n;
+
+        return result;
+    };
+
     short_sequence_t()
     {
         for (std::size_t n = 0; n < Rank; ++n)
@@ -357,10 +367,8 @@ public:
         return result;
     }
 
-    shape_t operator*(std::size_t scale) const
-    {
-        return this->transform([scale] (auto ni) { return ni * scale; });
-    }
+    shape_t operator*(std::size_t scale) const { return this->transform([scale] (auto ni) { return ni * scale; }); }
+    shape_t operator+(shape_t<Rank> shape) const { return this->range().transform([i=*this, s=shape] (auto n) { return i[n] + s[n]; }); }
 };
 
 
@@ -393,6 +401,10 @@ public:
     bool operator> (const index_t<Rank>& b) const { for (std::size_t i = 0; i < Rank; ++i) { if (! (this->operator[](i) >  b[i])) return false; } return true; }
     bool operator<=(const index_t<Rank>& b) const { for (std::size_t i = 0; i < Rank; ++i) { if (! (this->operator[](i) <= b[i])) return false; } return true; }
     bool operator>=(const index_t<Rank>& b) const { for (std::size_t i = 0; i < Rank; ++i) { if (! (this->operator[](i) >= b[i])) return false; } return true; }
+
+    index_t operator*(std::size_t scale) const { return this->transform([scale] (auto ni) { return ni * scale; }); }
+    index_t operator*(shape_t<Rank> shape) const { return this->range().transform([i=*this, s=shape] (auto n) { return i[n] * s[n]; }); }
+    index_t operator+(index_t<Rank> index) const { return this->range().transform([i=*this, s=index] (auto n) { return i[n] + s[n]; }); }
 };
 
 
@@ -980,7 +992,7 @@ public:
 
         auto mapping = [the_operator=the_operator, axis_to_reduce=axis_to_reduce, array] (auto&& index)
         {
-            auto axes_to_freeze = range_index<R>().remove_elements(make_index(axis_to_reduce));
+            auto axes_to_freeze = index_t<R>::range().remove_elements(make_index(axis_to_reduce));
             auto freezer = axis_freezer_t<R - 1>(axes_to_freeze).at_index(index);
             return the_operator(freezer(array));
         };
@@ -996,17 +1008,6 @@ public:
 
 private:
     //=========================================================================
-    template<std::size_t Rank>
-    static index_t<Rank> range_index()
-    {
-        auto result = index_t<Rank>();
-
-        for (std::size_t n = 0; n < Rank; ++n)
-            result[n] = n;
-
-        return result;
-    };
-
     std::size_t axis_to_reduce;
     OperatorType the_operator;
 };
@@ -2571,7 +2572,7 @@ auto nd::divvy(std::size_t num_groups)
 
 
 template<std::size_t Rank>
-auto nd::to_string(const nd::index_t<Rank>& index)
+auto nd::to_string(const index_t<Rank>& index)
 {
     auto result = std::string("[ ");
 
@@ -2583,7 +2584,7 @@ auto nd::to_string(const nd::index_t<Rank>& index)
 }
 
 template<std::size_t Rank>
-auto nd::to_string(const nd::shape_t<Rank>& index)
+auto nd::to_string(const shape_t<Rank>& index)
 {
     auto result = std::string("< ");
 
@@ -2595,7 +2596,7 @@ auto nd::to_string(const nd::shape_t<Rank>& index)
 }
 
 template<std::size_t Rank>
-auto nd::to_string(const nd::access_pattern_t<Rank>& region)
+auto nd::to_string(const access_pattern_t<Rank>& region)
 {
     return to_string(region.start) + " -> " + to_string(region.final);
 }

@@ -143,7 +143,7 @@ struct mara::iso2d::primitive_t : public mara::arithmetic_sequence_t<double, 3, 
 
     auto velocity() const
     {
-        return covariant_sequence_t<double, 3>{velocity_x(), velocity_y(), 0.0};
+        return covariant_sequence_t<double, 3> {{velocity_x(), velocity_y(), 0.0}};
     }
 
 
@@ -388,21 +388,21 @@ struct mara::iso2d::riemann_hllc_variables_t
     auto Ul_star() const
     {
         return conserved_per_area_t
-        {
+        {{
             sigma_l * (sl - ul) / (sl - sstar),
             sigma_l * (sl - ul) / (sl - sstar) * (sstar * nhat[0] + v_perp_l[0]),
             sigma_l * (sl - ul) / (sl - sstar) * (sstar * nhat[1] + v_perp_l[1]),
-        };
+        }};
     }
 
     auto Ur_star() const
     {
         return conserved_per_area_t
-        {
+        {{
             sigma_r * (sr - ur) / (sr - sstar),
             sigma_r * (sr - ur) / (sr - sstar) * (sstar * nhat[0] + v_perp_r[0]),
             sigma_r * (sr - ur) / (sr - sstar) * (sstar * nhat[1] + v_perp_r[1]),
-        };
+        }};
     }
 
     auto interface_flux() const

@@ -28,6 +28,7 @@
 
 #pragma once
 #include <exception>
+#include <variant>
 
 
 
@@ -98,13 +99,13 @@ public:
     using alternative_type = AltType;
 
     //=========================================================================
-    arithmetic_alternative_t(ValueType value) : __has_value(true), __value(value) {}
-    arithmetic_alternative_t(AltType alt)     : __has_value(false), __alt(alt) {}
-    arithmetic_alternative_t()                : __has_value(false) {}
+    arithmetic_alternative_t(ValueType value) : impl(value) {}
+    arithmetic_alternative_t(AltType alt)     : impl(alt) {}
+    arithmetic_alternative_t() {}
 
     bool has_value() const
     {
-        return __has_value;
+        return impl.index() == 0;
     }
 
     const ValueType& value() const
@@ -113,7 +114,7 @@ public:
         {
             throw bad_arithmetic_alternative_access("no value");
         }
-        return __value;
+        return std::get<0>(impl);
     }
 
     const AltType& alt() const
@@ -122,7 +123,13 @@ public:
         {
             throw bad_arithmetic_alternative_access("no alternative value");
         }
-        return __alt;
+        return std::get<1>(impl);
+    }
+
+    template<typename Function>
+    auto map(Function&& fn) const
+    {
+        return unary_op(fn);
     }
 
     template<typename S> auto operator+ (const arithmetic_alternative_t<S, AltType>& other) const { return bin_op(other, std::plus<>()); }
@@ -170,7 +177,5 @@ private:
         return value;
     }
 
-    bool __has_value;
-    ValueType __value;
-    AltType __alt;
+    std::variant<ValueType, AltType> impl;    
 };
