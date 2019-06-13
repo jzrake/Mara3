@@ -91,7 +91,11 @@ struct mara::fixed_length_sequence_t
     ValueType& operator[](std::size_t n) { return memory[n]; }
 
     template<std::size_t Index>
-    const ValueType& get() const { return memory[Index]; }
+    const ValueType& get() const
+    {
+        static_assert(Index < Rank, "mara::fixed_length_sequence_t out of range");
+        return memory[Index];
+    }
 
     ValueType memory[Rank];
 };
@@ -177,29 +181,40 @@ struct mara::arithmetic_sequence_t : public fixed_length_sequence_t<ValueType, R
 
 
 /**
- * @brief      Class for working with sequences of dimensional arithmetic types.
+ * @brief      Class for working with sequences of arithmetic types.
  *
  * @tparam     Rank       The dimensionality
  * @tparam     ValueType  The underlying value type
  *
- * @note       You can add/subtract sequences of the same rank and value type,
- *             and you can multiply/divide by scalars that multiply/divide the
- *             value type. These operations are covariant in the value type -
- *             they return another sequence with the same rank, but a value type
- *             determined by the result of the binary operation. This class is
- *             marked final - it is not inherited by base classes, so type
- *             identity is defined by the rank and the identity of the value
- *             type.
+ * @note       Arithmetic operations on the underlying value type are preserved
+ *             by the container: e.g. since multiplies(double, int) -> double,
+ *             we also have multiplies(seq<double, Rank>, seq<int, Rank>) ->
+ *             seq<double, Rank>). This class is marked final; unlike
+ *             arithmetic_sequence_t (which must be inherited), the type
+ *             identity of covariant_sequence_t is defined by the rank and the
+ *             identity of the value type.
  */
 template<typename ValueType, std::size_t Rank>
 struct mara::covariant_sequence_t final : public fixed_length_sequence_t<ValueType, Rank, covariant_sequence_t<ValueType, Rank>>
 {
     //=========================================================================
-    template <typename T> auto operator*(const T& a) const { return binary_op(a, std::multiplies<>()); }
-    template <typename T> auto operator/(const T& a) const { return binary_op(a, std::divides<>()); }
-    auto operator+(const covariant_sequence_t& v) const { return binary_op(v, std::plus<>()); }
-    auto operator-(const covariant_sequence_t& v) const { return binary_op(v, std::minus<>()); }
-    auto operator-() const { return unary_op(std::negate<>()); }
+    template<typename T> auto operator* (const T& a) const { return binary_op(a, std::multiplies<>()); }
+    template<typename T> auto operator/ (const T& a) const { return binary_op(a, std::divides<>()); }
+    template<typename T> auto operator+ (const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::plus<>()); }
+    template<typename T> auto operator- (const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::minus<>()); }
+    template<typename T> auto operator* (const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::multiplies<>()); }
+    template<typename T> auto operator/ (const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::divides<>()); }
+    template<typename T> auto operator&&(const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::logical_and<>()); }
+    template<typename T> auto operator||(const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::logical_or<>()); }
+    template<typename T> auto operator==(const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::equal_to<>()); }
+    template<typename T> auto operator!=(const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::not_equal_to<>()); }
+    template<typename T> auto operator<=(const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::less_equal<>()); }
+    template<typename T> auto operator>=(const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::greater_equal<>()); }
+    template<typename T> auto operator< (const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::less<>()); }
+    template<typename T> auto operator> (const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::greater<>()); }
+
+    auto operator+() const { return unary_op([] (auto&& x) { return +x; }); }
+    auto operator-() const { return unary_op([] (auto&& x) { return -x; }); }
 
     template<typename Function>
     auto transform(Function&& fn) const
