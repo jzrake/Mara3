@@ -90,17 +90,8 @@ struct mara::fixed_length_sequence_t
     ValueType* end() { return memory + Rank; }
     ValueType& operator[](std::size_t n) { return memory[n]; }
 
-    template<typename Function>
-    auto transform(Function&& fn) const
-    {
-        auto result = DerivedType();
-
-        for (std::size_t n = 0; n < Rank; ++n)
-        {
-            result[n] = fn(memory[n]);
-        }
-        return result;
-    }
+    template<std::size_t Index>
+    const ValueType& get() const { return memory[Index]; }
 
     ValueType memory[Rank];
 };
@@ -130,11 +121,6 @@ struct mara::fixed_length_sequence_t
 template<typename ValueType, std::size_t Rank, typename DerivedType>
 struct mara::arithmetic_sequence_t : public fixed_length_sequence_t<ValueType, Rank, DerivedType>
 {
-public:
-
-    //=========================================================================
-    using fixed_length_sequence_t<ValueType, Rank, DerivedType>::fixed_length_sequence_t;
-
     //=========================================================================
     DerivedType operator*(const ValueType& other) const { return binary_op(other, std::multiplies<>()); }
     DerivedType operator/(const ValueType& other) const { return binary_op(other, std::divides<>()); }
@@ -143,45 +129,47 @@ public:
     DerivedType operator+() const { return unary_op([] (auto&& x) { return x; }); }
     DerivedType operator-() const { return unary_op([] (auto&& x) { return x; }); }
 
-private:
-    //=========================================================================
     template<typename Function>
-    auto binary_op(const DerivedType& other, Function&& fn) const
+    auto transform(Function&& fn) const
     {
-        const auto& _ = *this;
-        auto result = DerivedType();
-
-        for (std::size_t n = 0; n < Rank; ++n)
-        {
-            result[n] = fn(_[n], other[n]);
-        }
-        return result;
+        return unary_op(std::forward<Function>(fn));
     }
 
-    template<typename Function>
-    auto binary_op(const ValueType& value, Function&& fn) const
+    //=========================================================================
+    template<typename Function, std::size_t... Is>
+    auto unary_op_impl(Function&& fn, std::index_sequence<Is...>) const
     {
-        const auto& _ = *this;
-        auto result = DerivedType();
+        return DerivedType {{{fn(this->template get<Is>())...}}};
+    }
 
-        for (std::size_t n = 0; n < Rank; ++n)
-        {
-            result[n] = fn(_[n], value);
-        }
-        return result;
+    template<typename Function, std::size_t... Is>
+    auto binary_op_impl(Function&& fn, const ValueType& a, std::index_sequence<Is...>) const
+    {
+        return DerivedType {{{fn(this->template get<Is>(), a)...}}};
+    }
+
+    template<typename Function, std::size_t... Is>
+    auto binary_op_impl(Function&& fn, const DerivedType& v, std::index_sequence<Is...>) const
+    {
+        return DerivedType {{{fn(this->template get<Is>(), v.template get<Is>())...}}};
     }
 
     template<typename Function>
     auto unary_op(Function&& fn) const
     {
-        const auto& _ = *this;
-        auto result = DerivedType();
+        return unary_op_impl(fn, std::make_index_sequence<Rank>());
+    }
 
-        for (std::size_t n = 0; n < Rank; ++n)
-        {
-            result[n] = fn(_[n]);
-        }
-        return result;
+    template<typename Function>
+    auto binary_op(const ValueType& a, Function&& fn) const
+    {
+        return binary_op_impl(fn, a, std::make_index_sequence<Rank>());
+    }
+
+    template<typename Function>
+    auto binary_op(const DerivedType& v, Function&& fn) const
+    {
+        return binary_op_impl(fn, v, std::make_index_sequence<Rank>());
     }
 };
 
@@ -206,8 +194,6 @@ private:
 template<typename ValueType, std::size_t Rank>
 struct mara::covariant_sequence_t final : public fixed_length_sequence_t<ValueType, Rank, covariant_sequence_t<ValueType, Rank>>
 {
-public:
-
     //=========================================================================
     template <typename T> auto operator*(const T& a) const { return binary_op(a, std::multiplies<>()); }
     template <typename T> auto operator/(const T& a) const { return binary_op(a, std::divides<>()); }
@@ -215,100 +201,50 @@ public:
     auto operator-(const covariant_sequence_t& v) const { return binary_op(v, std::minus<>()); }
     auto operator-() const { return unary_op(std::negate<>()); }
 
-
-    /**
-     * @brief      Return a new sequence by mapping the elements of this one
-     *             through a function f, which may return a value type other
-     *             than the type of this sequence's elements.
-     *
-     * @param      fn        The function to transform by
-     *
-     * @tparam     Function  The type of the function object
-     *
-     * @return     The new sequence
-     */
     template<typename Function>
     auto transform(Function&& fn) const
     {
         return unary_op(std::forward<Function>(fn));
     }
 
-
-    /**
-     * @brief      Return a new sequence built from the final Rank - 1 elements
-     *             of this one.
-     *
-     * @return     The new sequence
-     */
-    auto drop_first() const
-    {
-        auto result = covariant_sequence_t<ValueType, Rank - 1>();
-
-        for (std::size_t n = 0; n < Rank - 1; ++n)
-        {
-            result.memory[n] = this->operator[](n + 1);
-        }
-        return result;
-    }
-
-
-    /**
-     * @brief      Return a new sequence built from the first Rank - 1 elements
-     *             of this one.
-     *
-     * @return     The new sequence
-     */
-    auto drop_final() const
-    {
-        auto result = covariant_sequence_t<ValueType, Rank - 1>();
-
-        for (std::size_t n = 0; n < Rank - 1; ++n)
-        {
-            result.memory[n] = this->operator[](n);
-        }
-        return result;
-    }
-
-
-private:
     //=========================================================================
-    template<typename T, typename Function>
-    auto binary_op(const covariant_sequence_t<T, Rank>& v, Function&& fn) const
+    template<typename Function, std::size_t... Is>
+    auto unary_op_impl(Function&& fn, std::index_sequence<Is...>) const
     {
-        const auto& _ = *this;
-        auto result = covariant_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>();
-
-        for (std::size_t n = 0; n < Rank; ++n)
-        {
-            result[n] = fn(_[n], v[n]);
-        }
-        return result;
+        using result_type = covariant_sequence_t<std::invoke_result_t<Function, ValueType>, Rank>;
+        return result_type {{fn(this->template get<Is>())...}};
     }
 
-    template<typename T, typename Function>
-    auto binary_op(const T& a, Function&& fn) const
+    template<typename Function, typename T, std::size_t... Is>
+    auto binary_op_impl(Function&& fn, const T& a, std::index_sequence<Is...>) const
     {
-        const auto& _ = *this;
-        auto result = covariant_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>();
+        using result_type = covariant_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>;
+        return result_type {{fn(this->template get<Is>(), a)...}};
+    }
 
-        for (std::size_t n = 0; n < Rank; ++n)
-        {
-            result[n] = fn(_[n], a);
-        }
-        return result;
+    template<typename Function, typename T, std::size_t... Is>
+    auto binary_op_impl(Function&& fn, const covariant_sequence_t<T, Rank>& v, std::index_sequence<Is...>) const
+    {
+        using result_type = covariant_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>;
+        return result_type {{fn(this->template get<Is>(), v.template get<Is>())...}};
     }
 
     template<typename Function>
     auto unary_op(Function&& fn) const
     {
-        const auto& _ = *this;
-        auto result = covariant_sequence_t<std::invoke_result_t<Function, ValueType>, Rank>();
+        return unary_op_impl(fn, std::make_index_sequence<Rank>());
+    }
 
-        for (std::size_t n = 0; n < Rank; ++n)
-        {
-            result[n] = fn(_[n]);
-        }
-        return result;
+    template<typename T, typename Function>
+    auto binary_op(const T& a, Function&& fn) const
+    {
+        return binary_op_impl(fn, a, std::make_index_sequence<Rank>());
+    }
+
+    template<typename T, typename Function>
+    auto binary_op(const covariant_sequence_t<T, Rank>& v, Function&& fn) const
+    {
+        return binary_op_impl(fn, v, std::make_index_sequence<Rank>());
     }
 };
 
