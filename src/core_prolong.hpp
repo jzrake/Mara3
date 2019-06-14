@@ -1,22 +1,66 @@
+/**
+ ==============================================================================
+ Copyright 2019, Jonathan Zrake
+
+ Permission is hereby granted, free of charge, to any person obtaining a copy of
+ this software and associated documentation files (the "Software"), to deal in
+ the Software without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ of the Software, and to permit persons to whom the Software is furnished to do
+ so, subject to the following conditions:
+
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+
+ ==============================================================================
+*/
+
+
+
+
+#pragma once
+#include "core_ndarray.hpp"
+#include "core_sequence.hpp"
+
+
 
 
 //=============================================================================
-template<std::size_t Size> auto sequence_of();
-template<std::size_t Size> auto refine_points();
+namespace mara::amr
+{
+    template<std::size_t Size> auto sequence_of();
+    template<std::size_t Size> auto refine_points();
+    template<std::size_t Rank> auto prolong_shape(nd::shape_t<Rank> shape, std::size_t axis);
+    template<std::size_t Rank> auto coarsen_index_lower(nd::index_t<Rank> fi, std::size_t axis);
+    template<std::size_t Rank> auto coarsen_index_upper(nd::index_t<Rank> fi, std::size_t axis);
+
+    auto prolong_points(std::size_t axis);
+    auto bisect_points(std::size_t axis);
+    auto bisect_points_lower(std::size_t axis);
+    auto bisect_points_upper(std::size_t axis);
+}
 
 
 
 
 //=============================================================================
 template<std::size_t Rank>
-auto prolong_shape(nd::shape_t<Rank> shape, std::size_t axis)
+auto mara::amr::prolong_shape(nd::shape_t<Rank> shape, std::size_t axis)
 {
     shape[axis] = shape[axis] * 2 - 1;
     return shape;
 }
 
 template<std::size_t Rank>
-auto coarsen_index_lower(nd::index_t<Rank> fi, std::size_t axis)
+auto mara::amr::coarsen_index_lower(nd::index_t<Rank> fi, std::size_t axis)
 {
     auto c0 = fi;
     c0[axis] = fi[axis] / 2;
@@ -24,14 +68,14 @@ auto coarsen_index_lower(nd::index_t<Rank> fi, std::size_t axis)
 }
 
 template<std::size_t Rank>
-auto coarsen_index_upper(nd::index_t<Rank> fi, std::size_t axis)
+auto mara::amr::coarsen_index_upper(nd::index_t<Rank> fi, std::size_t axis)
 {
     auto c1 = fi;
     c1[axis] = fi[axis] / 2 + (fi[axis] % 2 == 0 ? 0 : 1);
     return c1;
 }
 
-auto prolong_points(std::size_t axis)
+auto mara::amr::prolong_points(std::size_t axis)
 {
     return [axis] (auto coarse)
     {
@@ -47,7 +91,7 @@ auto prolong_points(std::size_t axis)
     };
 }
 
-auto bisect_points(std::size_t axis)
+auto mara::amr::bisect_points(std::size_t axis)
 {
     return [axis] (auto parent)
     {
@@ -61,7 +105,7 @@ auto bisect_points(std::size_t axis)
     };
 }
 
-auto bisect_points_lower(std::size_t axis)
+auto mara::amr::bisect_points_lower(std::size_t axis)
 {
     return [axis] (auto parent)
     {
@@ -69,7 +113,7 @@ auto bisect_points_lower(std::size_t axis)
     };
 }
 
-auto bisect_points_upper(std::size_t axis)
+auto mara::amr::bisect_points_upper(std::size_t axis)
 {
     return [axis] (auto parent)
     {
@@ -82,7 +126,7 @@ auto bisect_points_upper(std::size_t axis)
 
 //=============================================================================
 template<>
-auto sequence_of<4>()
+auto mara::amr::sequence_of<4>()
 {
     return [] (auto&& value)
     {
@@ -91,7 +135,18 @@ auto sequence_of<4>()
 }
 
 template<>
-auto refine_points<4>()
+auto mara::amr::refine_points<2>()
+{
+    return [] (auto array)
+    {
+        return mara::make_sequence(
+            array | prolong_points(0) | bisect_points_lower(0),
+            array | prolong_points(0) | bisect_points_upper(0));
+    };
+}
+
+template<>
+auto mara::amr::refine_points<4>()
 {
     return [] (auto array)
     {
@@ -102,6 +157,3 @@ auto refine_points<4>()
             array | prolong_points(0) | prolong_points(1) | bisect_points_upper(0) | bisect_points_upper(1));
     };
 }
-
-
-

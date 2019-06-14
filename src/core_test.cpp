@@ -35,6 +35,7 @@
 #include "core_matrix.hpp"
 #include "core_sequence.hpp"
 #include "core_tree.hpp"
+#include "core_prolong.hpp"
 
 
 
@@ -144,10 +145,24 @@ TEST_CASE("binary tree constructors work OK", "[arithmetic_binary_tree]")
     REQUIRE_THROWS(chil.pair(leaf));
     REQUIRE_NOTHROW(chil.pair(chil));
 }
+
+TEST_CASE("pointwise linear prolongation works in 1d", "[mara::amr::refine_points<2>]")
+{
+    using namespace nd;
+    using namespace mara::amr;
+
+    REQUIRE((linspace(0.0, 1.0, 11) | refine_points<2>()).get<0>().size() == 11);
+    REQUIRE((linspace(0.0, 1.0, 11) | refine_points<2>()).get<1>().size() == 11);
+
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<0>() | read_index(0))  == 0.0);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<0>() | read_index(1))  == 0.05);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<0>() | read_index(2))  == 0.1);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<0>() | read_index(10)) == 0.5);
+
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<1>() | read_index(0))  == 0.5 + 0.0);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<1>() | read_index(1))  == 0.5 + .05);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<1>() | read_index(2))  == 0.5 + 0.1);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<1>() | read_index(10)) == 0.5 + 0.5);
+}
+
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
-
-
-
-
-
-
