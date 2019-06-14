@@ -36,8 +36,7 @@
 //=============================================================================
 namespace mara::amr
 {
-    template<std::size_t Size> auto sequence_of();
-    template<std::size_t Size> auto refine_points();
+    template<std::size_t Rank> auto refine_points();
     template<std::size_t Rank> auto prolong_shape(nd::shape_t<Rank> shape, std::size_t axis);
     template<std::size_t Rank> auto coarsen_index_lower(nd::index_t<Rank> fi, std::size_t axis);
     template<std::size_t Rank> auto coarsen_index_upper(nd::index_t<Rank> fi, std::size_t axis);
@@ -97,8 +96,10 @@ auto mara::amr::bisect_points(std::size_t axis)
     {
         if (parent.rank() <= axis)
             throw std::invalid_argument("bisect_points: cannot bisect on axis greater than or eaual to rank");
+
         if (parent.shape(axis) % 2 == 0)
             throw std::invalid_argument("bisect_points: must have an odd number of points");
+
         auto h0 = parent | nd::select_axis(axis).from(0).to(parent.shape(axis) / 2 + 1);
         auto h1 = parent | nd::select_axis(axis).from(parent.shape(axis) / 2).to(0).from_the_end();
         return std::make_tuple(h0, h1);
@@ -126,16 +127,7 @@ auto mara::amr::bisect_points_upper(std::size_t axis)
 
 //=============================================================================
 template<>
-auto mara::amr::sequence_of<4>()
-{
-    return [] (auto&& value)
-    {
-        return mara::make_sequence(value, value, value, value);
-    };
-}
-
-template<>
-auto mara::amr::refine_points<2>()
+auto mara::amr::refine_points<1>()
 {
     return [] (auto array)
     {
@@ -146,7 +138,7 @@ auto mara::amr::refine_points<2>()
 }
 
 template<>
-auto mara::amr::refine_points<4>()
+auto mara::amr::refine_points<2>()
 {
     return [] (auto array)
     {

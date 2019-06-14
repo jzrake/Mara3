@@ -103,9 +103,9 @@ struct mara::arithmetic_binary_tree_t
 
 
     /**
-     * @brief      Return the numer of nodes at and below this one.
+     * @brief      Return the numer of leafs in the tree.
      *
-     * @return     True if has value, False otherwise.
+     * @return     The tree size
      */
     std::size_t size() const
     {
@@ -118,7 +118,7 @@ struct mara::arithmetic_binary_tree_t
     /**
      * @brief      Determines if this node has a value.
      *
-     * @return     True if has value, False otherwise.
+     * @return     True if has value, False otherwise
      */
     bool has_value() const
     {
@@ -335,6 +335,60 @@ struct mara::arithmetic_binary_tree_t
         }
     }
 
+
+
+
+    /**
+     * @brief      Apply a bifurcate function to the values of this tree that
+     *             satisfy a predicate. The function must return sequences whose
+     *             value type is the same as the tree's value type.
+     *
+     * @param      predicate  The predicate to test the leaf values against:
+     *                        value_type -> boolean
+     * @param      bifurcate  The bifurcate function to apply to the values:
+     *                        value_type -> sequence<value_type>
+     *
+     * @tparam     Predicate  The type of the predicate function
+     * @tparam     Bifurcate  The type of the bifurcate function
+     *
+     * @return     A tree with some bifurcated leafs
+     */
+    template<typename Predicate, typename Bifurcate>
+    auto bifurcate_if(Predicate&& predicate, Bifurcate&& bifurcate) const -> arithmetic_binary_tree_t
+    {
+        if (has_value())
+        {
+            return predicate(value()) ? tree_of<Rank>(bifurcate(value())) : *this;
+        }
+        return {tree::detail::to_shared_ptr(children().map([&] (auto&& c) { return c.bifurcate_if(predicate, bifurcate); }))};
+    }
+
+
+
+
+    /**
+     * @brief      Apply a function to all the values in this tree, mapping them
+     *             into sequences. Since all the node values are replaced, the
+     *             bifurcate function may return sequences of any value type.
+     *
+     * @param      bifurcate       The bifurcate function to apply to the
+     *                             values: value_type -> sequence<T>
+     *
+     * @tparam     Bifurcate       The type of the bifurcate function
+     * @tparam     ResultTreeType  The function's return value (deduced)
+     *
+     * @return     A tree with all leafs turned into sequences
+     */
+    template<typename Bifurcate,
+             typename ResultTreeType = arithmetic_binary_tree_t<typename std::invoke_result_t<Bifurcate, ValueType>::value_type, Rank>>
+    auto bifurcate_all(Bifurcate&& bifurcate) const -> ResultTreeType
+    {
+        if (has_value())
+        {
+            return tree_of<Rank>(bifurcate(value()));
+        }
+        return ResultTreeType{tree::detail::to_shared_ptr(children().map([&] (auto&& c) { return c.bifurcate_all(bifurcate); }))};
+    }
 
 
 

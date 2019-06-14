@@ -146,23 +146,46 @@ TEST_CASE("binary tree constructors work OK", "[arithmetic_binary_tree]")
     REQUIRE_NOTHROW(chil.pair(chil));
 }
 
-TEST_CASE("pointwise linear prolongation works in 1d", "[mara::amr::refine_points<2>]")
+TEST_CASE("pointwise linear prolongation works in 1d", "[amr refine_points]")
 {
     using namespace nd;
     using namespace mara::amr;
 
-    REQUIRE((linspace(0.0, 1.0, 11) | refine_points<2>()).get<0>().size() == 11);
-    REQUIRE((linspace(0.0, 1.0, 11) | refine_points<2>()).get<1>().size() == 11);
+    REQUIRE((linspace(0.0, 1.0, 11) | refine_points<1>()).get<0>().size() == 11);
+    REQUIRE((linspace(0.0, 1.0, 11) | refine_points<1>()).get<1>().size() == 11);
 
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<0>() | read_index(0))  == 0.0);
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<0>() | read_index(1))  == 0.05);
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<0>() | read_index(2))  == 0.1);
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<0>() | read_index(10)) == 0.5);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<0>() | read_index(0))  == 0.0);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<0>() | read_index(1))  == 0.05);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<0>() | read_index(2))  == 0.1);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<0>() | read_index(10)) == 0.5);
 
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<1>() | read_index(0))  == 0.5 + 0.0);
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<1>() | read_index(1))  == 0.5 + .05);
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<1>() | read_index(2))  == 0.5 + 0.1);
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<2>()).get<1>() | read_index(10)) == 0.5 + 0.5);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<1>() | read_index(0))  == 0.5 + 0.0);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<1>() | read_index(1))  == 0.5 + 0.05);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<1>() | read_index(2))  == 0.5 + 0.1);
+    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<1>() | read_index(10)) == 0.5 + 0.5);
+}
+
+TEST_CASE("can refine a tree of arrays in 1d", "[amr arithmetic_binary_tree]")
+{
+    using namespace nd;
+    using namespace mara::amr;
+
+    // Is the only legal argument to bifurcate_if
+    auto refine_value_share = [] (auto value)
+    {
+        return (value | refine_points<1>()).map([] (auto v) { return v.shared(); });
+    };
+
+    // Is legal argument to bifurcate_if or bifurcate_all
+    auto refine_value_no_share = [] (auto value)
+    {
+        return value | refine_points<1>();
+    };
+
+    REQUIRE(mara::tree_of<1>(linspace(0.0, 1.0, 11)).size() == 1);
+    REQUIRE(mara::tree_of<1>(linspace(0.0, 1.0, 11)).bifurcate_all(refine_value_share).size() == 2);
+    REQUIRE(mara::tree_of<1>(linspace(0.0, 1.0, 11)).bifurcate_all(refine_value_no_share).size() == 2);
+    REQUIRE(mara::tree_of<1>(linspace(0.0, 1.0, 11).shared()).bifurcate_if([] (auto) { return true; }, refine_value_share).size() == 2);
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
