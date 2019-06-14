@@ -39,6 +39,7 @@
 #include "app_performance.hpp"
 #include "app_subprogram.hpp"
 #include "app_filesystem.hpp"
+#include "app_parallel.hpp"
 #include "physics_iso2d.hpp"
 #include "model_two_body.hpp"
 #define cfl_number                    0.4
@@ -139,18 +140,22 @@ namespace binary
         //=====================================================================
         solution_state_t operator+(const solution_state_t& other) const
         {
+            auto evaluate = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
+
             return {
                 time       + other.time,
                 iteration  + other.iteration,
-                conserved  + other.conserved | nd::to_shared(),
+                conserved  + other.conserved | evaluate,
             };
         }
         solution_state_t operator*(mara::rational_number_t scale) const
         {
+            auto evaluate = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
+
             return {
                 time      * scale.as_double(),
                 iteration * scale,
-                conserved * scale.as_double() | nd::to_shared(),
+                conserved * scale.as_double() | evaluate,
             };
         }
     };
@@ -441,13 +446,15 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
     {
         return [plm_theta, axis] (auto P)
         {
+            auto evaluate = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
+
             auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
             auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
             auto G = P
             | nd::zip_adjacent3_on_axis(axis)
             | nd::apply(estimate_gradient_plm(plm_theta))
             | nd::extend_zeros(axis)
-            | nd::to_shared();
+            | evaluate;
 
             return nd::zip(
                 (P | L) + (G | L) * 0.5,
@@ -470,10 +477,12 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
     {
         auto fhat_x = intercell_flux(riemann_solver, 0);
         auto fhat_y = intercell_flux(riemann_solver, 1);
+        auto evaluate = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
+
 
         auto dA = cell_surface_area(solver_data.x_vertices, solver_data.y_vertices);
         auto u0 = state.conserved;
-        auto p0 = u0 / dA | nd::map(recover_primitive) | nd::to_shared();
+        auto p0 = u0 / dA | nd::map(recover_primitive) | evaluate;
         auto dx = nd::get<0>(nd::cartesian_product(solver_data.x_vertices | nd::difference_on_axis(0), solver_data.y_vertices));
         auto dy = nd::get<1>(nd::cartesian_product(solver_data.x_vertices, solver_data.y_vertices | nd::difference_on_axis(0)));
         auto cell_mass = u0 | nd::map([] (auto u) { return u[0]; });
@@ -484,7 +493,7 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
         auto ss = -u0 * sink_rate_field(state.time, solver_data);
         auto bz = (solver_data.initial_conserved_field - u0) * solver_data.buffer_damping_rate_field;
         auto u1 = u0 + (lx + ly + sg + ss + bz) * dt;
-        return u1 | nd::to_shared();
+        return u1 | evaluate;
     };
 
     auto next_state = solution_state_t();
@@ -552,14 +561,16 @@ auto binary::diagnostic_fields(const solution_state_t& state, const solver_data_
     auto vx = p | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_x));
     auto vy = p | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_y));
     auto binary = mara::compute_two_body_state(solver_data.binary_params, state.time.value);
+    auto evaluate = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
+
 
     auto result = diagnostic_fields_t();
     result.time            = state.time;
     result.x_vertices      = solver_data.x_vertices;
     result.y_vertices      = solver_data.y_vertices;
-    result.sigma           = sigma                     | nd::to_shared();
-    result.radial_velocity = vx * rhat_x + vy * rhat_y | nd::to_shared();
-    result.phi_velocity    = vx * phat_x + vy * phat_y | nd::to_shared();
+    result.sigma           = sigma                     | evaluate;
+    result.radial_velocity = vx * rhat_x + vy * rhat_y | evaluate;
+    result.phi_velocity    = vx * phat_x + vy * phat_y | evaluate;
     result.position_of_mass1 = location_2d_t {{ binary.body1.position_x, binary.body1.position_y }};
     result.position_of_mass2 = location_2d_t {{ binary.body2.position_x, binary.body2.position_y }};
 
