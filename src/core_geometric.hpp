@@ -39,8 +39,8 @@
 namespace mara
 {
     class unit_vector_t;
-    using spatial_coordinate_t = covariant_sequence_t<unit_length<double>, 3>;
-    using area_element_t       = covariant_sequence_t<unit_area  <double>, 3>;
+    using spatial_coordinate_t = arithmetic_sequence_t<unit_length<double>, 3>;
+    using area_element_t       = arithmetic_sequence_t<unit_area  <double>, 3>;
 
     inline auto make_spatial_coordinate(double x1, double x2, double x3);
     inline auto make_area_element(double da1, double da2, double da3);
@@ -91,7 +91,7 @@ public:
     template<typename ScalarType>
     auto operator*(ScalarType scale) const
     {
-        return covariant_sequence_t<ScalarType, 3>
+        return arithmetic_sequence_t<ScalarType, 3>
         {{
             n1 * scale,
             n2 * scale,

@@ -48,10 +48,10 @@ struct mara::iso2d
     using unit_flow               = dimensional_value_t< 0, 1,-1, double>;
     using unit_flux               = dimensional_value_t<-1, 1,-1, double>;
 
-    using conserved_per_area_t    = covariant_sequence_t<unit_conserved_per_area, 3>;
-    using conserved_t             = covariant_sequence_t<unit_conserved, 3>;
-    using flow_t                  = covariant_sequence_t<unit_flow, 3>;
-    using flux_t                  = covariant_sequence_t<unit_flux, 3>;
+    using conserved_per_area_t    = arithmetic_sequence_t<unit_conserved_per_area, 3>;
+    using conserved_t             = arithmetic_sequence_t<unit_conserved, 3>;
+    using flow_t                  = arithmetic_sequence_t<unit_flow, 3>;
+    using flux_t                  = arithmetic_sequence_t<unit_flux, 3>;
 
     struct primitive_t;
     struct wavespeeds_t
@@ -95,7 +95,7 @@ struct mara::iso2d
 
 
 //=============================================================================
-struct mara::iso2d::primitive_t : public mara::arithmetic_sequence_t<double, 3, primitive_t>
+struct mara::iso2d::primitive_t : public mara::derivable_sequence_t<double, 3, primitive_t>
 {
 
 
@@ -143,7 +143,7 @@ struct mara::iso2d::primitive_t : public mara::arithmetic_sequence_t<double, 3, 
 
     auto velocity() const
     {
-        return covariant_sequence_t<double, 3> {{velocity_x(), velocity_y(), 0.0}};
+        return arithmetic_sequence_t<double, 3> {{velocity_x(), velocity_y(), 0.0}};
     }
 
 
@@ -356,10 +356,10 @@ struct mara::iso2d::riemann_hllc_variables_t
     mara::unit_vector_t nhat;
     mara::iso2d::primitive_t Pl;
     mara::iso2d::primitive_t Pr;
-    mara::covariant_sequence_t<double, 3> v_para_l;
-    mara::covariant_sequence_t<double, 3> v_para_r;
-    mara::covariant_sequence_t<double, 3> v_perp_l;
-    mara::covariant_sequence_t<double, 3> v_perp_r;
+    mara::arithmetic_sequence_t<double, 3> v_para_l;
+    mara::arithmetic_sequence_t<double, 3> v_para_r;
+    mara::arithmetic_sequence_t<double, 3> v_perp_l;
+    mara::arithmetic_sequence_t<double, 3> v_perp_r;
 
     double ul;
     double ur;

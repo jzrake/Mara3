@@ -29,11 +29,12 @@
 
 
 #define CATCH_CONFIG_FAST_COMPILE
+#include "core_alternative.hpp"
 #include "core_catch.hpp"
 #include "core_geometric.hpp"
 #include "core_matrix.hpp"
 #include "core_sequence.hpp"
-#include "core_alternative.hpp"
+#include "core_tree.hpp"
 
 
 
@@ -62,6 +63,14 @@ TEST_CASE("can construct matrix from initializer list", "[matrix]")
     REQUIRE(M2.num_cols == 2);
 }
 
+TEST_CASE("sequence algorithms work correctly", "[covariant_sequence]")
+{
+    auto y = mara::iota<4>().map([] (auto x) { return x * 2;});
+    REQUIRE((y == mara::make_sequence(0, 2, 4, 6)).all());
+    REQUIRE((y.reverse() == mara::make_sequence(6, 4, 2, 0)).all());
+    REQUIRE(y.sum() == 12);
+}
+
 TEST_CASE("alternative types work correctly", "[arithmetic_alternative]")
 {
     struct meta_data_t
@@ -85,6 +94,12 @@ TEST_CASE("alternative types work correctly", "[arithmetic_alternative]")
     REQUIRE_THROWS(D1.value()); // Bad, no value
     REQUIRE_THROWS(C + D1);     // Bad, primary and alternate
     REQUIRE_THROWS(D1 + D2);    // Bad, different alternates
+}
+
+TEST_CASE("binary tree indexes can be constructed", "[arithmetic_binary_tree]")
+{
+    REQUIRE((mara::binary_repr<6>(37) == mara::make_sequence(1, 0, 0, 1, 0, 1).reverse()).all());
+    REQUIRE(mara::to_integral(mara::binary_repr<6>(37)) == 37);
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST

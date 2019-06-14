@@ -104,8 +104,8 @@ namespace nd
     template<std::size_t Index, typename ArrayType>    auto get(ArrayType array);
     template<std::size_t Rank>                         auto index_array(shape_t<Rank> shape);
     template<typename... Args>                         auto index_array(Args... args);
-    template<typename... ArrayTypes>                   auto zip_arrays(ArrayTypes... arrays);
-    template<typename ArrayType>                       auto unzip_array(ArrayType array);
+    template<typename... ArrayTypes>                   auto zip(ArrayTypes... arrays);
+    template<typename ArrayType>                       auto unzip(ArrayType array);
     template<typename... ArrayTypes>                   auto cartesian_product(ArrayTypes... arrays);
     template<typename... ArrayTypes>                   auto meshgrid(ArrayTypes... arrays);
     template<typename ValueType=int, typename... Args> auto zeros(Args... args);
@@ -369,6 +369,7 @@ public:
 
     shape_t operator*(std::size_t scale) const { return this->transform([scale] (auto ni) { return ni * scale; }); }
     shape_t operator+(shape_t<Rank> shape) const { return this->range().transform([i=*this, s=shape] (auto n) { return i[n] + s[n]; }); }
+    shape_t operator-(shape_t<Rank> shape) const { return this->range().transform([i=*this, s=shape] (auto n) { return i[n] - s[n]; }); }
 };
 
 
@@ -1603,7 +1604,7 @@ auto nd::index_array(Args... args)
  * @return     An array which returns tuples taken from the underlying arrays
  */
 template<typename... ArrayTypes>
-auto nd::zip_arrays(ArrayTypes... arrays)
+auto nd::zip(ArrayTypes... arrays)
 {
     constexpr std::size_t Ranks[] = {ArrayTypes::array_rank...};
     shape_t<Ranks[0]> shapes[] = {arrays.shape()...};
@@ -1632,7 +1633,7 @@ auto nd::zip_arrays(ArrayTypes... arrays)
  * @return     The tuple of arrays
  */
 template<typename ArrayType>
-auto nd::unzip_array(ArrayType array)
+auto nd::unzip(ArrayType array)
 {
     auto Is = std::make_index_sequence<std::tuple_size<typename ArrayType::value_type>::value>();
     return detail::unzip_array_impl(array, Is);
@@ -1678,7 +1679,7 @@ auto nd::cartesian_product(ArrayTypes... arrays)
 template<typename... ArrayTypes>
 auto nd::meshgrid(ArrayTypes... arrays)
 {
-    return unzip_array(cartesian_product(arrays...));
+    return unzip(cartesian_product(arrays...));
 }
 
 

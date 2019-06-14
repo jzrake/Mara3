@@ -37,12 +37,14 @@
 //=============================================================================
 namespace mara
 {
-    template<typename ValueType, std::size_t Rank, typename DerivedType> struct fixed_length_sequence_t;
-    template<typename ValueType, std::size_t Rank, typename DerivedType> struct arithmetic_sequence_t;
-    template<typename ValueType, std::size_t Rank> struct covariant_sequence_t;
+    template<typename ValueType, std::size_t Rank> struct arithmetic_sequence_t;
+    template<typename ValueType, std::size_t Rank, typename DerivedType> struct derivable_sequence_t;
+
+    template<typename ValueType, std::size_t Rank>
+    auto to_string(const arithmetic_sequence_t<ValueType, Rank>& sequence);
 
     template<typename ValueType, std::size_t Rank, typename DerivedType>
-    auto to_string(const fixed_length_sequence_t<ValueType, Rank, DerivedType>& sequence);
+    auto to_string(const derivable_sequence_t<ValueType, Rank, DerivedType>& sequence);
 
     template<typename Function>
     auto lift(Function f);
@@ -52,130 +54,10 @@ namespace mara
 
     template<typename... Args, typename ValueType=std::common_type_t<Args...>>
     auto make_sequence(Args&&... args);
+
+    template<std::size_t Rank>
+    arithmetic_sequence_t<std::size_t, Rank> iota();
 }
-
-
-
-
-/**
- * @brief      Class for fixed length sequences that are iterable, constructible
- *             from other iterables, and element-wise comparable to other
- *             instances of the same type. This class is meant to be inherited
- *             from using the CRTP pattern.
- *
- * @tparam     Rank         The dimensionality
- * @tparam     ValueType    The underlying value type
- * @tparam     DerivedType  The CRTP class (google 'curiously recurring template pattern')
- */
-template<typename ValueType, std::size_t Rank, typename DerivedType>
-struct mara::fixed_length_sequence_t
-{
-    using value_type = ValueType;
-
-    //=========================================================================
-    bool operator==(const DerivedType& other) const
-    { for (std::size_t n = 0; n < Rank; ++n) { if (memory[n] != other[n]) return false; } return true; }
-
-    bool operator!=(const DerivedType& other) const
-    { for (std::size_t n = 0; n < Rank; ++n) { if (memory[n] != other[n]) return true; } return false; }
-
-    constexpr std::size_t size() const { return Rank; }
-    const ValueType* data() const { return memory; }
-    const ValueType* begin() const { return memory; }
-    const ValueType* end() const { return memory + Rank; }
-    const ValueType& operator[](std::size_t n) const { return memory[n]; }
-
-    ValueType* data() { return memory; }
-    ValueType* begin() { return memory; }
-    ValueType* end() { return memory + Rank; }
-    ValueType& operator[](std::size_t n) { return memory[n]; }
-
-    template<std::size_t Index>
-    const ValueType& get() const
-    {
-        static_assert(Index < Rank, "mara::fixed_length_sequence_t out of range");
-        return memory[Index];
-    }
-
-    ValueType memory[Rank];
-};
-
-
-
-
-/**
- * @brief      Class for working with a fixed-length sequence of native types -
- *             floats, doubles, etc.
- *
- * @tparam     Rank         The dimensionality
- * @tparam     ValueType    The underlying value type
- * @tparam     DerivedType  The CRTP class (google 'curiously recurring template
- *                          pattern')
- *
- * @note       You can add/subtract other sequences of the same rank and type,
- *             and you can multiply the whole sequence by scalars of the same
- *             value type. Arithmetic operations all return another instance of
- *             the same class type. For sequences that are covariant in the
- *             value type, see the covariant_sequence_t. This class is not
- *             used directly; you should inherit it with the CRTP pattern. This
- *             means that type identity is defined by the name of the derived
- *             class (different derived classes with the same rank and value
- *             type are not considered equal by the compiler).
- */
-template<typename ValueType, std::size_t Rank, typename DerivedType>
-struct mara::arithmetic_sequence_t : public fixed_length_sequence_t<ValueType, Rank, DerivedType>
-{
-    //=========================================================================
-    DerivedType operator*(const ValueType& other) const { return binary_op(other, std::multiplies<>()); }
-    DerivedType operator/(const ValueType& other) const { return binary_op(other, std::divides<>()); }
-    DerivedType operator+(const DerivedType& other) const { return binary_op(other, std::plus<>()); }
-    DerivedType operator-(const DerivedType& other) const { return binary_op(other, std::minus<>()); }
-    DerivedType operator+() const { return unary_op([] (auto&& x) { return x; }); }
-    DerivedType operator-() const { return unary_op([] (auto&& x) { return x; }); }
-
-    template<typename Function>
-    auto transform(Function&& fn) const
-    {
-        return unary_op(std::forward<Function>(fn));
-    }
-
-    //=========================================================================
-    template<typename Function, std::size_t... Is>
-    auto unary_op_impl(Function&& fn, std::index_sequence<Is...>) const
-    {
-        return DerivedType {{{fn(this->template get<Is>())...}}};
-    }
-
-    template<typename Function, std::size_t... Is>
-    auto binary_op_impl(Function&& fn, const ValueType& a, std::index_sequence<Is...>) const
-    {
-        return DerivedType {{{fn(this->template get<Is>(), a)...}}};
-    }
-
-    template<typename Function, std::size_t... Is>
-    auto binary_op_impl(Function&& fn, const DerivedType& v, std::index_sequence<Is...>) const
-    {
-        return DerivedType {{{fn(this->template get<Is>(), v.template get<Is>())...}}};
-    }
-
-    template<typename Function>
-    auto unary_op(Function&& fn) const
-    {
-        return unary_op_impl(fn, std::make_index_sequence<Rank>());
-    }
-
-    template<typename Function>
-    auto binary_op(const ValueType& a, Function&& fn) const
-    {
-        return binary_op_impl(fn, a, std::make_index_sequence<Rank>());
-    }
-
-    template<typename Function>
-    auto binary_op(const DerivedType& v, Function&& fn) const
-    {
-        return binary_op_impl(fn, v, std::make_index_sequence<Rank>());
-    }
-};
 
 
 
@@ -190,57 +72,254 @@ struct mara::arithmetic_sequence_t : public fixed_length_sequence_t<ValueType, R
  *             by the container: e.g. since multiplies(double, int) -> double,
  *             we also have multiplies(seq<double, Rank>, seq<int, Rank>) ->
  *             seq<double, Rank>). This class is marked final; unlike
- *             arithmetic_sequence_t (which must be inherited), the type
- *             identity of covariant_sequence_t is defined by the rank and the
+ *             derivable_sequence_t (which must be inherited), the type
+ *             identity of arithmetic_sequence_t is defined by the rank and the
  *             identity of the value type.
  */
 template<typename ValueType, std::size_t Rank>
-struct mara::covariant_sequence_t final : public fixed_length_sequence_t<ValueType, Rank, covariant_sequence_t<ValueType, Rank>>
+struct mara::arithmetic_sequence_t// final : public derivable_sequence_t<ValueType, Rank, arithmetic_sequence_t<ValueType, Rank>>
 {
+
+
+
     //=========================================================================
-    template<typename T> auto operator* (const T& a) const { return binary_op(a, std::multiplies<>()); }
-    template<typename T> auto operator/ (const T& a) const { return binary_op(a, std::divides<>()); }
-    template<typename T> auto operator+ (const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::plus<>()); }
-    template<typename T> auto operator- (const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::minus<>()); }
-    template<typename T> auto operator* (const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::multiplies<>()); }
-    template<typename T> auto operator/ (const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::divides<>()); }
-    template<typename T> auto operator&&(const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::logical_and<>()); }
-    template<typename T> auto operator||(const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::logical_or<>()); }
-    template<typename T> auto operator==(const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::equal_to<>()); }
-    template<typename T> auto operator!=(const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::not_equal_to<>()); }
-    template<typename T> auto operator<=(const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::less_equal<>()); }
-    template<typename T> auto operator>=(const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::greater_equal<>()); }
-    template<typename T> auto operator< (const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::less<>()); }
-    template<typename T> auto operator> (const covariant_sequence_t<T, Rank>& v) const { return binary_op(v, std::greater<>()); }
+    using value_type = ValueType;
 
-    auto operator+() const { return unary_op([] (auto&& x) { return +x; }); }
-    auto operator-() const { return unary_op([] (auto&& x) { return -x; }); }
 
+
+    //=========================================================================
+    constexpr std::size_t size() const { return Rank; }
+    const ValueType* data() const { return __data; }
+    const ValueType* begin() const { return __data; }
+    const ValueType* end() const { return __data + Rank; }
+    const ValueType& operator[](std::size_t n) const { return __data[n]; }
+    const ValueType& at(std::size_t n) const
+    {
+        if (n < Rank)
+            return __data[n];
+        throw std::out_of_range("mara::arithmetic_sequence_t");
+    }
+
+    ValueType* data() { return __data; }
+    ValueType* begin() { return __data; }
+    ValueType* end() { return __data + Rank; }
+    ValueType& operator[](std::size_t n) { return __data[n]; }
+    ValueType& at(std::size_t n)
+    {
+        if (n < Rank)
+            return __data[n];
+        throw std::out_of_range("mara::arithmetic_sequence_t");
+    }
+
+    template<std::size_t Index>
+    const ValueType& get() const
+    {
+        static_assert(Index < Rank, "mara::arithmetic_sequence_t out of range");
+        return __data[Index];
+    }
+
+
+
+
+    /**
+     * @brief      Return this sequence with the value at a single index mapped
+     *             through a function.
+     *
+     * @param[in]  index     The index of the value to update
+     * @param      fn        The function to map that value through
+     *
+     * @tparam     Function  The type of the function object
+     *
+     * @return     The new sequence (same rank and value type)
+     */
     template<typename Function>
-    auto transform(Function&& fn) const
+    auto update(std::size_t index, Function&& fn) const
+    {
+        return iota<Rank>().map([this, index, fn] (std::size_t n)
+        {
+            return index == n ? fn(this->operator[](n)) : this->operator[](n);
+        });
+    }
+
+
+
+
+    /**
+     * @brief      Map a function over the elements of this sequence, returning
+     *             another whose value type is the function's return value.
+     *
+     * @param      fn        The function to map
+     *
+     * @tparam     Function  The type of the function object
+     *
+     * @return     A new sequence
+     *
+     * @note       This method makes a sequence into a "functor" (a formal
+     *             functor, not the common misnomer in C++ really meaning
+     *             function object).
+     */
+    template<typename Function>
+    auto map(Function&& fn) const
     {
         return unary_op(std::forward<Function>(fn));
     }
+
+
+
+
+    /**
+     * @brief      Return [f(a) for f, a in zip(this, other)], if this is a
+     *             sequence of functions.
+     *
+     * @param[in]  other  An array of arguments to
+     *
+     * @tparam     T      The value type of the argument sequence
+     *
+     * @return     A new sequence
+     *
+     * @note       The name of this method comes from the name conventionally
+     *             given in functional programming to functions under which an
+     *             object is an "applicative functor".
+     */
+    template<typename T>
+    auto ap(const arithmetic_sequence_t<T, Rank>& other) const
+    {
+        return iota<Rank>().map([this, other] (std::size_t i) { return this->operator[](i)(other[i]); });
+    }
+
+
+
+
+    /**
+     * @brief      Return the sum of the elements in this sequence. The
+     *             ValueType must be constructible from a 0.
+     *
+     * @return     The sum of this sequence
+     */
+    ValueType sum() const
+    {
+        auto result = ValueType(0);
+
+        for (std::size_t i = 0; i < Rank; ++i)
+        {
+            result += this->operator[](i);
+        }
+        return result;
+    }
+
+
+
+
+    /**
+     * @brief      Return true if all of the elements in this sequence evaluate
+     *             to true.
+     *
+     * @return     A boolean
+     */
+    bool all() const
+    {
+        for (std::size_t i = 0; i < Rank; ++i)
+            if (! this->operator[](i))
+                return false;
+        return true;
+    }
+
+
+
+
+    /**
+     * @brief      Return true if any of the elements in this sequence evaluate
+     *             to true.
+     *
+     * @return     A boolean
+     */
+    bool any() const
+    {
+        for (std::size_t i = 0; i < Rank; ++i)
+            if (this->operator[](i))
+                return true;
+        return false;
+    }
+
+
+
+
+    /**
+     * @brief      Return a reversed version of this sequence.
+     *
+     * @return     A sequence of the same rank and value type.
+     */
+    arithmetic_sequence_t reverse() const
+    {
+        return mara::iota<Rank>().map([this] (std::size_t n) { return this->operator[](Rank - n - 1); });
+    }
+
+
+
+
+    /**
+     * @brief      The methods head and last are as defined in Haskell.
+     *
+     * @return     The first or last element in the sequence.
+     */
+    const ValueType& head() const { return this->at(0); }
+    const ValueType& last() const { return this->at(Rank - 1); }
+
+
+
+
+    /**
+     * @brief      The methods init and tail as defined in Haskell.
+     *
+     * @return     What remains of the sequence after the last or first element
+     *             is removed.
+     */
+    auto init() const { return iota<Rank - 1>().map([this] (std::size_t n) { return this->operator[](n); }); }
+    auto tail() const { return iota<Rank - 1>().map([this] (std::size_t n) { return this->operator[](n + 1); }); }
+
+
+
+
+    //=========================================================================
+    template<typename T> auto operator* (const T& a) const { return binary_op(a, std::multiplies<>()); }
+    template<typename T> auto operator/ (const T& a) const { return binary_op(a, std::divides<>()); }
+    template<typename T> auto operator+ (const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::plus<>()); }
+    template<typename T> auto operator- (const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::minus<>()); }
+    template<typename T> auto operator* (const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::multiplies<>()); }
+    template<typename T> auto operator/ (const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::divides<>()); }
+    template<typename T> auto operator&&(const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::logical_and<>()); }
+    template<typename T> auto operator||(const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::logical_or<>()); }
+    template<typename T> auto operator==(const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::equal_to<>()); }
+    template<typename T> auto operator!=(const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::not_equal_to<>()); }
+    template<typename T> auto operator<=(const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::less_equal<>()); }
+    template<typename T> auto operator>=(const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::greater_equal<>()); }
+    template<typename T> auto operator< (const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::less<>()); }
+    template<typename T> auto operator> (const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::greater<>()); }
+    auto operator+() const { return unary_op([] (auto&& x) { return +x; }); }
+    auto operator-() const { return unary_op([] (auto&& x) { return -x; }); }
+
+
+
 
     //=========================================================================
     template<typename Function, std::size_t... Is>
     auto unary_op_impl(Function&& fn, std::index_sequence<Is...>) const
     {
-        using result_type = covariant_sequence_t<std::invoke_result_t<Function, ValueType>, Rank>;
+        using result_type = arithmetic_sequence_t<std::invoke_result_t<Function, ValueType>, Rank>;
         return result_type {{fn(this->template get<Is>())...}};
     }
 
     template<typename Function, typename T, std::size_t... Is>
     auto binary_op_impl(Function&& fn, const T& a, std::index_sequence<Is...>) const
     {
-        using result_type = covariant_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>;
+        using result_type = arithmetic_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>;
         return result_type {{fn(this->template get<Is>(), a)...}};
     }
 
     template<typename Function, typename T, std::size_t... Is>
-    auto binary_op_impl(Function&& fn, const covariant_sequence_t<T, Rank>& v, std::index_sequence<Is...>) const
+    auto binary_op_impl(Function&& fn, const arithmetic_sequence_t<T, Rank>& v, std::index_sequence<Is...>) const
     {
-        using result_type = covariant_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>;
+        using result_type = arithmetic_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>;
         return result_type {{fn(this->template get<Is>(), v.template get<Is>())...}};
     }
 
@@ -257,18 +336,79 @@ struct mara::covariant_sequence_t final : public fixed_length_sequence_t<ValueTy
     }
 
     template<typename T, typename Function>
-    auto binary_op(const covariant_sequence_t<T, Rank>& v, Function&& fn) const
+    auto binary_op(const arithmetic_sequence_t<T, Rank>& v, Function&& fn) const
     {
         return binary_op_impl(fn, v, std::make_index_sequence<Rank>());
     }
+
+
+
+
+    //=========================================================================
+    ValueType __data[Rank];
+};
+
+
+
+
+/**
+ * @brief      Class for working with a fixed-length sequence of native types -
+ *             floats, doubles, etc.
+ *
+ * @tparam     ValueType    The underlying value type
+ * @tparam     Rank         The dimensionality
+ * @tparam     DerivedType  The CRTP class (google 'curiously recurring template
+ *                          pattern')
+ *
+ * @note       You can add/subtract other sequences of the same rank and type,
+ *             and you can multiply the whole sequence by scalars of the same
+ *             value type. Arithmetic operations all return another instance of
+ *             the same class type. For sequences that are covariant in the
+ *             value type, see the arithmetic_sequence_t. This class is not used
+ *             directly; you should inherit it with the CRTP pattern. This means
+ *             that type identity is defined by the name of the derived class
+ *             (different derived classes with the same rank and value type are
+ *             not considered equal by the compiler).
+ */
+template<typename ValueType, std::size_t Rank, typename DerivedType>
+struct mara::derivable_sequence_t
+{
+    //=========================================================================
+    using value_type = ValueType;
+
+    //=========================================================================
+    constexpr std::size_t size()             const { return __impl.size(); }
+    decltype(auto) data()                    const { return __impl.data(); }
+    decltype(auto) begin()                   const { return __impl.begin(); }
+    decltype(auto) end()                     const { return __impl.end(); }
+    decltype(auto) operator[](std::size_t n) const { return __impl[n]; }
+    decltype(auto) at(std::size_t n)         const { return __impl.at(n); }
+    decltype(auto) data()                          { return __impl.data(); }
+    decltype(auto) begin()                         { return __impl.begin(); }
+    decltype(auto) end()                           { return __impl.end(); }
+    decltype(auto) operator[](std::size_t n)       { return __impl[n]; }
+    decltype(auto) at(std::size_t n)               { return __impl.at(n); }
+
+    //=========================================================================
+    bool operator==(const DerivedType& other) const { return __impl.operator==(other.__impl).all(); }
+    bool operator!=(const DerivedType& other) const { return __impl.operator!=(other.__impl).any(); }
+    DerivedType operator*(const ValueType& other)   const { return DerivedType{{__impl.operator*(other)}}; }
+    DerivedType operator/(const ValueType& other)   const { return DerivedType{{__impl.operator/(other)}}; }
+    DerivedType operator+(const DerivedType& other) const { return DerivedType{{__impl.operator+(other.__impl)}}; }
+    DerivedType operator-(const DerivedType& other) const { return DerivedType{{__impl.operator-(other.__impl)}}; }
+    DerivedType operator+()                         const { return DerivedType{{__impl.operator+()}}; }
+    DerivedType operator-()                         const { return DerivedType{{__impl.operator-()}}; }
+
+    //=========================================================================
+    arithmetic_sequence_t<ValueType, Rank> __impl;
 };
 
 
 
 
 //=============================================================================
-template<typename ValueType, std::size_t Rank, typename DerivedType>
-auto mara::to_string(const mara::fixed_length_sequence_t<ValueType, Rank, DerivedType>& sequence)
+template<typename ValueType, std::size_t Rank>
+auto mara::to_string(const arithmetic_sequence_t<ValueType, Rank>& sequence)
 {
     using std::to_string;
 
@@ -286,6 +426,12 @@ auto mara::to_string(const mara::fixed_length_sequence_t<ValueType, Rank, Derive
         }
     }
     return result + ")";
+}
+
+template<typename ValueType, std::size_t Rank, typename DerivedType>
+auto mara::to_string(const mara::derivable_sequence_t<ValueType, Rank, DerivedType>& sequence)
+{
+    return to_string(sequence.__impl);
 }
 
 
@@ -328,7 +474,7 @@ auto mara::make_std_array(Args... args)
 template<typename... Args, typename ValueType>
 auto mara::make_sequence(Args&&... args)
 {
-    return covariant_sequence_t<ValueType, sizeof...(Args)> {{ValueType(args)...}};
+    return arithmetic_sequence_t<ValueType, sizeof...(Args)> {{ValueType(args)...}};
 }
 
 
@@ -360,4 +506,26 @@ auto mara::lift(Function f)
         }
         return result;
     };
+}
+
+
+
+
+/**
+ * @brief      Return a sequence of increasing integer values starting at 0.
+ *
+ * @tparam     Rank  The number of integers needed
+ *
+ * @return     The sequence
+ */
+template<std::size_t Rank>
+mara::arithmetic_sequence_t<std::size_t, Rank> mara::iota()
+{
+    auto result = arithmetic_sequence_t<std::size_t, Rank>();
+
+    for (std::size_t i = 0; i < Rank; ++i)
+    {
+        result[i] = i;
+    }
+    return result;
 }

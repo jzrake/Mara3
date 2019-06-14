@@ -86,10 +86,10 @@ namespace binary
 
 
     //=========================================================================
-    using location_2d_t     = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
-    using velocity_2d_t     = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0, -1, double>, 2>;
-    using acceleration_2d_t = mara::covariant_sequence_t<mara::dimensional_value_t<1, 0, -2, double>, 2>;
-    using force_2d_t        = mara::covariant_sequence_t<mara::dimensional_value_t<1, 1, -2, double>, 2>;
+    using location_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
+    using velocity_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, -1, double>, 2>;
+    using acceleration_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, -2, double>, 2>;
+    using force_2d_t        = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 1, -2, double>, 2>;
 
 
     //=========================================================================
@@ -433,7 +433,7 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
         {
             auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
             auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
-            return nd::zip_arrays(P | L, P | R);
+            return nd::zip(P | L, P | R);
         };
     };
 
@@ -449,7 +449,7 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
             | nd::extend_zeros(axis)
             | nd::to_shared();
 
-            return nd::zip_arrays(
+            return nd::zip(
                 (P | L) + (G | L) * 0.5,
                 (P | R) - (G | R) * 0.5);
         };
@@ -540,7 +540,7 @@ auto binary::next_solution(const solution_state_t& state, const solver_data_t& s
 auto binary::diagnostic_fields(const solution_state_t& state, const solver_data_t& solver_data)
 {
     auto dA = cell_surface_area(solver_data.x_vertices, solver_data.y_vertices);
-    auto [xc, yc] = nd::unzip_array(cell_center_cartprod(solver_data.x_vertices, solver_data.y_vertices));
+    auto [xc, yc] = nd::unzip(cell_center_cartprod(solver_data.x_vertices, solver_data.y_vertices));
     auto rc = xc * xc + yc * yc | nd::map([] (auto r2) { return mara::make_length(std::sqrt(r2.value)); });
     auto rhat_x =  xc / rc;
     auto rhat_y =  yc / rc;

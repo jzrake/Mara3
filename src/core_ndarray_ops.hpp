@@ -118,7 +118,7 @@ auto nd::zip_adjacent2_on_axis(std::size_t axis)
 {
     return [axis] (auto array)
     {
-        return nd::zip_arrays(
+        return nd::zip(
         array | nd::select_axis(axis).from(0).to(1).from_the_end(),
         array | nd::select_axis(axis).from(1).to(0).from_the_end());
     };
@@ -128,7 +128,7 @@ auto nd::zip_adjacent3_on_axis(std::size_t axis)
 {
     return [axis] (auto array)
     {
-        return nd::zip_arrays(
+        return nd::zip(
         array | nd::select_axis(axis).from(0).to(2).from_the_end(),
         array | nd::select_axis(axis).from(1).to(1).from_the_end(),
         array | nd::select_axis(axis).from(2).to(0).from_the_end());

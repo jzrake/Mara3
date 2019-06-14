@@ -224,7 +224,7 @@ auto SedovProblem<HydroSystem>::intercell_flux(std::size_t axis)
         auto R = array | nd::select_axis(axis).from(1).to(0).from_the_end();
         auto nh = mara::unit_vector_t::on_axis_1();
         auto riemann = std::bind(HydroSystem::riemann_hlle, _1, _2, nh, gamma_law_index);
-        return nd::zip_arrays(L, R) | nd::apply(riemann);
+        return nd::zip(L, R) | nd::apply(riemann);
     };
 }
 
@@ -409,7 +409,7 @@ auto SedovProblem<HydroSystem>::next_solution(const solution_state_t& state)
 
     auto u0 = state.conserved;
     auto p0 = u0 / dv | nd::map(cons_to_prim) | evaluate;
-    auto s0 = nd::zip_arrays(p0, rc) | nd::apply(source_terms) | nd::multiply(dv);
+    auto s0 = nd::zip(p0, rc) | nd::apply(source_terms) | nd::multiply(dv);
     auto l0 = p0 | extend_bc | intercell_flux(0) | nd::multiply(-da) | nd::difference_on_axis(0);
     auto u1 = u0 + (l0 + s0) * dt;
 

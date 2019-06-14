@@ -42,9 +42,9 @@ namespace mara { struct srhd; }
 //=============================================================================
 struct mara::srhd
 {
-    using conserved_density_t = covariant_sequence_t<unit_mass_density<double>, 5>;
-    using conserved_t         = covariant_sequence_t<unit_mass<double>, 5>;
-    using flux_vector_t       = covariant_sequence_t<unit_flux<double>, 5>;
+    using conserved_density_t = arithmetic_sequence_t<unit_mass_density<double>, 5>;
+    using conserved_t         = arithmetic_sequence_t<unit_mass<double>, 5>;
+    using flux_vector_t       = arithmetic_sequence_t<unit_flux<double>, 5>;
     struct primitive_t;
     struct wavespeeds_t
     {
@@ -68,7 +68,7 @@ struct mara::srhd
 
 
 //=============================================================================
-struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, primitive_t>
+struct mara::srhd::primitive_t : public mara::derivable_sequence_t<double, 5, primitive_t>
 {
 
 
@@ -318,7 +318,7 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
         auto pg = gas_pressure();
         auto H = enthalpy_density(gamma_law_index);
         auto r = spherical_radius;
-        auto S = covariant_sequence_t<dimensional_value_t<-3, 1, -1, double>, 5>();
+        auto S = arithmetic_sequence_t<dimensional_value_t<-3, 1, -1, double>, 5>();
         S[1] = (2.0  * pg + H * (uq * uq        + up * up)) / r;
         S[2] = (cotq * pg + H * (up * up * cotq - ur * uq)) / r;
         S[3] =        -up * H * (ur + uq * cotq) / r;
@@ -342,7 +342,7 @@ struct mara::srhd::primitive_t : public mara::arithmetic_sequence_t<double, 5, p
         auto pg = gas_pressure();
         auto H = enthalpy_density(gamma_law_index);
         auto r = spherical_radius;
-        auto S = covariant_sequence_t<dimensional_value_t<-3, 1, -1, double>, 5>();
+        auto S = arithmetic_sequence_t<dimensional_value_t<-3, 1, -1, double>, 5>();
         S[1].value = (2.0 * pg + H * uq * uq) / r;
         return S;
     }

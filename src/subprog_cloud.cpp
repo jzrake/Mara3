@@ -522,7 +522,7 @@ auto CloudProblem::next_solution(const app_state_t& app_state)
 
     auto u0 = state.conserved;
     auto p0 = u0 / dv | nd::map(cons_to_prim) | evaluate;
-    auto s0 = nd::zip_arrays(p0, rc) | nd::apply(source_terms) | nd::multiply(dv);
+    auto s0 = nd::zip(p0, rc) | nd::apply(source_terms) | nd::multiply(dv);
 
     if (app_state.run_config.get_int("reconstruct_method") == 1)
     {
@@ -553,7 +553,7 @@ auto CloudProblem::next_solution(const app_state_t& app_state)
                 | nd::extend_zeros(axis)
                 | nd::to_shared();
 
-                return nd::zip_arrays(
+                return nd::zip(
                     (P | L) + (G | L) * 0.5,
                     (P | R) - (G | R) * 0.5);
             };

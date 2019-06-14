@@ -4,12 +4,8 @@
         {
             "path": ".",
             "file_exclude_patterns": ["mara3", "*.d"],
-            // "folder_exclude_patterns": ["misc"]
         },
     ],
-    "settings":
-    {
-    },
     "build_systems":
     [
     ]
