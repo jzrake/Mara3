@@ -77,7 +77,7 @@ namespace mara
  *             identity of the value type.
  */
 template<typename ValueType, std::size_t Rank>
-struct mara::arithmetic_sequence_t// final : public derivable_sequence_t<ValueType, Rank, arithmetic_sequence_t<ValueType, Rank>>
+struct mara::arithmetic_sequence_t
 {
 
 
@@ -88,31 +88,30 @@ struct mara::arithmetic_sequence_t// final : public derivable_sequence_t<ValueTy
 
 
     //=========================================================================
-    constexpr std::size_t size() const { return Rank; }
-    const ValueType* data() const { return __data; }
-    const ValueType* begin() const { return __data; }
-    const ValueType* end() const { return __data + Rank; }
+    static constexpr std::size_t size()              { return Rank; }
+    const ValueType* data()                    const { return __data; }
+    const ValueType* begin()                   const { return __data; }
+    const ValueType* end()                     const { return __data + Rank; }
     const ValueType& operator[](std::size_t n) const { return __data[n]; }
-    const ValueType& at(std::size_t n) const
-    {
-        if (n < Rank)
-            return __data[n];
-        throw std::out_of_range("mara::arithmetic_sequence_t");
-    }
+    const ValueType& at(std::size_t n)         const { if (n < Rank) return __data[n]; throw std::out_of_range("mara::arithmetic_sequence_t"); }
+    ValueType* data()                                { return __data; }
+    ValueType* begin()                               { return __data; }
+    ValueType* end()                                 { return __data + Rank; }
+    ValueType& operator[](std::size_t n)             { return __data[n]; }
+    ValueType& at(std::size_t n)                     { if (n < Rank) return __data[n]; throw std::out_of_range("mara::arithmetic_sequence_t"); }
 
-    ValueType* data() { return __data; }
-    ValueType* begin() { return __data; }
-    ValueType* end() { return __data + Rank; }
-    ValueType& operator[](std::size_t n) { return __data[n]; }
-    ValueType& at(std::size_t n)
-    {
-        if (n < Rank)
-            return __data[n];
-        throw std::out_of_range("mara::arithmetic_sequence_t");
-    }
 
-    template<std::size_t Index>
-    const ValueType& get() const
+
+
+    /**
+     * @brief      Type-safe indexing (preferred over oeprator[] where possible
+     *             for safety).
+     *
+     * @tparam     Index  The index to get
+     *
+     * @return     The value at the given index
+     */
+    template<std::size_t Index> const ValueType& get() const
     {
         static_assert(Index < Rank, "mara::arithmetic_sequence_t out of range");
         return __data[Index];
@@ -171,18 +170,19 @@ struct mara::arithmetic_sequence_t// final : public derivable_sequence_t<ValueTy
      * @brief      Return [f(a) for f, a in zip(this, other)], if this is a
      *             sequence of functions.
      *
-     * @param[in]  other  An array of arguments to
+     * @param[in]  other  A sequence of arguments given to this sequence of
+     *                    (unary) functions
      *
      * @tparam     T      The value type of the argument sequence
      *
      * @return     A new sequence
      *
-     * @note       The name of this method comes from the name conventionally
-     *             given in functional programming to functions under which an
-     *             object is an "applicative functor".
+     * @note       This method is conventionally referred to as "ap" in
+     *             functional programming. With respect to this method, a
+     *             sequence is an "applicative functor".
      */
     template<typename T>
-    auto ap(const arithmetic_sequence_t<T, Rank>& other) const
+    auto apply_to(const arithmetic_sequence_t<T, Rank>& other) const
     {
         return iota<Rank>().map([this, other] (std::size_t i) { return this->operator[](i)(other[i]); });
     }
@@ -191,19 +191,18 @@ struct mara::arithmetic_sequence_t// final : public derivable_sequence_t<ValueTy
 
 
     /**
-     * @brief      Return the sum of the elements in this sequence. The
-     *             ValueType must be constructible from a 0.
+     * @brief      Return the sum of the elements in this sequence. It is
+     *             assumed that ValueType{} is zero-initialized.
      *
      * @return     The sum of this sequence
      */
     ValueType sum() const
     {
-        auto result = ValueType(0);
+        auto result = ValueType{};
 
         for (std::size_t i = 0; i < Rank; ++i)
-        {
             result += this->operator[](i);
-        }
+
         return result;
     }
 
@@ -251,7 +250,27 @@ struct mara::arithmetic_sequence_t// final : public derivable_sequence_t<ValueTy
      */
     arithmetic_sequence_t reverse() const
     {
-        return mara::iota<Rank>().map([this] (std::size_t n) { return this->operator[](Rank - n - 1); });
+        return iota<Rank>().map([this] (std::size_t n) { return this->operator[](Rank - n - 1); });
+    }
+
+
+
+
+    /**
+     * @brief      Return the transpose of this sequence, if its value type is
+     *             also a sequence:
+     *
+     *             A.transpose()[i][j] == A[j][i]
+     *
+     * @return     A sequence of sequences with indexes switched
+     */
+    auto transpose() const
+    {
+        return iota<value_type::size()>().map([this] (std::size_t j) {
+            return iota<Rank>().map([this, j] (std::size_t i) {
+                return this->__data[i][j];
+            });
+        });
     }
 
 
@@ -306,21 +325,21 @@ struct mara::arithmetic_sequence_t// final : public derivable_sequence_t<ValueTy
     auto unary_op_impl(Function&& fn, std::index_sequence<Is...>) const
     {
         using result_type = arithmetic_sequence_t<std::invoke_result_t<Function, ValueType>, Rank>;
-        return result_type {{fn(this->template get<Is>())...}};
+        return result_type{fn(this->template get<Is>())...};
     }
 
     template<typename Function, typename T, std::size_t... Is>
     auto binary_op_impl(Function&& fn, const T& a, std::index_sequence<Is...>) const
     {
         using result_type = arithmetic_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>;
-        return result_type {{fn(this->template get<Is>(), a)...}};
+        return result_type{fn(this->template get<Is>(), a)...};
     }
 
     template<typename Function, typename T, std::size_t... Is>
     auto binary_op_impl(Function&& fn, const arithmetic_sequence_t<T, Rank>& v, std::index_sequence<Is...>) const
     {
         using result_type = arithmetic_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>;
-        return result_type {{fn(this->template get<Is>(), v.template get<Is>())...}};
+        return result_type{fn(this->template get<Is>(), v.template get<Is>())...};
     }
 
     template<typename Function>

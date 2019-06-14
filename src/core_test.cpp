@@ -69,6 +69,18 @@ TEST_CASE("sequence algorithms work correctly", "[covariant_sequence]")
     REQUIRE((y == mara::make_sequence(0, 2, 4, 6)).all());
     REQUIRE((y.reverse() == mara::make_sequence(6, 4, 2, 0)).all());
     REQUIRE(y.sum() == 12);
+
+    SECTION("sequence transpose works right")
+    {
+        auto A = mara::make_sequence(mara::make_sequence(0, 1, 3), mara::make_sequence(4, 5, 6));
+        REQUIRE(A.transpose().size() == 3);
+        REQUIRE(A.transpose()[0].size() == 2);
+        REQUIRE(A.transpose()[0][0] == A[0][0]);
+        REQUIRE(A.transpose()[0][1] == A[1][0]);
+        REQUIRE(A.transpose()[1][1] == A[1][1]);
+        REQUIRE(A.transpose()[1][0] == A[0][1]);
+        REQUIRE(A.transpose()[2][1] == A[1][2]);
+    }
 }
 
 TEST_CASE("alternative types work correctly", "[arithmetic_alternative]")
@@ -102,4 +114,40 @@ TEST_CASE("binary tree indexes can be constructed", "[arithmetic_binary_tree]")
     REQUIRE(mara::to_integral(mara::binary_repr<6>(37)) == 37);
 }
 
+TEST_CASE("binary tree constructors work OK", "[arithmetic_binary_tree]")
+{
+    auto leaf = mara::tree_of<3>(10.0);
+    auto chil = mara::tree_of<3>(mara::iota<8>());
+
+    REQUIRE(leaf.has_value());
+    REQUIRE(leaf.size() == 1);
+    REQUIRE_FALSE(chil.has_value());
+    REQUIRE(chil.size() == 8);
+    REQUIRE_THROWS(leaf.child_at(0, 0, 0));
+    REQUIRE_NOTHROW(chil.child_at(0, 0, 0));
+    REQUIRE_NOTHROW(chil.child_at(1, 1, 1));
+
+    REQUIRE(leaf.indexes().size() == leaf.size());
+    REQUIRE(chil.indexes().size() == chil.size());
+    REQUIRE(chil.indexes().child_at(0, 0, 0).value() == mara::tree_index_t<3>{1, {0, 0, 0}});
+    REQUIRE(chil.indexes().child_at(0, 0, 1).value() == mara::tree_index_t<3>{1, {0, 0, 1}});
+    REQUIRE(chil.indexes().child_at(0, 1, 1).value() == mara::tree_index_t<3>{1, {0, 1, 1}});
+    REQUIRE(chil.indexes().child_at(1, 1, 0).value() == mara::tree_index_t<3>{1, {1, 1, 0}});
+
+    REQUIRE(chil.map([] (auto i) { return 2 * i; }).child_at(0, 0, 0).value() == 0);
+    REQUIRE(chil.map([] (auto i) { return 2 * i; }).child_at(1, 0, 0).value() == 2);
+    REQUIRE(chil.map([] (auto i) { return 2 * i; }).child_at(1, 1, 1).value() == 14);
+
+    REQUIRE(chil.map([] (auto i) { return [i] (auto x) { return x * i; }; }).apply_to(chil).child_at(0, 0, 0).value() == 0);
+    REQUIRE(chil.map([] (auto i) { return [i] (auto x) { return x * i; }; }).apply_to(chil).child_at(1, 1, 1).value() == 49);
+    REQUIRE_THROWS(chil.map([] (auto i) { return [i] (auto x) { return x * i; }; }).apply_to(leaf));
+    REQUIRE_THROWS(chil.pair(leaf));
+    REQUIRE_NOTHROW(chil.pair(chil));
+}
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
+
+
+
+
+
+
