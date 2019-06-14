@@ -29,7 +29,6 @@
 
 
 #define CATCH_CONFIG_FAST_COMPILE
-#include "core_alternative.hpp"
 #include "core_catch.hpp"
 #include "core_geometric.hpp"
 #include "core_matrix.hpp"
@@ -82,31 +81,6 @@ TEST_CASE("sequence algorithms work correctly", "[covariant_sequence]")
         REQUIRE(A.transpose()[1][0] == A[0][1]);
         REQUIRE(A.transpose()[2][1] == A[1][2]);
     }
-}
-
-TEST_CASE("alternative types work correctly", "[arithmetic_alternative]")
-{
-    struct meta_data_t
-    {
-        bool operator==(const meta_data_t& other) const { return value == other.value; }
-        int value = 0;
-    };
-
-    auto A = mara::arithmetic_alternative_t<double, meta_data_t>(1.0);
-    auto B = mara::arithmetic_alternative_t<int, meta_data_t>(2);
-    auto C = A + B;
-    static_assert(std::is_same<decltype(C)::value_type, double>::value);
-    static_assert(std::is_same<decltype(C)::alternative_type, meta_data_t>::value);
-    REQUIRE(C.value() == 3.0);
-    REQUIRE_THROWS(C.alt());
-
-    auto D1 = mara::arithmetic_alternative_t<int, meta_data_t>(meta_data_t{1});
-    auto D2 = mara::arithmetic_alternative_t<int, meta_data_t>(meta_data_t{2});
-    REQUIRE_NOTHROW(D1.alt());  // OK, no value
-    REQUIRE_NOTHROW(D1 + D1);   // OK, same alternate
-    REQUIRE_THROWS(D1.value()); // Bad, no value
-    REQUIRE_THROWS(C + D1);     // Bad, primary and alternate
-    REQUIRE_THROWS(D1 + D2);    // Bad, different alternates
 }
 
 TEST_CASE("binary tree indexes can be constructed", "[arithmetic_binary_tree]")
