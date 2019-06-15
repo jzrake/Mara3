@@ -59,6 +59,15 @@ namespace mara
     arithmetic_sequence_t<std::size_t, Rank> iota();
 }
 
+namespace mara::sequence::detail
+{
+    template<std::size_t... Is>
+    auto iota_impl(std::index_sequence<Is...>)
+    {
+        return mara::make_sequence(Is...);
+    }
+}
+
 
 
 
@@ -493,7 +502,7 @@ auto mara::make_std_array(Args... args)
 template<typename... Args, typename ValueType>
 auto mara::make_sequence(Args&&... args)
 {
-    return arithmetic_sequence_t<ValueType, sizeof...(Args)> {{ValueType(args)...}};
+    return arithmetic_sequence_t<ValueType, sizeof...(Args)> {ValueType(args)...};
 }
 
 
@@ -540,11 +549,5 @@ auto mara::lift(Function f)
 template<std::size_t Rank>
 mara::arithmetic_sequence_t<std::size_t, Rank> mara::iota()
 {
-    auto result = arithmetic_sequence_t<std::size_t, Rank>();
-
-    for (std::size_t i = 0; i < Rank; ++i)
-    {
-        result[i] = i;
-    }
-    return result;
+    return sequence::detail::iota_impl(std::make_index_sequence<Rank>());
 }
