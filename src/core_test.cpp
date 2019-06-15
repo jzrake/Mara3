@@ -83,10 +83,25 @@ TEST_CASE("sequence algorithms work correctly", "[covariant_sequence]")
     }
 }
 
-TEST_CASE("binary tree indexes can be constructed", "[arithmetic_binary_tree]")
+TEST_CASE("binary tree indexes methods work correctly", "[tree_index]")
 {
+    // >> bin(37) == '0b100101'
     REQUIRE((mara::binary_repr<6>(37) == mara::make_sequence(1, 0, 0, 1, 0, 1).reverse()).all());
     REQUIRE(mara::to_integral(mara::binary_repr<6>(37)) == 37);
+
+    REQUIRE(mara::make_tree_index(5, 6, 7).with_level(3) == mara::tree_index_t<3>{3, {5, 6, 7}});
+
+    REQUIRE      ((mara::tree_index_t<3>{1, {0, 0, 1}}).valid());
+    REQUIRE      ((mara::tree_index_t<3>{1, {1, 1, 1}}).valid());
+    REQUIRE_FALSE((mara::tree_index_t<3>{1, {1, 0, 2}}).valid());
+
+    REQUIRE(((mara::tree_index_t<3>{1, {0, 1, 0}}).orthant() == mara::arithmetic_sequence_t<bool, 3>{0, 1, 0}).all());
+    REQUIRE(((mara::tree_index_t<3>{3, {0, 1, 2}}).orthant() == mara::arithmetic_sequence_t<bool, 3>{0, 0, 0}).all());
+    REQUIRE(((mara::tree_index_t<3>{3, {3, 4, 5}}).orthant() == mara::arithmetic_sequence_t<bool, 3>{0, 1, 1}).all());
+    REQUIRE(((mara::tree_index_t<3>{3, {6, 7, 0}}).orthant() == mara::arithmetic_sequence_t<bool, 3>{1, 1, 0}).all());
+
+    REQUIRE((mara::tree_index_t<3>{3, {0, 1, 2}}).advance_level() == mara::tree_index_t<3>{2, {0, 1, 2}});
+    REQUIRE((mara::tree_index_t<3>{3, {3, 4, 5}}).advance_level() == mara::tree_index_t<3>{2, {3, 0, 1}});
 }
 
 TEST_CASE("binary tree constructors and operators work OK", "[arithmetic_binary_tree]")
@@ -101,6 +116,8 @@ TEST_CASE("binary tree constructors and operators work OK", "[arithmetic_binary_
     REQUIRE_THROWS(leaf.child_at(0, 0, 0));
     REQUIRE_NOTHROW(chil.child_at(0, 0, 0));
     REQUIRE_NOTHROW(chil.child_at(1, 1, 1));
+
+    REQUIRE(&chil.node_at({}) == &chil);
 
     REQUIRE(leaf.indexes().size() == leaf.size());
     REQUIRE(chil.indexes().size() == chil.size());
@@ -121,6 +138,11 @@ TEST_CASE("binary tree constructors and operators work OK", "[arithmetic_binary_
 
     auto A = mara::tree_of<1>(nd::linspace(0.0, 1.0, 11));
     REQUIRE((((A + A).value() == A.value() + A.value()) | nd::all()));
+    REQUIRE((((A + 2).value() == A.value() + 2) | nd::all()));
+    REQUIRE((((A - 2).value() == A.value() - 2) | nd::all()));
+
+    // types are mapped properly through binary operations
+    static_assert(std::is_same<std::decay_t<decltype(mara::tree_of<1>(nd::zeros(10) + 2.0).value())>::value_type, double>::value);
 }
 
 TEST_CASE("pointwise linear prolongation works in 1d", "[amr refine_points]")

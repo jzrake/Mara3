@@ -29,6 +29,7 @@
 #pragma once
 #include <functional>
 #include <memory>
+#include <optional>
 #include <variant>
 #include "core_sequence.hpp"
 
@@ -50,6 +51,9 @@ namespace mara
     template<std::size_t Bits>
     std::size_t to_integral(const arithmetic_sequence_t<bool, Bits>& steps);
 
+    template<typename... Args>
+    auto make_tree_index(Args...);
+
     template<std::size_t Rank, typename ValueType>
     auto tree_of(ValueType value);
 
@@ -63,7 +67,7 @@ namespace mara
         static auto to_shared_ptr(T&& value)
         {
             return std::make_shared<std::decay_t<T>>(std::forward<T>(value));
-        }   
+        }
     }
 }
 
@@ -78,7 +82,75 @@ namespace mara
 template<std::size_t Rank>
 struct mara::tree_index_t
 {
+
+    /**
+     * @brief      Determine if this is a valid index (whether it is in-bounds
+     *             on its level).
+     *
+     * @return     True or false
+     */
+    bool valid() const
+    {
+        return (coordinates < (1 << level)).all();
+    }
+
+
+
+
+    /**
+     * @brief      Return this index as it would apply to the next rung of a
+     *             binary tree.
+     *
+     * @return     The index with level - 1 and the index offset according to
+     *             the orthant value
+     */
+    tree_index_t advance_level() const
+    {
+        return {level - 1, coordinates - orthant() * (1 << (level - 1))};
+    }
+
+
+
+
+    /**
+     * @brief      Return a new index with the same coordinates but a different
+     *             level.
+     *
+     * @param[in]  new_level  The level of the returned index
+     *
+     * @return     A new index
+     */
+    tree_index_t with_level(std::size_t new_level) const
+    {
+        return {new_level, coordinates};
+    }
+
+
+
+
+    /**
+     * @brief      Return the orthant (ray, quadrant, octant) of this index.
+     *
+     * @return     A sequence of bool's
+     *
+     * @note       https://en.wikipedia.org/wiki/Orthant
+     */
+    arithmetic_sequence_t<bool, Rank> orthant() const
+    {
+        return coordinates.map([this] (auto x) -> bool { return x / (1 << (level - 1)); });
+    }
+
+
+
+
+    //=========================================================================
     bool operator==(const tree_index_t& other) const { return level == other.level && (coordinates == other.coordinates).all(); }
+    bool operator!=(const tree_index_t& other) const { return level != other.level || (coordinates != other.coordinates).any(); }
+
+
+
+
+    //=========================================================================
     std::size_t level = 0;
     arithmetic_sequence_t<std::size_t, Rank> coordinates = {};
 };
@@ -137,7 +209,13 @@ struct mara::arithmetic_binary_tree_t
      */
     const value_type& value() const
     {
-        return std::get<0>(__impl);
+        try {
+            return std::get<0>(__impl);
+        }
+        catch (const std::exception&)
+        {
+            throw std::out_of_range("mara::arithmetic_binary_tree_t::value");
+        }
     }
 
 
@@ -151,23 +229,31 @@ struct mara::arithmetic_binary_tree_t
      */
     const children_array_type& children() const
     {
-        return *std::get<1>(__impl);
+        try {
+            return *std::get<1>(__impl);
+        }
+        catch (const std::exception&)
+        {
+            throw std::out_of_range("mara::arithmetic_binary_tree_t::children");
+        }
     }
 
 
 
 
     /**
-     * @brief      Return the child at a binary location in this node, if it is
+     * @brief      Return the child at a binary orthant in this node, if it is
      *             not a leaf. If it's a leaf then throw an exception.
      *
-     * @param[in]  location  The binary location e.g. (0, 1, 0) for a 3d tree
+     * @param[in]  orthant  which ray, quadrant, octant, etc.
      *
      * @return     The child node
+     *
+     * @note       https://en.wikipedia.org/wiki/Orthant
      */
-    const arithmetic_binary_tree_t& child_at(const arithmetic_sequence_t<bool, Rank>& location) const
+    const arithmetic_binary_tree_t& child_at(const arithmetic_sequence_t<bool, Rank>& orthant) const
     {
-        return children()[mara::to_integral(location)];
+        return children()[mara::to_integral(orthant)];
     }
 
 
@@ -205,6 +291,42 @@ struct mara::arithmetic_binary_tree_t
         else
         {
             return child_at(path.head().transpose()).node_at(path.tail());
+        }
+    }
+
+
+
+
+    const arithmetic_binary_tree_t& node_at(const tree_index_t<Rank>& index) const
+    {
+        if (! index.valid() || (index.level > 0 && has_value()))
+        {
+            throw std::out_of_range("mara::arithmetic_binary_tree_t::node_at");
+        }
+        return index.level == 0
+        ? *this
+        : children()[to_integral(index.orthant())].node_at(index.advance_level());
+    }
+
+
+
+
+    const arithmetic_binary_tree_t& at(const tree_index_t<Rank>& index) const
+    {
+        return node_at(index).value();
+    }
+
+
+
+
+    std::optional<const arithmetic_binary_tree_t&> find(const tree_index_t<Rank>& index) const
+    {
+        try {
+            return at(index);
+        }
+        catch (const std::exception&)
+        {
+            return {};
         }
     }
 
@@ -418,8 +540,19 @@ struct mara::arithmetic_binary_tree_t
 
 
     //=========================================================================
-    // template<typename T> auto operator* (const T& a) const { return binary_op(a, std::multiplies<>()); }
-    // template<typename T> auto operator/ (const T& a) const { return binary_op(a, std::divides<>()); }
+    template<typename T> auto operator+ (const T& v) const { return map(std::bind(std::plus<>(),          std::placeholders::_1, v)); }
+    template<typename T> auto operator- (const T& v) const { return map(std::bind(std::minus<>(),         std::placeholders::_1, v)); }
+    template<typename T> auto operator* (const T& v) const { return map(std::bind(std::multiplies<>(),    std::placeholders::_1, v)); }
+    template<typename T> auto operator/ (const T& v) const { return map(std::bind(std::divides<>(),       std::placeholders::_1, v)); }
+    template<typename T> auto operator&&(const T& v) const { return map(std::bind(std::logical_and<>(),   std::placeholders::_1, v)); }
+    template<typename T> auto operator||(const T& v) const { return map(std::bind(std::logical_or<>(),    std::placeholders::_1, v)); }
+    template<typename T> auto operator==(const T& v) const { return map(std::bind(std::equal_to<>(),      std::placeholders::_1, v)); }
+    template<typename T> auto operator!=(const T& v) const { return map(std::bind(std::not_equal_to<>(),  std::placeholders::_1, v)); }
+    template<typename T> auto operator<=(const T& v) const { return map(std::bind(std::less_equal<>(),    std::placeholders::_1, v)); }
+    template<typename T> auto operator>=(const T& v) const { return map(std::bind(std::greater_equal<>(), std::placeholders::_1, v)); }
+    template<typename T> auto operator< (const T& v) const { return map(std::bind(std::less<>(),          std::placeholders::_1, v)); }
+    template<typename T> auto operator> (const T& v) const { return map(std::bind(std::greater<>(),       std::placeholders::_1, v)); }
+
     template<typename T> auto operator+ (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::plus<>()); }
     template<typename T> auto operator- (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::minus<>()); }
     template<typename T> auto operator* (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::multiplies<>()); }
@@ -432,6 +565,7 @@ struct mara::arithmetic_binary_tree_t
     template<typename T> auto operator>=(const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::greater_equal<>()); }
     template<typename T> auto operator< (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::less<>()); }
     template<typename T> auto operator> (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::greater<>()); }
+
     auto operator+() const { return map([] (auto&& x) { return +x; }); }
     auto operator-() const { return map([] (auto&& x) { return -x; }); }
 
@@ -484,6 +618,28 @@ std::size_t mara::to_integral(const arithmetic_sequence_t<bool, Bits>& bits)
     .map([] (std::size_t e) { return [e] (bool y) { return (1 << e) * y; }; })
     .apply_to(bits)
     .sum();
+}
+
+
+
+
+/**
+ * @brief      Construct a tree index at the given coordinates, with inferred
+ *             rank. The level is initialized to zero, so you'll probably use
+ *             this like:
+ *
+ *             auto index = mara::make_tree_index(5, 6, 7).at_level(3);
+ *
+ * @param[in]  args  The coordinatrs
+ *
+ * @tparam     Args  The arg types
+ *
+ * @return     A new index
+ */
+template<typename... Args>
+auto mara::make_tree_index(Args... args)
+{
+    return tree_index_t<sizeof...(Args)>{0, {std::size_t(args)...}};
 }
 
 

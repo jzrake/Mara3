@@ -310,8 +310,19 @@ struct mara::arithmetic_sequence_t
 
 
     //=========================================================================
-    template<typename T> auto operator* (const T& a) const { return binary_op(a, std::multiplies<>()); }
-    template<typename T> auto operator/ (const T& a) const { return binary_op(a, std::divides<>()); }
+    template<typename T> auto operator+ (const T&a) const { return binary_op(a, std::plus<>()); }
+    template<typename T> auto operator- (const T&a) const { return binary_op(a, std::minus<>()); }
+    template<typename T> auto operator* (const T&a) const { return binary_op(a, std::multiplies<>()); }
+    template<typename T> auto operator/ (const T&a) const { return binary_op(a, std::divides<>()); }
+    template<typename T> auto operator&&(const T&a) const { return binary_op(a, std::logical_and<>()); }
+    template<typename T> auto operator||(const T&a) const { return binary_op(a, std::logical_or<>()); }
+    template<typename T> auto operator==(const T&a) const { return binary_op(a, std::equal_to<>()); }
+    template<typename T> auto operator!=(const T&a) const { return binary_op(a, std::not_equal_to<>()); }
+    template<typename T> auto operator<=(const T&a) const { return binary_op(a, std::less_equal<>()); }
+    template<typename T> auto operator>=(const T&a) const { return binary_op(a, std::greater_equal<>()); }
+    template<typename T> auto operator< (const T&a) const { return binary_op(a, std::less<>()); }
+    template<typename T> auto operator> (const T&a) const { return binary_op(a, std::greater<>()); }
+
     template<typename T> auto operator+ (const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::plus<>()); }
     template<typename T> auto operator- (const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::minus<>()); }
     template<typename T> auto operator* (const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::multiplies<>()); }
@@ -324,6 +335,7 @@ struct mara::arithmetic_sequence_t
     template<typename T> auto operator>=(const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::greater_equal<>()); }
     template<typename T> auto operator< (const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::less<>()); }
     template<typename T> auto operator> (const arithmetic_sequence_t<T, Rank>& v) const { return binary_op(v, std::greater<>()); }
+
     auto operator+() const { return unary_op([] (auto&& x) { return +x; }); }
     auto operator-() const { return unary_op([] (auto&& x) { return -x; }); }
 
