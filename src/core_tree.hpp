@@ -294,8 +294,14 @@ struct mara::arithmetic_binary_tree_t
         }
     }
 
-
-
+    bool contains(const tree_index_t<Rank>& index) const
+    {
+        if (! index.valid() || (index.level > 0 && has_value()))
+        {
+            return false;
+        }
+        return index.level == 0 ? true : children()[to_integral(index.orthant())].contains(index.advance_level());
+    }
 
     const arithmetic_binary_tree_t& node_at(const tree_index_t<Rank>& index) const
     {
@@ -303,23 +309,15 @@ struct mara::arithmetic_binary_tree_t
         {
             throw std::out_of_range("mara::arithmetic_binary_tree_t::node_at");
         }
-        return index.level == 0
-        ? *this
-        : children()[to_integral(index.orthant())].node_at(index.advance_level());
+        return index.level == 0 ? *this : children()[to_integral(index.orthant())].node_at(index.advance_level());
     }
 
-
-
-
-    const arithmetic_binary_tree_t& at(const tree_index_t<Rank>& index) const
+    const value_type& at(const tree_index_t<Rank>& index) const
     {
         return node_at(index).value();
     }
 
-
-
-
-    std::optional<const arithmetic_binary_tree_t&> find(const tree_index_t<Rank>& index) const
+    std::optional<value_type> find(const tree_index_t<Rank>& index) const
     {
         try {
             return at(index);

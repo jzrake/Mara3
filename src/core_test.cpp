@@ -145,6 +145,49 @@ TEST_CASE("binary tree constructors and operators work OK", "[arithmetic_binary_
     static_assert(std::is_same<std::decay_t<decltype(mara::tree_of<1>(nd::zeros(10) + 2.0).value())>::value_type, double>::value);
 }
 
+TEST_CASE("tree traversals and value retrievals work OK", "[arithmetic_binary_tree]")
+{
+    REQUIRE(mara::tree_of<3>(0.0)                         // level 0
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 1
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
+    .indexes()
+    .at(mara::make_tree_index(0, 0, 0).with_level(2)) == mara::make_tree_index(0, 0, 0).with_level(2));
+
+    REQUIRE(mara::tree_of<3>(0.0)                         // level 0
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 1
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
+    .indexes()
+    .at(mara::make_tree_index(3, 2, 1).with_level(2)) == mara::make_tree_index(3, 2, 1).with_level(2));
+
+    REQUIRE_THROWS(mara::tree_of<3>(0.0)                  // level 0
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 1
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
+    .indexes()
+    .at(mara::make_tree_index(0, 0, 0).with_level(3)));
+
+    REQUIRE(mara::tree_of<3>(0.0)                         // level 0
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 1
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
+    .indexes()
+    .find(mara::make_tree_index(3, 2, 1).with_level(2)).value() == mara::make_tree_index(3, 2, 1).with_level(2));
+
+    REQUIRE_FALSE(mara::tree_of<3>(0.0)                   // level 0
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 1
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
+    .indexes()
+    .find(mara::make_tree_index(3, 2, 1).with_level(3)).has_value());
+
+    REQUIRE(mara::tree_of<3>(0.0)                         // level 0
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 1
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
+    .contains(mara::make_tree_index(3, 2, 1).with_level(2)));
+
+    REQUIRE_FALSE(mara::tree_of<3>(0.0)                   // level 0
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 1
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
+    .contains(mara::make_tree_index(4, 2, 1).with_level(2)));
+}
+
 TEST_CASE("pointwise linear prolongation works in 1d", "[amr refine_points]")
 {
     using namespace nd;
