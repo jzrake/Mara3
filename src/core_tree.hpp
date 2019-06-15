@@ -55,14 +55,15 @@ namespace mara
 
     template<std::size_t Rank, typename ValueType>
     auto tree_of(const arithmetic_sequence_t<ValueType, 1 << Rank>& child_values);
-}
 
-namespace mara::tree::detail
-{
-    template<typename T>
-    static auto to_shared_ptr(T&& value)
+    //=========================================================================
+    namespace detail
     {
-        return std::make_shared<std::decay_t<T>>(std::forward<T>(value));
+        template<typename T>
+        static auto to_shared_ptr(T&& value)
+        {
+            return std::make_shared<std::decay_t<T>>(std::forward<T>(value));
+        }   
     }
 }
 
@@ -227,7 +228,7 @@ struct mara::arithmetic_binary_tree_t
             return tree_of<Rank>(index_in_parent);
         }
         return arithmetic_binary_tree_t<tree_index_t<Rank>, Rank>{
-            tree::detail::to_shared_ptr(
+            detail::to_shared_ptr(
             iota<1 << Rank>()
             .map([this, index_in_parent] (std::size_t n)
             {
@@ -258,7 +259,7 @@ struct mara::arithmetic_binary_tree_t
     {
         return has_value()
         ? ResultTreeType{fn(value())}
-        : ResultTreeType{tree::detail::to_shared_ptr(children().map([fn] (auto&& t) { return t.map(fn); }))};
+        : ResultTreeType{detail::to_shared_ptr(children().map([fn] (auto&& t) { return t.map(fn); }))};
     }
 
 
@@ -286,7 +287,7 @@ struct mara::arithmetic_binary_tree_t
         try {
             return has_value()
             ? ResultTreeType{value()(other.value())}
-            : ResultTreeType{tree::detail::to_shared_ptr(
+            : ResultTreeType{detail::to_shared_ptr(
             iota<1 << Rank>()
             .map([this, &other] (std::size_t n)
             {
@@ -303,35 +304,36 @@ struct mara::arithmetic_binary_tree_t
 
 
     /**
-     * @brief      Pair this tree with another one of the same shape.
+     * @brief      Map a binary function over this tree and another of the same
+     *             shape.
      *
-     * @param[in]  other      The other tree
+     * @param[in]  other           The other tree
+     * @param      fn              The binary function
      *
-     * @tparam     OtherType  The value type of the other tree
+     * @tparam     OtherType       The value type of the other tree
+     * @tparam     BinaryOperator  The type of the binary operator
+     * @tparam     ResultTreeType  The resulting type (deduced)
      *
-     * @return     A tree of tuples with the same shape as this one
-     *
-     * @note       Only the rank can be ensured correct at compile-time. This
-     *             function will throw an exception if the shapes of this tree
-     *             and the other one are different.
+     * @return     The new tree
      */
     template<typename OtherType,
-             typename ResultTreeType = arithmetic_binary_tree_t<std::pair<ValueType, OtherType>, Rank>>
-    auto pair(const arithmetic_binary_tree_t<OtherType, Rank>& other) const -> ResultTreeType
+             typename BinaryOperator,
+             typename ResultTreeType = arithmetic_binary_tree_t<std::invoke_result_t<BinaryOperator, ValueType, OtherType>, Rank>>
+    auto binary_op(const arithmetic_binary_tree_t<OtherType, Rank>& other, BinaryOperator&& fn) const -> ResultTreeType
     {
         try {
             return has_value()
-            ? ResultTreeType{std::make_pair(value(), other.value())}
-            : ResultTreeType{tree::detail::to_shared_ptr(
+            ? ResultTreeType{fn(value(), other.value())}
+            : ResultTreeType{detail::to_shared_ptr(
             iota<1 << Rank>()
-            .map([this, &other] (std::size_t n)
+            .map([this, &fn, &other] (std::size_t n)
             {
-                return children()[n].pair(other.children()[n]);
+                return children()[n].binary_op(other.children()[n], std::forward<BinaryOperator>(fn));
             }))};
         }
         catch (const std::exception&)
         {
-            throw std::invalid_argument("mara::arithmetic_binary_tree_t::pair (differently shaped trees)");
+            throw std::invalid_argument("mara::arithmetic_binary_tree_t::binary_op (differently shaped trees)");
         }
     }
 
@@ -360,7 +362,7 @@ struct mara::arithmetic_binary_tree_t
         {
             return predicate(value()) ? tree_of<Rank>(bifurcate(value())) : *this;
         }
-        return {tree::detail::to_shared_ptr(children().map([&] (auto&& c) { return c.bifurcate_if(predicate, bifurcate); }))};
+        return {detail::to_shared_ptr(children().map([&] (auto&& c) { return c.bifurcate_if(predicate, bifurcate); }))};
     }
 
 
@@ -387,8 +389,52 @@ struct mara::arithmetic_binary_tree_t
         {
             return tree_of<Rank>(bifurcate(value()));
         }
-        return ResultTreeType{tree::detail::to_shared_ptr(children().map([&] (auto&& c) { return c.bifurcate_all(bifurcate); }))};
+        return ResultTreeType{detail::to_shared_ptr(children().map([&] (auto&& c) { return c.bifurcate_all(bifurcate); }))};
     }
+
+
+
+
+    /**
+     * @brief      Pair this tree with another one of the same shape.
+     *
+     * @param[in]  other      The other tree
+     *
+     * @tparam     OtherType  The value type of the other tree
+     *
+     * @return     A tree of tuples with the same shape as this one
+     *
+     * @note       Only the rank can be ensured correct at compile-time. This
+     *             function will throw an exception if the shapes of this tree
+     *             and the other one are different.
+     */
+    template<typename OtherType>
+    auto pair(const arithmetic_binary_tree_t<OtherType, Rank>& other) const
+    {
+        return binary_op(other, [] (auto&& a, auto&& b) { return std::make_pair(a, b); });
+    }
+
+
+
+
+    //=========================================================================
+    // template<typename T> auto operator* (const T& a) const { return binary_op(a, std::multiplies<>()); }
+    // template<typename T> auto operator/ (const T& a) const { return binary_op(a, std::divides<>()); }
+    template<typename T> auto operator+ (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::plus<>()); }
+    template<typename T> auto operator- (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::minus<>()); }
+    template<typename T> auto operator* (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::multiplies<>()); }
+    template<typename T> auto operator/ (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::divides<>()); }
+    template<typename T> auto operator&&(const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::logical_and<>()); }
+    template<typename T> auto operator||(const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::logical_or<>()); }
+    template<typename T> auto operator==(const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::equal_to<>()); }
+    template<typename T> auto operator!=(const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::not_equal_to<>()); }
+    template<typename T> auto operator<=(const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::less_equal<>()); }
+    template<typename T> auto operator>=(const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::greater_equal<>()); }
+    template<typename T> auto operator< (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::less<>()); }
+    template<typename T> auto operator> (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::greater<>()); }
+    auto operator+() const { return map([] (auto&& x) { return +x; }); }
+    auto operator-() const { return map([] (auto&& x) { return -x; }); }
+
 
 
 
@@ -463,7 +509,8 @@ auto mara::tree_of(ValueType value)
 
 
 /**
- * @brief      Return a binary tree with leaf children having the given values.
+ * @brief      Return a binary tree node, with 2^Rank children in the given
+ *             sequence.
  *
  * @param[in]  child_values  The child values to put in the tree
  *
@@ -477,6 +524,6 @@ auto mara::tree_of(const arithmetic_sequence_t<ValueType, 1 << Rank>& child_valu
 {
     return arithmetic_binary_tree_t<ValueType, Rank>
     {
-        tree::detail::to_shared_ptr(child_values.map([] (auto&& c) { return tree_of<Rank>(c); }))
+        detail::to_shared_ptr(child_values.map([] (auto&& c) { return tree_of<Rank>(c); }))
     };
 }

@@ -57,14 +57,15 @@ namespace mara
 
     template<std::size_t Rank>
     arithmetic_sequence_t<std::size_t, Rank> iota();
-}
 
-namespace mara::sequence::detail
-{
-    template<std::size_t... Is>
-    auto iota_impl(std::index_sequence<Is...>)
+    //=========================================================================
+    namespace detail
     {
-        return mara::make_sequence(Is...);
+        template<std::size_t... Is>
+        auto iota_impl(std::index_sequence<Is...>)
+        {
+            return mara::make_sequence(Is...);
+        }
     }
 }
 
@@ -549,5 +550,6 @@ auto mara::lift(Function f)
 template<std::size_t Rank>
 mara::arithmetic_sequence_t<std::size_t, Rank> mara::iota()
 {
-    return sequence::detail::iota_impl(std::make_index_sequence<Rank>());
+
+    return detail::iota_impl(std::make_index_sequence<Rank>());
 }

@@ -51,32 +51,29 @@ namespace mara
 
     template<typename Writable, typename Serializable>
     auto write_struct_providing_keyval_tuples(Writable& location, Serializable&& instance);
+
+    //=========================================================================
+    namespace detail
+    {
+        template<typename Function, typename Tuple, std::size_t... Is>
+        void foreach_tuple_impl(Function&& fn, Tuple&& t, std::index_sequence<Is...>);
+
+        template<typename Function, typename Tuple>
+        void foreach_tuple(Function&& fn, Tuple&& t);
+
+        template<typename Function, typename Tuple1, typename Tuple2, std::size_t... Is>
+        void foreach_tuple_impl(Function&& fn, Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>);
+
+        template<typename Function, typename Tuple1, typename Tuple2>
+        void foreach_tuple(Function&& fn, Tuple1&& t1, Tuple2&& t2);
+
+        template<typename Tuple1, typename Tuple2, std::size_t... Is>
+        auto tuple_pair_impl(Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>);
+
+        template<typename Tuple1, typename Tuple2>
+        auto tuple_pair(Tuple1&& t1, Tuple2&& t2);
+    };
 }
-
-
-
-
-//=============================================================================
-namespace mara::serialize::detail
-{
-    template<typename Function, typename Tuple, std::size_t... Is>
-    void foreach_tuple_impl(Function&& fn, Tuple&& t, std::index_sequence<Is...>);
-
-    template<typename Function, typename Tuple>
-    void foreach_tuple(Function&& fn, Tuple&& t);
-
-    template<typename Function, typename Tuple1, typename Tuple2, std::size_t... Is>
-    void foreach_tuple_impl(Function&& fn, Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>);
-
-    template<typename Function, typename Tuple1, typename Tuple2>
-    void foreach_tuple(Function&& fn, Tuple1&& t1, Tuple2&& t2);
-
-    template<typename Tuple1, typename Tuple2, std::size_t... Is>
-    auto tuple_pair_impl(Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>);
-
-    template<typename Tuple1, typename Tuple2>
-    auto tuple_pair(Tuple1&& t1, Tuple2&& t2);
-};
 
 
 
@@ -172,7 +169,7 @@ auto mara::write_struct_providing_keyval_tuples(Writable& location, Serializable
     {
         location.write(name, value);
     };
-    mara::serialize::detail::foreach_tuple(f, instance.keys(), instance.values());
+    mara::detail::foreach_tuple(f, instance.keys(), instance.values());
 }
 
 
@@ -180,13 +177,13 @@ auto mara::write_struct_providing_keyval_tuples(Writable& location, Serializable
 
 //=============================================================================
 template<typename Function, typename Tuple, std::size_t... Is>
-void mara::serialize::detail::foreach_tuple_impl(Function&& fn, Tuple&& t, std::index_sequence<Is...>)
+void mara::detail::foreach_tuple_impl(Function&& fn, Tuple&& t, std::index_sequence<Is...>)
 {
     (fn(std::get<Is>(t)), ...);
 }
 
 template<typename Function, typename Tuple>
-void mara::serialize::detail::foreach_tuple(Function&& fn, Tuple&& t)
+void mara::detail::foreach_tuple(Function&& fn, Tuple&& t)
 {
     return foreach_tuple_impl(
         std::forward<Function>(fn),
@@ -195,13 +192,13 @@ void mara::serialize::detail::foreach_tuple(Function&& fn, Tuple&& t)
 }
 
 template<typename Function, typename Tuple1, typename Tuple2, std::size_t... Is>
-void mara::serialize::detail::foreach_tuple_impl(Function&& fn, Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>)
+void mara::detail::foreach_tuple_impl(Function&& fn, Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>)
 {
     (fn(std::get<Is>(t1), std::get<Is>(t2)), ...);
 }
 
 template<typename Function, typename Tuple1, typename Tuple2>
-void mara::serialize::detail::foreach_tuple(Function&& fn, Tuple1&& t1, Tuple2&& t2)
+void mara::detail::foreach_tuple(Function&& fn, Tuple1&& t1, Tuple2&& t2)
 {
     return foreach_tuple_impl(
         std::forward<Function>(fn),
@@ -211,13 +208,13 @@ void mara::serialize::detail::foreach_tuple(Function&& fn, Tuple1&& t1, Tuple2&&
 }
 
 template<typename Tuple1, typename Tuple2, std::size_t... Is>
-auto mara::serialize::detail::tuple_pair_impl(Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>)
+auto mara::detail::tuple_pair_impl(Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>)
 {
     return std::make_tuple(std::make_pair(std::get<Is>(t1), std::get<Is>(t2))...);
 }
 
 template<typename Tuple1, typename Tuple2>
-auto mara::serialize::detail::tuple_pair(Tuple1&& t1, Tuple2&& t2)
+auto mara::detail::tuple_pair(Tuple1&& t1, Tuple2&& t2)
 {
     return tuple_pair_impl(
         std::forward<Tuple1>(t1),

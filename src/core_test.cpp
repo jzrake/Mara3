@@ -89,7 +89,7 @@ TEST_CASE("binary tree indexes can be constructed", "[arithmetic_binary_tree]")
     REQUIRE(mara::to_integral(mara::binary_repr<6>(37)) == 37);
 }
 
-TEST_CASE("binary tree constructors work OK", "[arithmetic_binary_tree]")
+TEST_CASE("binary tree constructors and operators work OK", "[arithmetic_binary_tree]")
 {
     auto leaf = mara::tree_of<3>(10.0);
     auto chil = mara::tree_of<3>(mara::iota<8>());
@@ -118,6 +118,9 @@ TEST_CASE("binary tree constructors work OK", "[arithmetic_binary_tree]")
     REQUIRE_THROWS(chil.map([] (auto i) { return [i] (auto x) { return x * i; }; }).apply_to(leaf));
     REQUIRE_THROWS(chil.pair(leaf));
     REQUIRE_NOTHROW(chil.pair(chil));
+
+    auto A = mara::tree_of<1>(nd::linspace(0.0, 1.0, 11));
+    REQUIRE((((A + A).value() == A.value() + A.value()) | nd::all()));
 }
 
 TEST_CASE("pointwise linear prolongation works in 1d", "[amr refine_points]")
