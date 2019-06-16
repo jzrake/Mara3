@@ -110,8 +110,8 @@ void create_simple_two_dimensional_arrays()
  * @brief      Create new arrays by zipping arrays of the same shape together.
  *             Demonstrates:
  *
- *             - nd::zip_arrays
- *             - nd::unzip_array
+ *             - nd::zip
+ *             - nd::unzip
  *             - nd::get
  *             - nd::all
  *             - equality comparison
@@ -123,7 +123,7 @@ void zip_arrays_together()
     auto Y = nd::zeros<double>(10);
     auto Z = nd::arange(10);
 
-    auto xyz = nd::zip_arrays(X, Y, Z); // xyz is a 1d array of 3-tuples
+    auto xyz = nd::zip(X, Y, Z); // xyz is a 1d array of 3-tuples
 
     // If you have an array of tuples, but you just wanted the elements at a
     // single tuple index, you can use nd::get like this:
@@ -143,8 +143,8 @@ void zip_arrays_together()
     // modify the class definition.
 
     // If you need to unpack an array of tuples into a tuple of arrays, you can
-    // use nd::unzip_array:
-    auto [x, y, z] = nd::unzip_array(xyz); // the assignment syntax on the left is a C++17 feature.
+    // use nd::unzip:
+    auto [x, y, z] = nd::unzip(xyz); // the assignment syntax on the left is a C++17 feature.
 }
 
 
@@ -206,7 +206,7 @@ void map_functions_over_arrays()
  * @brief      Apply functions with multiple arguments to several arrays.
  *             Demonstrates:
  *
- *             - nd::zip_arrays
+ *             - nd::zip
  *             - nd::map
  *             - nd::apply
  */
@@ -236,14 +236,14 @@ void map_functions_with_multiple_arguments_over_arrays()
     };
 
     // We could use it like this:
-    auto y1 = zip_arrays(x, s) | map(gaussian_operating_on_tuples);
+    auto y1 = zip(x, s) | map(gaussian_operating_on_tuples);
 
     // Since this pattern comes up a lot, there is a function, `apply`, that
     // writes the intermediate function for you. `apply` takes a function that
     // operates on N scalar values, and returns a function that operates on an
     // array of N-tuples. The whole sequence above may be written compactly like
     // this:
-    auto y2 = zip_arrays(linspace(-1.0, 1.0, 100), linspace(1.0, 2.0, 100)) | apply(gaussian2);
+    auto y2 = zip(linspace(-1.0, 1.0, 100), linspace(1.0, 2.0, 100)) | apply(gaussian2);
 
     assert(y1 == y2 | all());
 }

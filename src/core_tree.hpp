@@ -202,8 +202,8 @@ struct mara::arithmetic_binary_tree_t
 
 
     /**
-     * @brief      Get the value of this node if it is a leaf, or throw an
-     *             exception otherwise.
+     * @brief      Get the value of this node if it is a leaf, or throw
+     *             out-of-range otherwise.
      *
      * @return     The value
      */
@@ -223,7 +223,7 @@ struct mara::arithmetic_binary_tree_t
 
     /**
      * @brief      Get the children of this node if it is not a leaf, or throw
-     *             an exception otherwise.
+     *             an out-of-range otherwise.
      *
      * @return     The array of children.
      */
@@ -243,7 +243,7 @@ struct mara::arithmetic_binary_tree_t
 
     /**
      * @brief      Return the child at a binary orthant in this node, if it is
-     *             not a leaf. If it's a leaf then throw an exception.
+     *             not a leaf. Throws out-of-range if this is a leaf node.
      *
      * @param[in]  orthant  which ray, quadrant, octant, etc.
      *
@@ -260,7 +260,14 @@ struct mara::arithmetic_binary_tree_t
 
 
     /**
-     * @brief      Convenience method for the one above.
+     * @brief      Convenience method for the one above. Throws out-of-range if
+     *             this is a leaf node.
+     *
+     * @param[in]  args  The bits (one per dimension) of the child node
+     *
+     * @tparam     Args  The argument types
+     *
+     * @return     The child node, if this node is not a leaf
      */
     template<typename... Args>
     const arithmetic_binary_tree_t& child_at(Args... args) const
@@ -272,8 +279,10 @@ struct mara::arithmetic_binary_tree_t
 
 
     /**
-     * @brief      Return the node at an arbitrarily deep binary path below this
-     *             node.
+     * @brief      Return the node at an arbitrarily depth path below this node
+     *             using a sequence of bits. The sequence contains one bit per
+     *             dimension per level to traverse. Throws out-of-range if the
+     *             bit sequence is non-empty and this node is a leaf.
      *
      * @param[in]  path   A binary path of arbitrary depth
      *
@@ -294,15 +303,18 @@ struct mara::arithmetic_binary_tree_t
         }
     }
 
-    bool contains(const tree_index_t<Rank>& index) const
-    {
-        if (! index.valid() || (index.level > 0 && has_value()))
-        {
-            return false;
-        }
-        return index.level == 0 ? true : children()[to_integral(index.orthant())].contains(index.advance_level());
-    }
 
+
+
+    /**
+     * @brief      Like the above, except the target node is identified by a
+     *             tree index rather than a bit sequence. Throws out-of-range if
+     *             the bit sequence is non-empty and this node is a leaf.
+     *
+     * @param[in]  index  The target index (level, coordinates)
+     *
+     * @return     A node
+     */
     const arithmetic_binary_tree_t& node_at(const tree_index_t<Rank>& index) const
     {
         if (! index.valid() || (index.level > 0 && has_value()))
@@ -312,11 +324,51 @@ struct mara::arithmetic_binary_tree_t
         return index.level == 0 ? *this : children()[to_integral(index.orthant())].node_at(index.advance_level());
     }
 
+
+
+
+    /**
+     * @brief      Determine whether a node exists at the given tree index.
+     *
+     * @param[in]  index  The index to check
+     *
+     * @return     True or false
+     */
+    bool contains(const tree_index_t<Rank>& index) const
+    {
+        if (! index.valid() || (index.level > 0 && has_value()))
+        {
+            return false;
+        }
+        return index.level == 0 ? true : children()[to_integral(index.orthant())].contains(index.advance_level());
+    }
+
+
+
+
+    /**
+     * @brief      Return a reference to the value at the given index. Throws
+     *             out-of-range if no leaf node exists at that index.
+     *
+     * @param[in]  index  The target index
+     *
+     * @return     A const reference to the value
+     */
     const value_type& at(const tree_index_t<Rank>& index) const
     {
         return node_at(index).value();
     }
 
+
+
+
+    /**
+     * @brief      Return optional<value_type> for the given index. Can't fail.
+     *
+     * @param[in]  index  The target index
+     *
+     * @return     The value, if it exists
+     */
     std::optional<value_type> find(const tree_index_t<Rank>& index) const
     {
         try {
@@ -379,7 +431,32 @@ struct mara::arithmetic_binary_tree_t
     {
         return has_value()
         ? ResultTreeType{fn(value())}
-        : ResultTreeType{detail::to_shared_ptr(children().map([fn] (auto&& t) { return t.map(fn); }))};
+        : ResultTreeType{
+            detail::to_shared_ptr(children().map([fn] (auto&& t) { return t.map(fn); }))
+        };
+    }
+
+
+
+
+    /**
+     * @brief      Return another tree, with the node x at the given index
+     *             replaced by x.map(fn);
+     *
+     * @param[in]  index     The index of the node to update
+     * @param      fn        The function to be mapped
+     *
+     * @tparam     Function  The function type
+     *
+     * @return     A new tree, with the same shape and value type as this one
+     */
+    template<typename Function>
+    arithmetic_binary_tree_t update(const tree_index_t<Rank>& index, Function&& fn) const
+    {
+        return index.level == 0
+        ? map(fn)
+        : {detail::to_shared_ptr(children().update(to_integral(index.orthant()),
+        [&] (auto&& c) { return c.update(index.advance_level(), fn); }))};
     }
 
 

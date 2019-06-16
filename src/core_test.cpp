@@ -182,6 +182,12 @@ TEST_CASE("tree traversals and value retrievals work OK", "[arithmetic_binary_tr
     .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
     .contains(mara::make_tree_index(3, 2, 1).with_level(2)));
 
+    REQUIRE(mara::tree_of<3>(0.0)                         // level 0
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 1
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
+    .update(mara::make_tree_index(3, 2, 1).with_level(2), [] (auto) { return std::size_t(123); })
+    .at(mara::make_tree_index(3, 2, 1).with_level(2)) == 123);
+
     REQUIRE_FALSE(mara::tree_of<3>(0.0)                   // level 0
     .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 1
     .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
