@@ -340,12 +340,18 @@ struct mara::arithmetic_binary_tree_t
      */
     bool contains(const tree_index_t<Rank>& index) const
     {
-        if (! index.valid() || (index.level > 0 && has_value()))
+        if (index.level == 0)
         {
-            return false;
+            return ! index.coordinates.any();
         }
-        return index.level == 0 ? true : children()[to_integral(index.orthant())].contains(index.advance_level());
+        return children()[to_integral(index.orthant())].contains(index.advance_level());
     }
+
+
+
+
+    bool any() const { return has_value() ? bool(value()) : children().map([] (auto&& c) { return c.any(); }).any(); }
+    bool all() const { return has_value() ? bool(value()) : children().map([] (auto&& c) { return c.all(); }).all(); }
 
 
 

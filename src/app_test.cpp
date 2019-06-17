@@ -333,23 +333,36 @@ TEST_CASE("trees can be written to HDF5", "[arithmetic_binary_tree]")
         REQUIRE_THROWS(mara::read_tree_index<2>("8:000-000-000"));
     }
 
+    GIVEN("A tree with 4 levels")
+    {
+        auto bif = [] (auto&& c) { return mara::iota<4>(); };
+        auto tree = mara::tree_of<2>(0)
+        .bifurcate_all(bif)
+        .bifurcate_all(bif)
+        .bifurcate_all(bif)
+        .bifurcate_all(bif);
 
-    // auto bif = [] (auto&& c) { return mara::iota<4>(); };
-    // auto tree = mara::tree_of<2>(0)
-    // .bifurcate_all(bif)
-    // .bifurcate_all(bif)
-    // .bifurcate_all(bif)
-    // .bifurcate_all(bif)
-    // .bifurcate_all(bif)
-    // .bifurcate_all(bif)
-    // .bifurcate_all(bif);
+        WHEN("The tree is written to a file")
+        {
+            auto file = h5::File("test.h5", "w");
+            mara::write_tree(file.open_group("."), tree);
+            file.close();
 
-    // auto file = h5::File("test.h5", "w");
+            WHEN("It is read back again")
+            {
+                auto file_r = h5::File("test.h5", "r");
+                auto tree_r = decltype(tree)();
+                mara::read_tree(file_r.open_group("."), tree_r);
 
-    // tree.indexes().sink([&file] (auto&& index)
-    // {
-    //     file.write(mara::format_tree_index(index), index.coordinates);
-    // });
+                THEN("The tree has the correct size and values")
+                {
+                    REQUIRE(tree_r.size() == tree.size());
+                    REQUIRE((tree_r == tree).all());
+                }
+            }
+            mara::filesystem::remove_file("test.h5");
+        }
+    }
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST

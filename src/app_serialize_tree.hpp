@@ -44,11 +44,27 @@ namespace mara
 
     template<std::size_t Rank>
     tree_index_t<Rank> read_tree_index(std::string str);
+
+    template<typename ValueType, std::size_t Rank>
+    void read_tree(h5::Group&& group, arithmetic_binary_tree_t<ValueType, Rank>& tree);
+
+    template<typename ValueType, std::size_t Rank>
+    void write_tree(h5::Group&& group, const arithmetic_binary_tree_t<ValueType, Rank>& tree);
 }
 
 
 
 
+/**
+ * @brief      Return a stringified tree index that can be re-parsed by the
+ *             read_tree_index method.
+ *
+ * @param[in]  index  The tree index
+ *
+ * @tparam     Rank   The rank of the tree
+ *
+ * @return     A string, formatted like "level:i-j-k"
+ */
 template<std::size_t Rank>
 std::string mara::format_tree_index(const tree_index_t<Rank>& index)
 {
@@ -69,6 +85,16 @@ std::string mara::format_tree_index(const tree_index_t<Rank>& index)
 
 
 
+/**
+ * @brief      Return a tree index from a string formatted with
+ *             format_tree_index.
+ *
+ * @param[in]  str   The string representation of the index
+ *
+ * @tparam     Rank  The rank of the tree
+ *
+ * @return     The index
+ */
 template<std::size_t Rank>
 mara::tree_index_t<Rank> mara::read_tree_index(std::string str)
 {
@@ -88,4 +114,51 @@ mara::tree_index_t<Rank> mara::read_tree_index(std::string str)
         str.erase(0, str.find('-') + 1);
     }
     return result;
+}
+
+
+
+
+/**
+ * @brief      Read a tree from an HDF5 location
+ *
+ * @param      group      The group to read from
+ * @param      tree       The tree to modify
+ *
+ * @tparam     ValueType  The tree's value type
+ * @tparam     Rank       The rank of the tree
+ */
+template<typename ValueType, std::size_t Rank>
+void mara::read_tree(h5::Group&& group, arithmetic_binary_tree_t<ValueType, Rank>& tree)
+{
+    for (auto dataset : group)
+    {
+        auto value = group.read<std::size_t>(dataset);
+        tree = std::move(tree).insert(mara::read_tree_index<2>(dataset), value);
+    }
+}
+
+
+
+
+/**
+ * @brief      Writes a tree to an HDF5 location
+ *
+ * @param      group      The group to read from
+ * @param      tree       The tree to write
+ *
+ * @tparam     ValueType  The tree's value type
+ * @tparam     Rank       The rank of the tree
+ *
+ * @note       The tree values are flattened, and written to a single group.
+ *             Traversing deeply nested HDF5 files can be annoying, and slow.
+ */
+template<typename ValueType, std::size_t Rank>
+void mara::write_tree(h5::Group&& group, const arithmetic_binary_tree_t<ValueType, Rank>& tree)
+{
+    tree.indexes().pair(tree).sink([&group] (auto&& index_and_value)
+    {
+        auto [index, value] = index_and_value;
+        group.write(format_tree_index(index), value);
+    });
 }
