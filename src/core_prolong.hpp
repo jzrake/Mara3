@@ -41,10 +41,10 @@ namespace mara::amr
     template<std::size_t Rank> auto coarsen_index_lower(nd::index_t<Rank> fi, std::size_t axis);
     template<std::size_t Rank> auto coarsen_index_upper(nd::index_t<Rank> fi, std::size_t axis);
 
-    auto prolong_points(std::size_t axis);
-    auto bisect_points(std::size_t axis);
-    auto bisect_points_lower(std::size_t axis);
-    auto bisect_points_upper(std::size_t axis);
+    inline auto prolong_points(std::size_t axis);
+    inline auto bisect_points(std::size_t axis);
+    inline auto bisect_points_lower(std::size_t axis);
+    inline auto bisect_points_upper(std::size_t axis);
 }
 
 
@@ -83,9 +83,9 @@ auto mara::amr::prolong_points(std::size_t axis)
 
         return nd::make_array([axis, coarse] (auto i)
         {
-            return 0.5 * (
+            return (
                 coarse(coarsen_index_lower(i, axis)) +
-                coarse(coarsen_index_upper(i, axis)));
+                coarse(coarsen_index_upper(i, axis))) * 0.5;
         }, prolong_shape(coarse.shape(), axis));
     };
 }
@@ -127,7 +127,7 @@ auto mara::amr::bisect_points_upper(std::size_t axis)
 
 //=============================================================================
 template<>
-auto mara::amr::refine_points<1>()
+inline auto mara::amr::refine_points<1>()
 {
     return [] (auto array)
     {
@@ -138,7 +138,7 @@ auto mara::amr::refine_points<1>()
 }
 
 template<>
-auto mara::amr::refine_points<2>()
+inline auto mara::amr::refine_points<2>()
 {
     return [] (auto array)
     {
