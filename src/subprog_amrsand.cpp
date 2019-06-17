@@ -205,7 +205,11 @@ auto AmrSandbox::create_diagnostics(const app_state_t& state)
 //=============================================================================
 void AmrSandbox::print_run_loop_message(const app_state_t& state, mara::perf_diagnostics_t perf)
 {
-    auto kzps = 256 * 256 / perf.execution_time_ms;
+    auto num_zones = state.solution.vertices
+    .map([] (auto&& block) { return block.size(); })
+    .sum();
+
+    auto kzps = num_zones / perf.execution_time_ms;
 
     std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n",
         state.solution.iteration.as_integral(),
@@ -247,11 +251,34 @@ auto AmrSandbox::next_schedule(const mara::schedule_t& schedule, const mara::con
 
 auto AmrSandbox::next_solution(const solution_state_t& solution)
 {
+    auto extend_guard_on_axis = [] (auto tree, std::size_t axis)
+    {
+        return [tree, axis] (auto block_index, auto cell_values)
+        {
+            auto L = tree.at(block_index.prev_on(axis).wrap()) | nd::select_final(1, axis);
+            auto R = tree.at(block_index.next_on(axis).wrap()) | nd::select_first(1, axis);
+            return L | nd::concat(cell_values) | nd::concat(R); // | nd::to_shared();
+        };
+    };
+
+    auto extend_guard = [extend_guard_on_axis] (auto tree)
+    {
+        return tree.indexes().pair(tree).apply(extend_guard_on_axis(tree, 0));
+    };
+
+    auto remove_guard = [] (auto tree)
+    {
+        return tree.map([] (auto block)
+        {
+            return block | nd::select_axis(0).from(1).to(1).from_the_end() | nd::to_shared();
+        });
+    };
+
     return solution_state_t{
         solution.iteration + 1,
         solution.time + 0.12,
         solution.vertices,
-        solution.solution,
+        remove_guard(extend_guard(solution.solution)),
     };
 }
 

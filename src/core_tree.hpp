@@ -141,6 +141,28 @@ struct mara::tree_index_t
     }
 
 
+    tree_index_t next_on(std::size_t axis) const
+    {
+        if (axis >= Rank)
+            throw std::out_of_range("mara::tree_index_t::next_on");
+
+        return {level, coordinates.set(axis, coordinates[axis] + 1)};
+    }
+
+
+    tree_index_t prev_on(std::size_t axis) const
+    {
+        if (axis >= Rank)
+            throw std::out_of_range("mara::tree_index_t::next_on");
+
+        return {level, coordinates.set(axis, coordinates[axis] - 1)};
+    }
+
+    tree_index_t wrap() const
+    {
+        return {level, coordinates.map([this] (auto c) { return c % (1 << level); })};
+    }
+
 
 
     //=========================================================================
@@ -350,8 +372,9 @@ struct mara::arithmetic_binary_tree_t
 
 
 
-    bool any() const { return has_value() ? bool(value()) : children().map([] (auto&& c) { return c.any(); }).any(); }
-    bool all() const { return has_value() ? bool(value()) : children().map([] (auto&& c) { return c.all(); }).all(); }
+    bool      any() const { return has_value() ? bool(value()) : children().map([] (auto&& c) { return c.any(); }).any(); }
+    bool      all() const { return has_value() ? bool(value()) : children().map([] (auto&& c) { return c.all(); }).all(); }
+    ValueType sum() const { return has_value() ?      value()  : children().map([] (auto&& c) { return c.sum(); }).sum(); }
 
 
 
@@ -474,6 +497,12 @@ struct mara::arithmetic_binary_tree_t
         : ResultTreeType{
             detail::to_shared_ptr(children().map([fn] (auto&& t) { return t.map(fn); }))
         };
+    }
+
+    template<typename Function>
+    auto apply(Function&& fn) const
+    {
+        return map([&fn] (auto&& t) { return std::apply(fn, t); });
     }
 
 
