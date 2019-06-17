@@ -31,6 +31,10 @@
 #include <array>
 #include "core_catch.hpp"
 #include "core_hdf5.hpp"
+#include "core_tree.hpp"
+#include "app_serialize.hpp"
+#include "app_serialize_tree.hpp"
+#include "app_filesystem.hpp"
 
 
 
@@ -58,17 +62,22 @@ SCENARIO("Files can be created", "[h5::File]")
                 REQUIRE_NOTHROW(file.close());
             }
         }
+        mara::filesystem::remove_file("test.h5");
     }
 
     GIVEN("A file is opened for reading")
     {
-        auto file = h5::File("test.h5", "r");
-    
-        THEN("It reports as open with read-only intent")
+        h5::File("test.h5", "w");
         {
-            REQUIRE(file.is_open());
-            REQUIRE(file.intent() == h5::Intent::rdonly);
+            auto file = h5::File("test.h5", "r");
+        
+            THEN("It reports as open with read-only intent")
+            {
+                REQUIRE(file.is_open());
+                REQUIRE(file.intent() == h5::Intent::rdonly);
+            }
         }
+        mara::filesystem::remove_file("test.h5");
     }
 
     GIVEN("A filename that does not exist")
@@ -135,6 +144,7 @@ SCENARIO("Groups can be created in files", "[h5::Group]")
                 REQUIRE_THROWS(file.open_group("group1"));
             }
         }
+        mara::filesystem::remove_file("test.h5");
     }
 }
 
@@ -185,6 +195,7 @@ SCENARIO("Data sets can be created, read, and written to", "[h5::Dataset]")
             REQUIRE_NOTHROW(file.require_dataset("data", type, space));
             REQUIRE_THROWS(file.require_dataset("data", h5::make_datatype_for(int()), space));
         }
+        mara::filesystem::remove_file("test.h5");
     }
 
     GIVEN("A file opened for writing, native int data type, and a simple data space")
@@ -227,6 +238,7 @@ SCENARIO("Data sets can be created, read, and written to", "[h5::Dataset]")
                 REQUIRE_THROWS(dset.write(data2));
             }
         }
+        mara::filesystem::remove_file("test.h5");
     }
 
     GIVEN("A file opened for writing and a double")
@@ -244,6 +256,7 @@ SCENARIO("Data sets can be created, read, and written to", "[h5::Dataset]")
             REQUIRE(dset.read<double>() == 10.0);
             REQUIRE_THROWS(dset.read<int>() == 10);
         }
+        mara::filesystem::remove_file("test.h5");
     }
 
     GIVEN("A file opened for writing")
@@ -275,6 +288,7 @@ SCENARIO("Data sets can be created, read, and written to", "[h5::Dataset]")
                 REQUIRE(file.read<int>("data4") == 11);
             }
         }
+        mara::filesystem::remove_file("test.h5");
     }
 
     GIVEN("A file opened for writing")
@@ -301,7 +315,41 @@ SCENARIO("Data sets can be created, read, and written to", "[h5::Dataset]")
                 REQUIRE_THROWS(file.read<decltype(data1)>("data2"));
             }
         }
+        mara::filesystem::remove_file("test.h5");
     }
+}
+
+TEST_CASE("trees can be written to HDF5", "[arithmetic_binary_tree]")
+{
+    SECTION("tree indexes are formatted and read back correctly")
+    {
+        REQUIRE(mara::format_tree_index(mara::make_tree_index(0, 0, 0).with_level(0))   == "0:0-0-0");
+        REQUIRE(mara::format_tree_index(mara::make_tree_index(5, 6, 7).with_level(3))   == "3:5-6-7");
+        REQUIRE(mara::format_tree_index(mara::make_tree_index(1, 16, 17).with_level(5)) == "5:01-16-17");
+        REQUIRE(mara::format_tree_index(mara::make_tree_index(1, 2).with_level(8))      == "8:001-002");
+
+        REQUIRE(mara::read_tree_index<3>("8:000-000-000") == mara::make_tree_index(0, 0, 0).with_level(8));
+        REQUIRE(mara::read_tree_index<3>("8:001-002-255") == mara::make_tree_index(1, 2, 255).with_level(8));
+        REQUIRE_THROWS(mara::read_tree_index<2>("8:000-000-000"));
+    }
+
+
+    // auto bif = [] (auto&& c) { return mara::iota<4>(); };
+    // auto tree = mara::tree_of<2>(0)
+    // .bifurcate_all(bif)
+    // .bifurcate_all(bif)
+    // .bifurcate_all(bif)
+    // .bifurcate_all(bif)
+    // .bifurcate_all(bif)
+    // .bifurcate_all(bif)
+    // .bifurcate_all(bif);
+
+    // auto file = h5::File("test.h5", "w");
+
+    // tree.indexes().sink([&file] (auto&& index)
+    // {
+    //     file.write(mara::format_tree_index(index), index.coordinates);
+    // });
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST

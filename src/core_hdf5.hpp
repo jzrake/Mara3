@@ -179,9 +179,10 @@ class h5::Datatype final
 public:
 
     //=========================================================================
-    static Datatype native_double() { return H5Tcopy(H5T_NATIVE_DOUBLE); }
-    static Datatype native_int()    { return H5Tcopy(H5T_NATIVE_INT); }
-    static Datatype c_s1()          { return H5Tcopy(H5T_C_S1); }
+    static Datatype native_double()    { return H5Tcopy(H5T_NATIVE_DOUBLE); }
+    static Datatype native_int()       { return H5Tcopy(H5T_NATIVE_INT); }
+    static Datatype native_ulong()     { return H5Tcopy(H5T_NATIVE_ULONG); }
+    static Datatype c_s1()             { return H5Tcopy(H5T_C_S1); }
 
     //=========================================================================
     ~Datatype() { close(); }
@@ -408,6 +409,18 @@ struct h5::hdf5_type_info<int>
 {
     using native_type = int;
     static Datatype make_datatype_for(const native_type&) { return Datatype::native_int(); }
+    static Dataspace make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
+    static native_type prepare(const Datatype&, const Dataspace&) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static void* get_address(native_type& value) { return &value; }
+    static const void* get_address(const native_type& value) { return &value; }
+};
+
+template<>
+struct h5::hdf5_type_info<unsigned long>
+{
+    using native_type = unsigned long;
+    static Datatype make_datatype_for(const native_type&) { return Datatype::native_ulong(); }
     static Dataspace make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
     static native_type prepare(const Datatype&, const Dataspace&) { return native_type(); }
     static auto finalize(native_type&& value) { return std::move(value); }

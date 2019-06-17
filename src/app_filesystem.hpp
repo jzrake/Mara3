@@ -1,3 +1,4 @@
+
 /**
  ==============================================================================
  Copyright 2019, Jonathan Zrake
@@ -47,6 +48,7 @@ namespace mara::filesystem
     inline std::string extension(std::string path);
     inline std::string parent(std::string path);
     inline void require_dir(std::string path);
+    inline int remove_file(std::string path);
     inline int remove_recurse(std::string path);
     inline bool isfile(std::string path);
     inline bool isdir(std::string path);
@@ -141,6 +143,11 @@ void mara::filesystem::require_dir(std::string path)
         partial += "/" + dir;
         mkdir(partial.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     }
+}
+
+int mara::filesystem::remove_file(std::string path)
+{
+    return std::remove(path.c_str());
 }
 
 int mara::filesystem::remove_recurse(std::string path)

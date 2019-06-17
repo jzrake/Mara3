@@ -130,6 +130,17 @@ struct mara::arithmetic_sequence_t
 
 
 
+    auto set(std::size_t index, const ValueType& value) const
+    {
+        return iota<Rank>().map([this, index, &value] (std::size_t n)
+        {
+            return index == n ? value : this->operator[](n);
+        });
+    }
+
+
+
+
     /**
      * @brief      Return this sequence with the value at a single index mapped
      *             through a function.

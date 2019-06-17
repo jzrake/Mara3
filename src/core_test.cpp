@@ -192,6 +192,20 @@ TEST_CASE("tree traversals and value retrievals work OK", "[arithmetic_binary_tr
     .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 1
     .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
     .contains(mara::make_tree_index(4, 2, 1).with_level(2)));
+
+    // + 1 (root node)
+    // + 8 (root children)
+    // + 8 (root's first child's children)
+    // - 1 (root is not a leaf)
+    // - 1 (root's first child is not a leaf)
+    // = 15
+    REQUIRE(mara::tree_of<3>(0.0)
+        .insert(mara::make_tree_index(0, 1, 2).with_level(2), 1.0)
+        .size() == 15);
+
+    REQUIRE(mara::tree_of<3>(0.0)
+        .insert(mara::make_tree_index(0, 1, 2).with_level(2), 1.0)
+        .at(mara::make_tree_index(0, 1, 2).with_level(2)) == 1.0);
 }
 
 TEST_CASE("pointwise linear prolongation works in 1d", "[amr refine_points]")

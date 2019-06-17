@@ -317,11 +317,15 @@ struct mara::arithmetic_binary_tree_t
      */
     const arithmetic_binary_tree_t& node_at(const tree_index_t<Rank>& index) const
     {
-        if (! index.valid() || (index.level > 0 && has_value()))
+        if (index.level == 0)
         {
-            throw std::out_of_range("mara::arithmetic_binary_tree_t::node_at");
+            if (index.coordinates.any())
+            {
+                throw std::out_of_range("mara::arithmetic_binary_tree_t::node_at");                
+            }
+            return *this;
         }
-        return index.level == 0 ? *this : children()[to_integral(index.orthant())].node_at(index.advance_level());
+        return children()[to_integral(index.orthant())].node_at(index.advance_level());
     }
 
 
@@ -393,7 +397,7 @@ struct mara::arithmetic_binary_tree_t
      *
      * @return     A tree of indexes
      */
-    auto indexes(tree_index_t<Rank> index_in_parent={}) const
+    auto indexes(const tree_index_t<Rank>& index_in_parent={}) const
     {
         if (has_value())
         {
@@ -410,6 +414,36 @@ struct mara::arithmetic_binary_tree_t
                 });
             }))
         };
+    }
+
+
+
+
+    /**
+     * @brief      Invoke a function on the value of each leaf node at or below
+     *             this one.
+     *
+     * @param      fn        The function to invoke.
+     *
+     * @tparam     Function  The function type
+     *
+     * @note       This function is useful in outputting a tree to e.g. HDF5
+     *             format.
+     */
+    template<typename Function>
+    void sink(Function&& fn) const
+    {
+        if (has_value())
+        {
+            fn(value());
+        }
+        else
+        {
+            for (const auto& c : children())
+            {
+                c.sink(fn);
+            }
+        }
     }
 
 
@@ -440,8 +474,8 @@ struct mara::arithmetic_binary_tree_t
 
 
     /**
-     * @brief      Return another tree, with the node x at the given index
-     *             replaced by x.map(fn);
+     * @brief      Return a tree like this one, but with the node x at the given
+     *             index replaced by x.map(fn);
      *
      * @param[in]  index     The index of the node to update
      * @param      fn        The function to be mapped
@@ -455,8 +489,49 @@ struct mara::arithmetic_binary_tree_t
     {
         return index.level == 0
         ? map(fn)
-        : {detail::to_shared_ptr(children().update(to_integral(index.orthant()),
-        [&] (auto&& c) { return c.update(index.advance_level(), fn); }))};
+        : arithmetic_binary_tree_t{
+            detail::to_shared_ptr(children().update(to_integral(index.orthant()), [&] (auto&& c)
+            {
+                return c.update(index.advance_level(), fn);
+            }))
+        };
+    }
+
+
+
+
+    /**
+     * @brief      Insert or replace a value at the given index, creating
+     *             intermediate nodes as necessary. Throws an exception if a
+     *             non-leaf node already exists at the target index.
+     *
+     * @param[in]  index  The target index
+     * @param[in]  value  The value to insert at that index
+     *
+     * @return     A new tree
+     *
+     * @note       This method may generate nodes with default-constructed
+     *             values at indexes other than the target index, so the value
+     *             type must be default-constructible.
+     */
+    arithmetic_binary_tree_t insert(const tree_index_t<Rank>& index, const ValueType& value) const
+    {
+        if (index.level == 0)
+        {
+            if (index.coordinates.any() || ! has_value())
+            {
+                throw std::out_of_range("mara::arithmetic_binary_tree_t::insert");
+            }
+            return arithmetic_binary_tree_t{value};
+        }
+        if (has_value())
+        {
+            return tree_of<Rank>(mara::iota<1 << Rank>().map([] (auto&&) { return ValueType(); })).insert(index, value);
+        }
+        return {detail::to_shared_ptr(children().update(to_integral(index.orthant()), [next=index.advance_level(), &value] (auto&& c)
+        {
+            return c.insert(next, value);
+        }))};
     }
 
 
