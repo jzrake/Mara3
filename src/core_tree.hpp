@@ -704,7 +704,7 @@ struct mara::arithmetic_binary_tree_t
         {
             return tree_of<Rank>(bifurcate(value()));
         }
-        return ResultTreeType{detail::to_shared_ptr(children().map([&] (auto&& c) { return c.bifurcate_all(bifurcate); }))};
+        return {detail::to_shared_ptr(children().map([&] (auto&& c) { return c.bifurcate_all(bifurcate); }))};
     }
 
 

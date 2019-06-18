@@ -227,18 +227,18 @@ TEST_CASE("pointwise linear prolongation works in 1d", "[amr refine_points]")
     using namespace nd;
     using namespace mara::amr;
 
-    REQUIRE((linspace(0.0, 1.0, 11) | refine_points<1>()).get<0>().size() == 11);
-    REQUIRE((linspace(0.0, 1.0, 11) | refine_points<1>()).get<1>().size() == 11);
+    REQUIRE(mara::get<0>(linspace(0.0, 1.0, 11) | refine_points<1>()).size() == 11);
+    REQUIRE(mara::get<1>(linspace(0.0, 1.0, 11) | refine_points<1>()).size() == 11);
 
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<0>() | read_index(0))  == 0.0);
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<0>() | read_index(1))  == 0.05);
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<0>() | read_index(2))  == 0.1);
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<0>() | read_index(10)) == 0.5);
+    REQUIRE((mara::get<0>(linspace(0.0, 1.0, 11) | refine_points<1>()) | read_index(0))  == 0.0);
+    REQUIRE((mara::get<0>(linspace(0.0, 1.0, 11) | refine_points<1>()) | read_index(1))  == 0.05);
+    REQUIRE((mara::get<0>(linspace(0.0, 1.0, 11) | refine_points<1>()) | read_index(2))  == 0.1);
+    REQUIRE((mara::get<0>(linspace(0.0, 1.0, 11) | refine_points<1>()) | read_index(10)) == 0.5);
 
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<1>() | read_index(0))  == 0.5 + 0.0);
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<1>() | read_index(1))  == 0.5 + 0.05);
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<1>() | read_index(2))  == 0.5 + 0.1);
-    REQUIRE(((linspace(0.0, 1.0, 11) | refine_points<1>()).get<1>() | read_index(10)) == 0.5 + 0.5);
+    REQUIRE((mara::get<1>(linspace(0.0, 1.0, 11) | refine_points<1>()) | read_index(0))  == 0.5 + 0.0);
+    REQUIRE((mara::get<1>(linspace(0.0, 1.0, 11) | refine_points<1>()) | read_index(1))  == 0.5 + 0.05);
+    REQUIRE((mara::get<1>(linspace(0.0, 1.0, 11) | refine_points<1>()) | read_index(2))  == 0.5 + 0.1);
+    REQUIRE((mara::get<1>(linspace(0.0, 1.0, 11) | refine_points<1>()) | read_index(10)) == 0.5 + 0.5);
 }
 
 TEST_CASE("can refine a tree of arrays in 1d", "[amr arithmetic_binary_tree]")

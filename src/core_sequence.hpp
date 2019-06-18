@@ -58,6 +58,9 @@ namespace mara
     template<std::size_t Rank>
     arithmetic_sequence_t<std::size_t, Rank> iota();
 
+    template<std::size_t Index, typename ValueType, std::size_t Rank>
+    const ValueType& get(const arithmetic_sequence_t<ValueType, Rank>& seq);
+
     //=========================================================================
     namespace detail
     {
@@ -114,22 +117,15 @@ struct mara::arithmetic_sequence_t
 
 
     /**
-     * @brief      Type-safe indexing (preferred over oeprator[] where possible
-     *             for safety).
+     * @brief      Immutable set method; return a new sequence with the value at
+     *             the given index replaced. If the value is out of range, this
+     *             method returns the same sequence.
      *
-     * @tparam     Index  The index to get
+     * @param[in]  index  The index to replace
+     * @param[in]  value  The value to put in instead
      *
-     * @return     The value at the given index
+     * @return     A new sequence
      */
-    template<std::size_t Index> const ValueType& get() const
-    {
-        static_assert(Index < Rank, "mara::arithmetic_sequence_t out of range");
-        return __data[Index];
-    }
-
-
-
-
     auto set(std::size_t index, const ValueType& value) const
     {
         return iota<Rank>().map([this, index, &value] (std::size_t n)
@@ -358,21 +354,21 @@ struct mara::arithmetic_sequence_t
     auto unary_op_impl(Function&& fn, std::index_sequence<Is...>) const
     {
         using result_type = arithmetic_sequence_t<std::invoke_result_t<Function, ValueType>, Rank>;
-        return result_type{fn(this->template get<Is>())...};
+        return result_type{fn(mara::get<Is>(*this))...};
     }
 
     template<typename Function, typename T, std::size_t... Is>
     auto binary_op_impl(Function&& fn, const T& a, std::index_sequence<Is...>) const
     {
         using result_type = arithmetic_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>;
-        return result_type{fn(this->template get<Is>(), a)...};
+        return result_type{fn(mara::get<Is>(*this), a)...};
     }
 
     template<typename Function, typename T, std::size_t... Is>
     auto binary_op_impl(Function&& fn, const arithmetic_sequence_t<T, Rank>& v, std::index_sequence<Is...>) const
     {
         using result_type = arithmetic_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>;
-        return result_type{fn(this->template get<Is>(), v.template get<Is>())...};
+        return result_type{fn(mara::get<Is>(*this), mara::get<Is>(v))...};
     }
 
     template<typename Function>
@@ -575,4 +571,22 @@ mara::arithmetic_sequence_t<std::size_t, Rank> mara::iota()
 {
 
     return detail::iota_impl(std::make_index_sequence<Rank>());
+}
+
+
+
+
+/**
+ * @brief      Type-safe indexing (preferred over operator[] where possible
+ *             for safety).
+ *
+ * @tparam     Index  The index to get
+ *
+ * @return     The value at the given index
+ */
+template<std::size_t Index, typename ValueType, std::size_t Rank>
+const ValueType& mara::get(const arithmetic_sequence_t<ValueType, Rank>& seq)
+{
+    static_assert(Index < Rank, "mara::arithmetic_sequence_t (index out of range)");
+    return seq.__data[Index];
 }
