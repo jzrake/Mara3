@@ -48,6 +48,7 @@
 struct AmrSandbox
 {
     using location_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
+    using conserved_t   = mara::dimensional_value_t<0, 1, 0, double>;
     template<typename T> using quadtree_t = mara::arithmetic_binary_tree_t<T, 2>;
 
 
@@ -59,7 +60,7 @@ struct AmrSandbox
         mara::rational_number_t iteration;
         mara::unit_time<double> time;
         quadtree_t<nd::shared_array<location_2d_t, 2>> vertices;
-        quadtree_t<nd::shared_array<double, 2>> solution;
+        quadtree_t<nd::shared_array<conserved_t, 2>> conserved;
     };
 
 
@@ -81,7 +82,7 @@ struct AmrSandbox
     {
         mara::unit_time<double> time;
         quadtree_t<nd::shared_array<location_2d_t, 2>> vertices;
-        quadtree_t<nd::shared_array<double, 2>> solution;
+        quadtree_t<nd::shared_array<conserved_t, 2>> conserved;
         void write(h5::Group&& group) const;
     };
 
@@ -117,7 +118,7 @@ void AmrSandbox::diagnostics_t::write(h5::Group&& group) const
 {
     group.write("time", time);
     mara::write_tree(group.require_group("vertices"), vertices);
-    mara::write_tree(group.require_group("solution"), solution);
+    mara::write_tree(group.require_group("conserved"), conserved);
 }
 
 
@@ -167,7 +168,8 @@ auto AmrSandbox::create_solution_state(const mara::config_t& run_config)
         { return block
             | nd::midpoint_on_axis(0)
             | nd::midpoint_on_axis(1)
-            | nd::map([] (location_2d_t p) { return std::exp(-(p[0] * p[0] + p[1] * p[1]).value / 0.1); })
+            | nd::map([] (location_2d_t p) { return std::exp(-(p[0] * p[0] + p[1] * p[1]).value / 0.025); })
+            | nd::map([] (auto u) { return conserved_t{u}; })
             | nd::to_shared(); }),
     };
 }
@@ -195,7 +197,7 @@ auto AmrSandbox::create_diagnostics(const app_state_t& state)
     {
         state.solution.time,
         state.solution.vertices,
-        state.solution.solution,
+        state.solution.conserved,
     };
 }
 
@@ -251,34 +253,50 @@ auto AmrSandbox::next_schedule(const mara::schedule_t& schedule, const mara::con
 
 auto AmrSandbox::next_solution(const solution_state_t& solution)
 {
-    auto extend_guard_on_axis = [] (auto tree, std::size_t axis)
-    {
-        return [tree, axis] (auto block_index, auto cell_values)
-        {
-            auto L = tree.at(block_index.prev_on(axis).wrap()) | nd::select_final(1, axis);
-            auto R = tree.at(block_index.next_on(axis).wrap()) | nd::select_first(1, axis);
-            return L | nd::concat(cell_values) | nd::concat(R); // | nd::to_shared();
-        };
-    };
+    auto dt = mara::make_time(0.08);
 
-    auto extend_guard = [extend_guard_on_axis] (auto tree)
+    auto map_component = [] (std::size_t component)
     {
-        return tree.indexes().pair(tree).apply(extend_guard_on_axis(tree, 0));
+        return nd::map([component] (auto p) { return p[component]; });
     };
-
-    auto remove_guard = [] (auto tree)
+    auto extend = [] (auto tree, std::size_t axis)
     {
-        return tree.map([] (auto block)
+        return tree.indexes().map([tree, axis] (auto index)
         {
-            return block | nd::select_axis(0).from(1).to(1).from_the_end() | nd::to_shared();
+            auto C = tree.at(index);
+            auto L = tree.at(index.prev_on(axis)) | nd::select_final(1, axis);
+            auto R = tree.at(index.next_on(axis)) | nd::select_first(1, axis);
+            return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis);
         });
     };
+    auto area_from_vertices = [map_component] (auto vertices)
+    {
+        auto dx = vertices | map_component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
+        auto dy = vertices | map_component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
+        return dx * dy;
+    };
+    auto dy_from_vertices = [map_component] (auto vertices)
+    {
+        return vertices | map_component(1) | nd::difference_on_axis(1);
+    };
+    auto flux_from_conserved_density = [] (auto u)
+    {
+        return u * mara::make_velocity(0.1) | nd::select_axis(0).from(0).to(1).from_the_end();
+    };
+
+    auto v0 = solution.vertices;
+    auto dA = solution.vertices.map(area_from_vertices);
+    auto dy = solution.vertices.map(dy_from_vertices);
+    auto u0 = solution.conserved;
+    auto fh = extend(u0 / dA, 0).map(flux_from_conserved_density) * dy;
+    auto lx = -fh.map(nd::difference_on_axis(0));
+    auto u1 = (u0 + lx * dt).map(nd::to_shared());
 
     return solution_state_t{
         solution.iteration + 1,
-        solution.time + 0.12,
+        solution.time + dt,
         solution.vertices,
-        remove_guard(extend_guard(solution.solution)),
+        u1,
     };
 }
 

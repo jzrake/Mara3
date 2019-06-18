@@ -146,7 +146,7 @@ struct mara::tree_index_t
         if (axis >= Rank)
             throw std::out_of_range("mara::tree_index_t::next_on");
 
-        return {level, coordinates.set(axis, coordinates[axis] + 1)};
+        return {level, coordinates.set(axis, (coordinates[axis] + (1 << level) + 1) % (1 << level))};
     }
 
 
@@ -155,13 +155,9 @@ struct mara::tree_index_t
         if (axis >= Rank)
             throw std::out_of_range("mara::tree_index_t::next_on");
 
-        return {level, coordinates.set(axis, coordinates[axis] - 1)};
+        return {level, coordinates.set(axis, (coordinates[axis] + (1 << level) - 1) % (1 << level))};
     }
 
-    tree_index_t wrap() const
-    {
-        return {level, coordinates.map([this] (auto c) { return c % (1 << level); })};
-    }
 
 
 
@@ -502,7 +498,7 @@ struct mara::arithmetic_binary_tree_t
     template<typename Function>
     auto apply(Function&& fn) const
     {
-        return map([&fn] (auto&& t) { return std::apply(fn, t); });
+        return map([fn] (auto&& t) { return std::apply(fn, t); });
     }
 
 
@@ -868,3 +864,27 @@ auto mara::tree_of(const arithmetic_sequence_t<ValueType, 1 << Rank>& child_valu
         detail::to_shared_ptr(child_values.map([] (auto&& c) { return tree_of<Rank>(c); }))
     };
 }
+
+
+
+// namespace mara
+// {
+//     template<typename... ValueTypes>
+//     auto zip(const arithmetic_binary_tree_t<OtherType, Rank>& trees) const
+//     {
+//         try {
+//             return has_value()
+//             ? ResultTreeType{fn(value(), other.value())}
+//             : ResultTreeType{detail::to_shared_ptr(
+//             iota<1 << Rank>()
+//             .map([this, &fn, &other] (std::size_t n)
+//             {
+//                 return children()[n].binary_op(other.children()[n], std::forward<BinaryOperator>(fn));
+//             }))};
+//         }
+//         catch (const std::exception&)
+//         {
+//             throw std::invalid_argument("mara::zip (differently shaped trees)");
+//         }
+//     }
+// }

@@ -102,6 +102,14 @@ TEST_CASE("binary tree indexes methods work correctly", "[tree_index]")
 
     REQUIRE((mara::tree_index_t<3>{3, {0, 1, 2}}).advance_level() == mara::tree_index_t<3>{2, {0, 1, 2}});
     REQUIRE((mara::tree_index_t<3>{3, {3, 4, 5}}).advance_level() == mara::tree_index_t<3>{2, {3, 0, 1}});
+
+    REQUIRE((mara::tree_index_t<3>{3, {3, 4, 5}}).prev_on(0) == mara::tree_index_t<3>{3, {2, 4, 5}});
+    REQUIRE((mara::tree_index_t<3>{3, {3, 4, 5}}).next_on(0) == mara::tree_index_t<3>{3, {4, 4, 5}});
+    REQUIRE((mara::tree_index_t<3>{3, {0, 4, 5}}).prev_on(0) == mara::tree_index_t<3>{3, {7, 4, 5}});
+    REQUIRE((mara::tree_index_t<3>{3, {7, 4, 5}}).next_on(0) == mara::tree_index_t<3>{3, {0, 4, 5}});
+
+    REQUIRE((mara::tree_index_t<3>{3, {3, 0, 5}}).prev_on(1) == mara::tree_index_t<3>{3, {3, 7, 5}});
+    REQUIRE((mara::tree_index_t<3>{3, {4, 7, 5}}).next_on(1) == mara::tree_index_t<3>{3, {4, 0, 5}});
 }
 
 TEST_CASE("binary tree constructors and operators work OK", "[arithmetic_binary_tree]")
@@ -164,6 +172,12 @@ TEST_CASE("tree traversals and value retrievals work OK", "[arithmetic_binary_tr
     .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
     .indexes()
     .at(mara::make_tree_index(0, 0, 0).with_level(3)));
+
+    REQUIRE(mara::tree_of<3>(0.0)                         // level 0
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 1
+    .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 2
+    .indexes()
+    .at(mara::make_tree_index(3, 2, 1).with_level(2).next_on(0)) == mara::make_tree_index(3, 2, 1).with_level(2).next_on(0));
 
     REQUIRE(mara::tree_of<3>(0.0)                         // level 0
     .bifurcate_all([] (auto) { return mara::iota<8>(); }) // level 1

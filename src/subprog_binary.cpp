@@ -479,7 +479,6 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
         auto fhat_y = intercell_flux(riemann_solver, 1);
         auto evaluate = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
 
-
         auto dA = cell_surface_area(solver_data.x_vertices, solver_data.y_vertices);
         auto u0 = state.conserved;
         auto p0 = u0 / dA | nd::map(recover_primitive) | evaluate;
