@@ -13,8 +13,13 @@ def plot_single_block(ax, h5_verts, h5_values):
     X = h5_verts[...][:,:,0]
     Y = h5_verts[...][:,:,1]
     Z = h5_values[...]
-    # Z = X**2 + Y**2
-    m0 = ax.pcolormesh(X, Y, Z, edgecolor='none', vmin=0.0, vmax=1.0)
+
+    Xb = X[::X.shape[0]//2, ::X.shape[1]//2]
+    Yb = Y[::Y.shape[0]//2, ::Y.shape[1]//2]
+    Zb = np.zeros_like(Xb + Yb)
+
+    ax.pcolormesh(Xb, Yb, Zb, edgecolor='k')
+    m0 = ax.pcolormesh(X, Y, Z, edgecolor='none', vmin=0.0, vmax=1.0, cmap='viridis')
 
 
 

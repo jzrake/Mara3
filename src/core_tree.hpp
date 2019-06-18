@@ -202,6 +202,16 @@ struct mara::arithmetic_binary_tree_t
         return has_value() ? 1 : children().map([] (auto&& c) { return c.size(); }).sum();
     }
 
+    std::size_t depth(std::size_t d=0) const
+    {
+        return has_value() ? d : children().map([d] (auto&& c) { return c.depth(d + 1); }).max();
+    }
+
+    const ValueType& front() const
+    {
+        return has_value() ? value() : children().at(0).front();
+    }
+
 
 
 

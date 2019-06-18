@@ -127,6 +127,8 @@ TEST_CASE("binary tree constructors and operators work OK", "[arithmetic_binary_
 
     REQUIRE(&chil.node_at({}) == &chil);
 
+    REQUIRE(leaf.depth() == 0);
+    REQUIRE(chil.depth() == 1);
     REQUIRE(leaf.indexes().size() == leaf.size());
     REQUIRE(chil.indexes().size() == chil.size());
     REQUIRE(chil.indexes().child_at(0, 0, 0).value() == mara::tree_index_t<3>{1, {0, 0, 0}});

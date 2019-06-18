@@ -259,6 +259,27 @@ struct mara::arithmetic_sequence_t
 
 
 
+    ValueType min() const
+    {
+        auto result = mara::get<0>(*this);
+
+        for (std::size_t i = 1; i < Rank; ++i)
+            result = std::min(result, this->operator[](i));
+
+        return result;
+    }
+
+    ValueType max() const
+    {
+        auto result = mara::get<0>(*this);
+
+        for (std::size_t i = 1; i < Rank; ++i)
+            result = std::max(result, this->operator[](i));
+
+        return result;
+    }
+
+
 
     /**
      * @brief      Return a reversed version of this sequence.

@@ -140,24 +140,36 @@ auto AmrSandbox::config_template()
 
 
 //=============================================================================
-auto AmrSandbox::create_solution_state(const mara::config_t& run_config)
+static auto create_dense_vertex_quadtree(std::size_t zones_per_block, std::size_t depth)
 {
-    auto x = nd::linspace(-1, 1, run_config.get_int("block_size") + 1);
-    auto y = nd::linspace(-1, 1, run_config.get_int("block_size") + 1);
+    using location_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
+
+    auto x = nd::linspace(-1, 1, zones_per_block + 1);
+    auto y = nd::linspace(-1, 1, zones_per_block + 1);
     auto vertices = mara::tree_of<2>(
           nd::cartesian_product(x, y)
         | nd::apply([] (auto x, auto y) { return location_2d_t{x, y}; })
         | nd::to_shared());
 
-    for (std::size_t i = 0; i < run_config.get_int("depth"); ++i)
+    for (std::size_t i = 0; i < depth; ++i)
     {
-        vertices = std::move(vertices).bifurcate_if(
-        [] (auto value) { return true; /*value(0, 0)[0].value < 0.0;*/ },
-        [] (auto value)
+        vertices = std::move(vertices).bifurcate_all([] (auto value)
         {
             return (value | mara::amr::refine_points<2>()).map(nd::to_shared());
         });
     }
+    return vertices;
+}
+
+
+
+
+//=============================================================================
+auto AmrSandbox::create_solution_state(const mara::config_t& run_config)
+{
+    auto vertices = create_dense_vertex_quadtree(
+        run_config.get_int("block_size"),
+        run_config.get_int("depth"));
 
     return solution_state_t
     {
@@ -253,7 +265,8 @@ auto AmrSandbox::next_schedule(const mara::schedule_t& schedule, const mara::con
 
 auto AmrSandbox::next_solution(const solution_state_t& solution)
 {
-    auto dt = mara::make_time(0.08);
+    auto n = std::max(solution.vertices.front().shape(0), solution.vertices.front().shape(1));
+    auto dt = mara::make_time(2.0 / n / (1 << solution.vertices.depth()));
 
     auto map_component = [] (std::size_t component)
     {
@@ -275,28 +288,37 @@ auto AmrSandbox::next_solution(const solution_state_t& solution)
         auto dy = vertices | map_component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
         return dx * dy;
     };
-    auto dy_from_vertices = [map_component] (auto vertices)
+    auto spacing_on_axis = [map_component] (std::size_t axis)
     {
-        return vertices | map_component(1) | nd::difference_on_axis(1);
+        return [map_component, axis] (auto vertices)
+        {
+            return vertices | map_component(axis) | nd::difference_on_axis(axis);
+        };
     };
-    auto flux_from_conserved_density = [] (auto u)
+    auto flux_from_conserved_density = [] (std::size_t axis)
     {
-        return u * mara::make_velocity(0.1) | nd::select_axis(0).from(0).to(1).from_the_end();
+        return [axis] (auto u)
+        {
+            return u * mara::make_velocity(0.5) | nd::select_axis(axis).from(0).to(1).from_the_end();
+        };
     };
 
     auto v0 = solution.vertices;
     auto dA = solution.vertices.map(area_from_vertices);
-    auto dy = solution.vertices.map(dy_from_vertices);
+    auto dx = solution.vertices.map(spacing_on_axis(0));
+    auto dy = solution.vertices.map(spacing_on_axis(1));
     auto u0 = solution.conserved;
-    auto fh = extend(u0 / dA, 0).map(flux_from_conserved_density) * dy;
-    auto lx = -fh.map(nd::difference_on_axis(0));
-    auto u1 = (u0 + lx * dt).map(nd::to_shared());
+    auto fx = extend(u0 / dA, 0).map(flux_from_conserved_density(0)) * dy;
+    auto fy = extend(u0 / dA, 1).map(flux_from_conserved_density(1)) * dx;
+    auto lx = -fx.map(nd::difference_on_axis(0));
+    auto ly = -fy.map(nd::difference_on_axis(1));
+    auto u1 = u0 + (lx + ly) * dt;
 
     return solution_state_t{
         solution.iteration + 1,
         solution.time + dt,
         solution.vertices,
-        u1,
+        u1.map(nd::to_shared()),
     };
 }
 
