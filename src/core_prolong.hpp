@@ -144,8 +144,8 @@ inline auto mara::amr::refine_points<2>()
     {
         return mara::make_sequence(
             array | prolong_points(0) | prolong_points(1) | bisect_points_lower(0) | bisect_points_lower(1),
-            array | prolong_points(0) | prolong_points(1) | bisect_points_lower(0) | bisect_points_upper(1),
             array | prolong_points(0) | prolong_points(1) | bisect_points_upper(0) | bisect_points_lower(1),
+            array | prolong_points(0) | prolong_points(1) | bisect_points_lower(0) | bisect_points_upper(1),
             array | prolong_points(0) | prolong_points(1) | bisect_points_upper(0) | bisect_points_upper(1));
     };
 }
