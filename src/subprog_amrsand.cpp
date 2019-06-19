@@ -304,12 +304,13 @@ auto AmrSandbox::next_solution(const solution_state_t& solution)
     };
 
     auto v0 = solution.vertices;
-    auto dA = solution.vertices.map(area_from_vertices);
-    auto dx = solution.vertices.map(spacing_on_axis(0));
-    auto dy = solution.vertices.map(spacing_on_axis(1));
+    auto dA = solution.vertices.map(area_from_vertices).map(nd::to_shared());
+    auto dx = solution.vertices.map(spacing_on_axis(0)).map(nd::to_shared());
+    auto dy = solution.vertices.map(spacing_on_axis(1)).map(nd::to_shared());
     auto u0 = solution.conserved;
-    auto fx = extend(u0 / dA, 0).map(flux_from_conserved_density(0)) * dy;
-    auto fy = extend(u0 / dA, 1).map(flux_from_conserved_density(1)) * dx;
+    auto U0 = (u0 / dA).map(nd::to_shared());
+    auto fx = extend(U0, 0).map(flux_from_conserved_density(0)) * dy;
+    auto fy = extend(U0, 1).map(flux_from_conserved_density(1)) * dx;
     auto lx = -fx.map(nd::difference_on_axis(0));
     auto ly = -fy.map(nd::difference_on_axis(1));
     auto u1 = u0 + (lx + ly) * dt;

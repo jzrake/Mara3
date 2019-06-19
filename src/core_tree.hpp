@@ -202,11 +202,30 @@ struct mara::arithmetic_binary_tree_t
         return has_value() ? 1 : children().map([] (auto&& c) { return c.size(); }).sum();
     }
 
+
+
+
+    /**
+     * @brief      Return the tree's maximum depth below this node.
+     *
+     * @param[in]  d     Starting depth (mainly for internal use)
+     *
+     * @return     The tree's depth
+     */
     std::size_t depth(std::size_t d=0) const
     {
         return has_value() ? d : children().map([d] (auto&& c) { return c.depth(d + 1); }).max();
     }
 
+
+
+
+    /**
+     * @brief      Return the value that would be hit first in a depth-first
+     *             traversal.
+     *
+     * @return     The value
+     */
     const ValueType& front() const
     {
         return has_value() ? value() : children().at(0).front();
@@ -218,7 +237,7 @@ struct mara::arithmetic_binary_tree_t
     /**
      * @brief      Determines if this node has a value.
      *
-     * @return     True if has value, False otherwise
+     * @return     True if this node is a leaf, false otherwise
      */
     bool has_value() const
     {
