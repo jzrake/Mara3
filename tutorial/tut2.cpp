@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cmath>
+#include <cassert>
 #include "core_ndarray.hpp"
 
 
@@ -9,11 +10,10 @@
  * Turorial 2: array basics
  *
  * This shows how to start using Mara's n-dimensional arrays. The array library
- * is called ndarray-v2, and is is maintained independently. There is more
- * detail on usage and implementation on github:
+ * is called ndarray-v2, and is maintained independently. There is more detail
+ * on usage and implementation on github:
  *
  * https://github.com/jzrake/ndarray-v2
- * 
  */
 
 
@@ -44,7 +44,7 @@ void create_a_simple_array_and_loop_over_it()
     double value0_a = A(0);
 
     // In practice you'll rarely need to access array elements by index.
-    // Instead, you'll generally apply functions to array all at once.
+    // Instead, you'll generally apply functions to the whole array at once.
 }
 
 

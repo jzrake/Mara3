@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cassert>
 #include "app_config.hpp"
 
 

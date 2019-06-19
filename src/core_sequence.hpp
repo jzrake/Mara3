@@ -259,6 +259,12 @@ struct mara::arithmetic_sequence_t
 
 
 
+
+    /**
+     * @brief      Return the minimum value in the sequence
+     *
+     * @return     The min
+     */
     ValueType min() const
     {
         auto result = mara::get<0>(*this);
@@ -269,6 +275,14 @@ struct mara::arithmetic_sequence_t
         return result;
     }
 
+
+
+
+    /**
+     * @brief      Return the maximum value in the sequence
+     *
+     * @return     The max
+     */
     ValueType max() const
     {
         auto result = mara::get<0>(*this);
@@ -278,6 +292,7 @@ struct mara::arithmetic_sequence_t
 
         return result;
     }
+
 
 
 
