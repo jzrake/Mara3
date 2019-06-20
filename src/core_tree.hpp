@@ -116,6 +116,34 @@ struct mara::tree_index_t
 
 
     /**
+     * @brief      Return the tree index at level - 1 which contains this one as
+     *             a child.
+     *
+     * @return     The parent index
+     */
+    tree_index_t parent_index() const
+    {
+        return {level - 1, coordinates / 2};
+    }
+
+
+
+
+    /**
+     * @brief      Return a sequence of tree indexes corresponding to the 2^Rank
+     *             indexes of this node's children.
+     *
+     * @return     A sequence of tree indexes.
+     */
+    arithmetic_sequence_t<tree_index_t, 1 << Rank> child_indexes() const
+    {
+        return iota<1 << Rank>().map([this] (auto i) { return tree_index_t{level + 1, coordinates * 2 + binary_repr<Rank>(i)}; });
+    }
+
+
+
+
+    /**
      * @brief      Return a new index with the same coordinates but a different
      *             level.
      *
@@ -343,7 +371,7 @@ struct mara::arithmetic_binary_tree_t
     /**
      * @brief      Like the above, except the target node is identified by a
      *             tree index rather than a bit sequence. Throws out-of-range if
-     *             the bit sequence is non-empty and this node is a leaf.
+     *             the index is non-zero and this node is a leaf.
      *
      * @param[in]  index  The target index (level, coordinates)
      *
@@ -363,7 +391,31 @@ struct mara::arithmetic_binary_tree_t
         {
             throw std::out_of_range("mara::arithmetic_binary_tree_t::node_at");
         }
-        return children()[to_integral(index.orthant())].node_at(index.advance_level());
+        return child_at(index.orthant()).node_at(index.advance_level());
+    }
+
+
+
+
+    /**
+     * @brief      Determines if the tree contains a node (leaf or otherwise) at
+     *             the specified index.
+     *
+     * @param[in]  index  The target index
+     *
+     * @return     True if the tree as a node there, false otherwise.
+     */
+    bool contains_node(const tree_index_t<Rank>& index) const
+    {
+        if (index.level == 0)
+        {
+            return ! index.coordinates.any();
+        }
+        if (has_value())
+        {
+            return false;
+        }
+        return child_at(index.orthant()).contains_node(index.advance_level());
     }
 
 
@@ -407,7 +459,7 @@ struct mara::arithmetic_binary_tree_t
 
 
     /**
-     * @brief      Determine whether a node exists at the given tree index.
+     * @brief      Determine whether a value exists at the given tree index.
      *
      * @param[in]  index  The index to check
      *
@@ -415,11 +467,11 @@ struct mara::arithmetic_binary_tree_t
      */
     bool contains(const tree_index_t<Rank>& index) const
     {
-        if (index.level == 0)
+        if (has_value())
         {
-            return ! index.coordinates.any();
+            return index.level == 0 && ! index.coordinates.any();
         }
-        return children()[to_integral(index.orthant())].contains(index.advance_level());
+        return child_at(index.orthant()).contains(index.advance_level());
     }
 
 
@@ -443,22 +495,16 @@ struct mara::arithmetic_binary_tree_t
      * @return     A tree of indexes
      */
     auto indexes(const tree_index_t<Rank>& index_in_parent={}) const
+    -> arithmetic_binary_tree_t<tree_index_t<Rank>, Rank>
     {
         if (has_value())
         {
             return tree_of<Rank>(index_in_parent);
         }
-        return arithmetic_binary_tree_t<tree_index_t<Rank>, Rank>{
-            detail::to_shared_ptr(
-            iota<1 << Rank>()
-            .map([this, index_in_parent] (std::size_t n)
-            {
-                return children()[n].indexes({
-                    index_in_parent.level + 1,
-                    index_in_parent.coordinates * 2 + binary_repr<Rank>(n),
-                });
-            }))
-        };
+        return {detail::to_shared_ptr(index_in_parent
+                .child_indexes()
+                .map([] (auto i) { return [i] (auto&& c) { return c.indexes(i); }; })
+                .apply_to(children()))};
     }
 
 
@@ -578,7 +624,8 @@ struct mara::arithmetic_binary_tree_t
      *
      * @note       This method may generate nodes with default-constructed
      *             values at indexes other than the target index, so the value
-     *             type must be default-constructible.
+     *             type must be default-constructible. Its most likely use is in
+     *             loading data into the tree from a file.
      */
     arithmetic_binary_tree_t insert(const tree_index_t<Rank>& index, const ValueType& value) const
     {
@@ -586,7 +633,7 @@ struct mara::arithmetic_binary_tree_t
         {
             if (index.coordinates.any() || ! has_value())
             {
-                throw std::out_of_range("mara::arithmetic_binary_tree_t::insert");
+                throw std::out_of_range("mara::arithmetic_binary_tree_t::insert (target node already has children)");
             }
             return arithmetic_binary_tree_t{value};
         }

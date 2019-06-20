@@ -47,8 +47,8 @@
 //=============================================================================
 struct AmrSandbox
 {
-    using location_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
-    using conserved_t   = mara::dimensional_value_t<0, 1, 0, double>;
+    using location_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, 0, double>, 2>;
+    using conserved_t   = mara::dimensional_value_t<-2, 1, 0, double>;
     template<typename T> using quadtree_t = mara::arithmetic_binary_tree_t<T, 2>;
 
 
@@ -140,9 +140,74 @@ auto AmrSandbox::config_template()
 
 
 //=============================================================================
-static auto create_dense_vertex_quadtree(std::size_t zones_per_block, std::size_t depth)
+// static auto create_dense_vertex_quadtree(std::size_t zones_per_block, std::size_t depth)
+// {
+//     using location_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
+
+//     auto x = nd::linspace(-1, 1, zones_per_block + 1);
+//     auto y = nd::linspace(-1, 1, zones_per_block + 1);
+//     auto vertices = mara::tree_of<2>(
+//           nd::cartesian_product(x, y)
+//         | nd::apply([] (auto x, auto y) { return location_2d_t{x, y}; })
+//         | nd::to_shared());
+
+//     for (std::size_t i = 0; i < depth; ++i)
+//     {
+//         vertices = std::move(vertices).bifurcate_all([] (auto value)
+//         {
+//             return (value | mara::amr::refine_verts<2>()).map(nd::to_shared());
+//         });
+//     }
+//     return vertices;
+// }
+
+
+template<typename ValueType>
+auto ensure_valid_quadtree(mara::arithmetic_binary_tree_t<ValueType, 2> tree)
+-> mara::arithmetic_binary_tree_t<ValueType, 2>
+{
+    // a node needs to be refined if it has any neighbors with depth > 1
+
+    auto contains_node_and_depth_gtr_1 = [tree] (auto&& i)
+    {
+        return tree.contains_node(i) && tree.node_at(i).depth() > 1;
+    };
+    auto has_over_refined_neighbors = [p=contains_node_and_depth_gtr_1] (auto&& iv)
+    {
+        auto i = iv.first;
+        return p(i.next_on(0)) || p(i.prev_on(0)) || p(i.next_on(1)) || p(i.prev_on(1));
+    };
+    auto bifurcate = [] (auto&& x)
+    {
+        return (x.second | mara::amr::refine_verts<2>()).map([i=x.first] (auto&& y)
+        {
+            return std::make_pair(i, y.shared());
+        });
+    };
+
+    auto res = tree
+    .indexes()
+    .pair(tree)
+    .bifurcate_if(has_over_refined_neighbors, bifurcate)
+    .map([] (auto&& iv) { return iv.second; });
+
+    if (res.indexes().pair(res).map(has_over_refined_neighbors).any())
+    {
+        return ensure_valid_quadtree(res);
+    }
+    return res;
+}
+
+static auto create_sparse_vertex_quadtree(std::size_t zones_per_block, std::size_t depth)
 {
     using location_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
+
+    auto centroid_radius = [n=zones_per_block] (auto vertices)
+    {
+        auto centroid = (vertices(0, 0) + vertices(n, n)) * 0.5;
+        return std::sqrt((centroid * centroid).sum().value);
+    };
+    auto level_radius = [] (auto i) { return 1.0 / i; };
 
     auto x = nd::linspace(-1, 1, zones_per_block + 1);
     auto y = nd::linspace(-1, 1, zones_per_block + 1);
@@ -153,12 +218,17 @@ static auto create_dense_vertex_quadtree(std::size_t zones_per_block, std::size_
 
     for (std::size_t i = 0; i < depth; ++i)
     {
-        vertices = std::move(vertices).bifurcate_all([] (auto value)
-        {
-            return (value | mara::amr::refine_points<2>()).map(nd::to_shared());
-        });
+        vertices = std::move(vertices).bifurcate_if(
+            [i, centroid_radius, level_radius] (auto value)
+            {
+                return centroid_radius(value) < level_radius(i);
+            },
+            [] (auto value)
+            {
+                return (value | mara::amr::refine_verts<2>()).map(nd::to_shared());
+            });
     }
-    return vertices;
+    return ensure_valid_quadtree(vertices);
 }
 
 
@@ -167,7 +237,7 @@ static auto create_dense_vertex_quadtree(std::size_t zones_per_block, std::size_
 //=============================================================================
 auto AmrSandbox::create_solution_state(const mara::config_t& run_config)
 {
-    auto vertices = create_dense_vertex_quadtree(
+    auto vertices = create_sparse_vertex_quadtree(
         run_config.get_int("block_size"),
         run_config.get_int("depth"));
 
@@ -263,12 +333,56 @@ auto AmrSandbox::next_schedule(const mara::schedule_t& schedule, const mara::con
     return next_schedule;
 }
 
+template<typename ValueType, std::size_t Rank>
+auto get_cell_block(const mara::arithmetic_binary_tree_t<ValueType, Rank>& tree, mara::tree_index_t<Rank> index, bool debug=false)
+{
+    try {
+        // If the tree has a value at the target index, then return that value.
+
+        if (debug) std::cout << index.level << ' ' << to_string(index.coordinates) << std::endl;
+
+        if (tree.contains(index))
+        {
+            if (debug) std::cout << " [1] " << std::endl;
+            return tree.at(index);
+        }
+
+        // If the tree has a value at the node above the target index, then refine
+        // the data on that node (yielding 2^Rank arrays) and select the array in
+        // the index's orthant.
+        if (tree.contains(index.parent_index()))
+        {
+            if (debug) std::cout << " [2] " << std::endl;
+            auto ib = mara::to_integral(index.orthant());
+            return (tree.at(index.parent_index()) | mara::amr::refine_cells<Rank>())[ib].shared();
+        }
+
+        // If the target index is not a leaf, then combine the data from its
+        // chidren, and then coarsen it.
+        if (debug) std::cout << " [3] " << std::endl;
+
+        return mara::amr::combine_cells(index.child_indexes().map([tree] (auto i) { return get_cell_block(tree, i); }))
+             | mara::amr::coarsen_cells<Rank>()
+             | nd::to_shared();
+    }
+    catch (const std::exception&)
+    {
+        if (! debug)
+        {
+            try {
+                get_cell_block(tree, index, true);
+            } catch (...) {}
+        }
+        throw std::logic_error("get_cell_block (badly formed mesh)");
+    }
+}
+
 auto AmrSandbox::next_solution(const solution_state_t& solution)
 {
     auto n = std::max(solution.vertices.front().shape(0), solution.vertices.front().shape(1));
     auto dt = mara::make_time(2.0 / n / (1 << solution.vertices.depth()));
 
-    auto map_component = [] (std::size_t component)
+    auto take = [] (std::size_t component)
     {
         return nd::map([component] (auto p) { return p[component]; });
     };
@@ -276,23 +390,23 @@ auto AmrSandbox::next_solution(const solution_state_t& solution)
     {
         return tree.indexes().map([tree, axis] (auto index)
         {
-            auto C = tree.at(index);
-            auto L = tree.at(index.prev_on(axis)) | nd::select_final(1, axis);
-            auto R = tree.at(index.next_on(axis)) | nd::select_first(1, axis);
+            auto C = get_cell_block(tree, index);
+            auto L = get_cell_block(tree, index.prev_on(axis)) | nd::select_final(1, axis);
+            auto R = get_cell_block(tree, index.next_on(axis)) | nd::select_first(1, axis);
             return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis);
         });
     };
-    auto area_from_vertices = [map_component] (auto vertices)
+    auto area_from_vertices = [take] (auto vertices)
     {
-        auto dx = vertices | map_component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
-        auto dy = vertices | map_component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
+        auto dx = vertices | take(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
+        auto dy = vertices | take(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
         return dx * dy;
     };
-    auto spacing_on_axis = [map_component] (std::size_t axis)
+    auto spacing_on_axis = [take] (std::size_t axis)
     {
-        return [map_component, axis] (auto vertices)
+        return [take, axis] (auto vertices)
         {
-            return vertices | map_component(axis) | nd::difference_on_axis(axis);
+            return vertices | take(axis) | nd::difference_on_axis(axis);
         };
     };
     auto flux_from_conserved_density = [] (std::size_t axis)
@@ -308,12 +422,11 @@ auto AmrSandbox::next_solution(const solution_state_t& solution)
     auto dx = solution.vertices.map(spacing_on_axis(0)).map(nd::to_shared());
     auto dy = solution.vertices.map(spacing_on_axis(1)).map(nd::to_shared());
     auto u0 = solution.conserved;
-    auto U0 = (u0 / dA).map(nd::to_shared());
-    auto fx = extend(U0, 0).map(flux_from_conserved_density(0)) * dy;
-    auto fy = extend(U0, 1).map(flux_from_conserved_density(1)) * dx;
+    auto fx = extend(u0, 0).map(flux_from_conserved_density(0)) * dy;
+    auto fy = extend(u0, 1).map(flux_from_conserved_density(1)) * dx;
     auto lx = -fx.map(nd::difference_on_axis(0));
     auto ly = -fy.map(nd::difference_on_axis(1));
-    auto u1 = u0 + (lx + ly) * dt;
+    auto u1 = u0 + (lx + ly) * dt / dA;
 
     return solution_state_t{
         solution.iteration + 1,

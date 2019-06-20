@@ -85,7 +85,8 @@ struct mara::dimensional_value_t
 {
 
     dimensional_value_t() {}
-    dimensional_value_t(double value) : value(value) {}
+    dimensional_value_t(T value) : value(value) {}
+
 
     /**
      * @brief      Add another value, with same dimensions
@@ -167,7 +168,7 @@ struct mara::dimensional_value_t
      *
      * @return     A scaled quantity
      */
-    auto operator*(double scale) const
+    auto operator*(T scale) const
     {
         return dimensional_value_t { value * scale };
     }
@@ -180,7 +181,7 @@ struct mara::dimensional_value_t
      *
      * @return     A scaled quantity
      */
-    auto operator/(double inverse_scale) const
+    auto operator/(T inverse_scale) const
     {
         return dimensional_value_t { value / inverse_scale };
     }
@@ -193,7 +194,7 @@ struct mara::dimensional_value_t
      *
      * @return     The ratio
      */
-    double operator/(dimensional_value_t other) const
+    T operator/(dimensional_value_t other) const
     {
         return value / other.value;
     }
@@ -219,7 +220,7 @@ struct mara::dimensional_value_t
 
         return dimensional_value_t<C * N / D, G * N / D, S * N / D, T>
         {
-            std::pow(value, double(N) / D)
+            std::pow(value, T(N) / D)
         };
     }
 
