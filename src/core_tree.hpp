@@ -708,6 +708,21 @@ struct mara::arithmetic_binary_tree_t
 
 
     /**
+     * @brief      Convenience function for tree.indexes().pair(tree), which is
+     *             a pattern that comes up whenever an operation on the tree
+     *             values depends on the values in neighboring nodes.
+     *
+     * @return     A tree of (index, value) pairs
+     */
+    auto pair_indexes() const
+    {
+        return indexes().pair(*this);
+    }
+
+
+
+
+    /**
      * @brief      Return a tree of values by applying this tree of functions to
      *             it, if this is a tree of functions.
      *

@@ -162,42 +162,57 @@ auto AmrSandbox::config_template()
 // }
 
 
+
+
+//=============================================================================
 template<typename ValueType>
-auto ensure_valid_quadtree(mara::arithmetic_binary_tree_t<ValueType, 2> tree)
--> mara::arithmetic_binary_tree_t<ValueType, 2>
+auto over_refined_neighbors(mara::arithmetic_binary_tree_t<ValueType, 2> tree)
 {
-    // a node needs to be refined if it has any neighbors with depth > 1
-
-    auto contains_node_and_depth_gtr_1 = [tree] (auto&& i)
+    return tree.indexes().map([tree] (auto&& i)
     {
-        return tree.contains_node(i) && tree.node_at(i).depth() > 1;
-    };
-    auto has_over_refined_neighbors = [p=contains_node_and_depth_gtr_1] (auto&& iv)
-    {
-        auto i = iv.first;
-        return p(i.next_on(0)) || p(i.prev_on(0)) || p(i.next_on(1)) || p(i.prev_on(1));
-    };
-    auto bifurcate = [] (auto&& x)
-    {
-        return (x.second | mara::amr::refine_verts<2>()).map([i=x.first] (auto&& y)
-        {
-            return std::make_pair(i, y.shared());
-        });
-    };
-
-    auto res = tree
-    .indexes()
-    .pair(tree)
-    .bifurcate_if(has_over_refined_neighbors, bifurcate)
-    .map([] (auto&& iv) { return iv.second; });
-
-    if (res.indexes().pair(res).map(has_over_refined_neighbors).any())
-    {
-        return ensure_valid_quadtree(res);
-    }
-    return res;
+        return
+        (tree.contains_node(i.next_on(0)) && tree.node_at(i.next_on(0)).depth() > 1) ||
+        (tree.contains_node(i.prev_on(0)) && tree.node_at(i.prev_on(0)).depth() > 1) ||
+        (tree.contains_node(i.next_on(1)) && tree.node_at(i.next_on(1)).depth() > 1) ||
+        (tree.contains_node(i.prev_on(1)) && tree.node_at(i.prev_on(1)).depth() > 1);
+    });
 }
 
+
+
+
+//=============================================================================
+template<typename ValueType>
+auto ensure_valid_quadtree(mara::arithmetic_binary_tree_t<ValueType, 2> tree) -> mara::arithmetic_binary_tree_t<ValueType, 2>
+{   
+    auto map_2nd = [] (auto&& f)
+    {
+        // z = (x, y) -> [y0, y1, y2, y3] -> [(x, y0), (x, y1), (x, y2), (x, y3)]
+        // where f(y) = [y0, y1, y2, y3]
+        return [f] (auto&& z)
+        {
+            return f(z.second).map([x=z.first] (auto&& y)
+            {
+                return std::make_pair(x, y);
+            });
+        };
+    };
+    auto get_1st = [] (auto&& x) { return x.first; };
+    auto get_2nd = [] (auto&& x) { return x.second; };
+    auto bifurcate = [] (auto&& x) { return (x | mara::amr::refine_verts<2>()).map(nd::to_shared()); };
+
+    auto result = over_refined_neighbors(tree)
+    .pair(tree)
+    .bifurcate_if(get_1st, map_2nd(bifurcate))
+    .map(get_2nd);
+
+    return over_refined_neighbors(result).any() ? ensure_valid_quadtree(result) : result;
+}
+
+
+
+
+//=============================================================================
 static auto create_sparse_vertex_quadtree(std::size_t zones_per_block, std::size_t depth)
 {
     using location_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
