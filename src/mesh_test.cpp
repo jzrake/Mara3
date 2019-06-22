@@ -103,6 +103,29 @@ TEST_CASE("cell-wise linear prolongation works in 2d", "[amr refine_cells]")
     CHECK(prolonged_values1( 0, 19) == Approx(prolonged_values2( 0, 19)).epsilon(1e-12));
 }
 
+TEST_CASE("can manufacture vertex blocks in a 1d vertex tree", "[amr get_vertex_block]")
+{
+    using namespace nd;
+    using namespace mara;
+
+    auto t1 = mara::tree_of<1>(linspace(0.0, 1.0, 11)).bifurcate_all(refine_verts<1>()).map(nd::to_shared());
+    auto t2 = t1.bifurcate_all(refine_verts<1>()).map(nd::to_shared());
+
+    for (std::size_t i = 0; i < 2; ++i)
+    {
+        auto v1 = mara::get_vertex_block(t1, make_tree_index(i).with_level(1));
+        auto v2 = mara::get_vertex_block(t2, make_tree_index(i).with_level(1));
+        REQUIRE(((v1 == v2) | nd::all()));
+    }
+
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        auto v1 = mara::get_vertex_block(t1, make_tree_index(i).with_level(2));
+        auto v2 = mara::get_vertex_block(t2, make_tree_index(i).with_level(2));
+        REQUIRE(((v1 == v2) | nd::all()));
+    }
+}
+
 TEST_CASE("can refine a tree of arrays in 1d", "[amr arithmetic_binary_tree]")
 {
     using namespace nd;

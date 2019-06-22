@@ -157,7 +157,7 @@ auto AmrSandbox::create_solution_state(const mara::config_t& run_config)
         { return block
             | nd::midpoint_on_axis(0)
             | nd::midpoint_on_axis(1)
-            | nd::map([] (location_2d_t p) { return std::exp(-(p[0] * p[0] + p[1] * p[1]).value / 0.25); })
+            | nd::map([] (location_2d_t p) { return std::exp(-(p[0] * p[0] + p[1] * p[1]).value / 0.025); })
             | nd::map([] (auto u) { return conserved_t{u}; })
             | nd::to_shared(); }),
     };
@@ -367,4 +367,3 @@ std::unique_ptr<mara::sub_program_t> make_subprog_amrsand()
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_AMRSAND
-

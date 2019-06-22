@@ -101,15 +101,29 @@ struct mara::tree_index_t
 
 
     /**
-     * @brief      Return this index as it would apply to the next rung of a
-     *             binary tree.
+     * @brief      Transform this index, so that it points to the same node as
+     *             it does now, but as seen by the child of this node which is
+     *             in the direction of the target node.
      *
-     * @return     The index with level - 1 and the index offset according to
-     *             the orthant value
+     * @return     The index with level - 1 and the coordinates offset according
+     *             to the orthant value
      */
     tree_index_t advance_level() const
     {
         return {level - 1, coordinates - orthant() * (1 << (level - 1))};
+    }
+
+
+
+
+    /**
+     * @brief      Return this index as it is relative to the parent block.
+     *
+     * @return     The index as seen by the parent.
+     */
+    tree_index_t relative_to_parent() const
+    {
+        return {1, coordinates.map([] (auto c) { return c % 2; })};
     }
 
 

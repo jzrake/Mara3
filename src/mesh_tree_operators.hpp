@@ -209,7 +209,7 @@ auto mara::get_cell_block(const arithmetic_binary_tree_t<ValueType, Rank>& tree,
         // the index's orthant.
         if (tree.contains(index.parent_index()))
         {
-            auto ib = mara::to_integral(index.orthant());
+            auto ib = mara::to_integral(index.relative_to_parent().orthant());
             return (tree.at(index.parent_index()) | mara::refine_cells<Rank>())[ib].shared();
         }
 
@@ -243,7 +243,7 @@ auto mara::get_vertex_block(const arithmetic_binary_tree_t<ValueType, Rank>& tre
         // the index's orthant.
         if (tree.contains(index.parent_index()))
         {
-            auto ib = mara::to_integral(index.orthant());
+            auto ib = mara::to_integral(index.relative_to_parent().orthant());
             return (tree.at(index.parent_index()) | mara::refine_verts<Rank>())[ib].shared();
         }
 
