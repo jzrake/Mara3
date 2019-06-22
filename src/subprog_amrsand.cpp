@@ -39,7 +39,8 @@
 #include "core_rational.hpp"
 #include "core_ndarray_ops.hpp"
 #include "core_tree.hpp"
-#include "core_prolong.hpp"
+#include "mesh_prolong_restrict.hpp"
+#include "mesh_tree_operators.hpp"
 
 
 
@@ -140,119 +141,10 @@ auto AmrSandbox::config_template()
 
 
 //=============================================================================
-// static auto create_dense_vertex_quadtree(std::size_t zones_per_block, std::size_t depth)
-// {
-//     using location_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
-
-//     auto x = nd::linspace(-1, 1, zones_per_block + 1);
-//     auto y = nd::linspace(-1, 1, zones_per_block + 1);
-//     auto vertices = mara::tree_of<2>(
-//           nd::cartesian_product(x, y)
-//         | nd::apply([] (auto x, auto y) { return location_2d_t{x, y}; })
-//         | nd::to_shared());
-
-//     for (std::size_t i = 0; i < depth; ++i)
-//     {
-//         vertices = std::move(vertices).bifurcate_all([] (auto value)
-//         {
-//             return (value | mara::amr::refine_verts<2>()).map(nd::to_shared());
-//         });
-//     }
-//     return vertices;
-// }
-
-
-
-
-//=============================================================================
-template<typename ValueType>
-auto over_refined_neighbors(mara::arithmetic_binary_tree_t<ValueType, 2> tree)
-{
-    return tree.indexes().map([tree] (auto&& i)
-    {
-        return
-        (tree.contains_node(i.next_on(0)) && tree.node_at(i.next_on(0)).depth() > 1) ||
-        (tree.contains_node(i.prev_on(0)) && tree.node_at(i.prev_on(0)).depth() > 1) ||
-        (tree.contains_node(i.next_on(1)) && tree.node_at(i.next_on(1)).depth() > 1) ||
-        (tree.contains_node(i.prev_on(1)) && tree.node_at(i.prev_on(1)).depth() > 1);
-    });
-}
-
-
-
-
-//=============================================================================
-template<typename ValueType>
-auto ensure_valid_quadtree(mara::arithmetic_binary_tree_t<ValueType, 2> tree) -> mara::arithmetic_binary_tree_t<ValueType, 2>
-{   
-    auto map_2nd = [] (auto&& f)
-    {
-        // z = (x, y) -> [y0, y1, y2, y3] -> [(x, y0), (x, y1), (x, y2), (x, y3)]
-        // where f(y) = [y0, y1, y2, y3]
-        return [f] (auto&& z)
-        {
-            return f(z.second).map([x=z.first] (auto&& y)
-            {
-                return std::make_pair(x, y);
-            });
-        };
-    };
-    auto get_1st = [] (auto&& x) { return x.first; };
-    auto get_2nd = [] (auto&& x) { return x.second; };
-    auto bifurcate = [] (auto&& x) { return (x | mara::amr::refine_verts<2>()).map(nd::to_shared()); };
-
-    auto result = over_refined_neighbors(tree)
-    .pair(tree)
-    .bifurcate_if(get_1st, map_2nd(bifurcate))
-    .map(get_2nd);
-
-    return over_refined_neighbors(result).any() ? ensure_valid_quadtree(result) : result;
-}
-
-
-
-
-//=============================================================================
-static auto create_sparse_vertex_quadtree(std::size_t zones_per_block, std::size_t depth)
-{
-    using location_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
-
-    auto centroid_radius = [n=zones_per_block] (auto vertices)
-    {
-        auto centroid = (vertices(0, 0) + vertices(n, n)) * 0.5;
-        return std::sqrt((centroid * centroid).sum().value);
-    };
-    auto level_radius = [] (auto i) { return 1.0 / i; };
-
-    auto x = nd::linspace(-1, 1, zones_per_block + 1);
-    auto y = nd::linspace(-1, 1, zones_per_block + 1);
-    auto vertices = mara::tree_of<2>(
-          nd::cartesian_product(x, y)
-        | nd::apply([] (auto x, auto y) { return location_2d_t{x, y}; })
-        | nd::to_shared());
-
-    for (std::size_t i = 0; i < depth; ++i)
-    {
-        vertices = std::move(vertices).bifurcate_if(
-            [i, centroid_radius, level_radius] (auto value)
-            {
-                return centroid_radius(value) < level_radius(i);
-            },
-            [] (auto value)
-            {
-                return (value | mara::amr::refine_verts<2>()).map(nd::to_shared());
-            });
-    }
-    return ensure_valid_quadtree(vertices);
-}
-
-
-
-
-//=============================================================================
 auto AmrSandbox::create_solution_state(const mara::config_t& run_config)
 {
-    auto vertices = create_sparse_vertex_quadtree(
+    auto vertices = mara::create_vertex_quadtree(
+        [] (std::size_t level, double centroid_radius) { return centroid_radius < 1.0 / level; },
         run_config.get_int("block_size"),
         run_config.get_int("depth"));
 
@@ -265,7 +157,7 @@ auto AmrSandbox::create_solution_state(const mara::config_t& run_config)
         { return block
             | nd::midpoint_on_axis(0)
             | nd::midpoint_on_axis(1)
-            | nd::map([] (location_2d_t p) { return std::exp(-(p[0] * p[0] + p[1] * p[1]).value / 0.025); })
+            | nd::map([] (location_2d_t p) { return std::exp(-(p[0] * p[0] + p[1] * p[1]).value / 0.25); })
             | nd::map([] (auto u) { return conserved_t{u}; })
             | nd::to_shared(); }),
     };
@@ -348,50 +240,6 @@ auto AmrSandbox::next_schedule(const mara::schedule_t& schedule, const mara::con
     return next_schedule;
 }
 
-template<typename ValueType, std::size_t Rank>
-auto get_cell_block(const mara::arithmetic_binary_tree_t<ValueType, Rank>& tree, mara::tree_index_t<Rank> index, bool debug=false)
-{
-    try {
-        // If the tree has a value at the target index, then return that value.
-
-        if (debug) std::cout << index.level << ' ' << to_string(index.coordinates) << std::endl;
-
-        if (tree.contains(index))
-        {
-            if (debug) std::cout << " [1] " << std::endl;
-            return tree.at(index);
-        }
-
-        // If the tree has a value at the node above the target index, then refine
-        // the data on that node (yielding 2^Rank arrays) and select the array in
-        // the index's orthant.
-        if (tree.contains(index.parent_index()))
-        {
-            if (debug) std::cout << " [2] " << std::endl;
-            auto ib = mara::to_integral(index.orthant());
-            return (tree.at(index.parent_index()) | mara::amr::refine_cells<Rank>())[ib].shared();
-        }
-
-        // If the target index is not a leaf, then combine the data from its
-        // chidren, and then coarsen it.
-        if (debug) std::cout << " [3] " << std::endl;
-
-        return mara::amr::combine_cells(index.child_indexes().map([tree] (auto i) { return get_cell_block(tree, i); }))
-             | mara::amr::coarsen_cells<Rank>()
-             | nd::to_shared();
-    }
-    catch (const std::exception&)
-    {
-        if (! debug)
-        {
-            try {
-                get_cell_block(tree, index, true);
-            } catch (...) {}
-        }
-        throw std::logic_error("get_cell_block (badly formed mesh)");
-    }
-}
-
 auto AmrSandbox::next_solution(const solution_state_t& solution)
 {
     auto n = std::max(solution.vertices.front().shape(0), solution.vertices.front().shape(1));
@@ -405,9 +253,9 @@ auto AmrSandbox::next_solution(const solution_state_t& solution)
     {
         return tree.indexes().map([tree, axis] (auto index)
         {
-            auto C = get_cell_block(tree, index);
-            auto L = get_cell_block(tree, index.prev_on(axis)) | nd::select_final(1, axis);
-            auto R = get_cell_block(tree, index.next_on(axis)) | nd::select_first(1, axis);
+            auto C = mara::get_cell_block(tree, index);
+            auto L = mara::get_cell_block(tree, index.prev_on(axis)) | nd::select_final(1, axis);
+            auto R = mara::get_cell_block(tree, index.next_on(axis)) | nd::select_first(1, axis);
             return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis);
         });
     };
@@ -519,3 +367,4 @@ std::unique_ptr<mara::sub_program_t> make_subprog_amrsand()
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_AMRSAND
+

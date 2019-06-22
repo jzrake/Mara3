@@ -34,7 +34,7 @@
 #include "core_matrix.hpp"
 #include "core_sequence.hpp"
 #include "core_tree.hpp"
-#include "core_prolong.hpp"
+#include "core_ndarray.hpp"
 
 
 
@@ -222,48 +222,6 @@ TEST_CASE("tree traversals and value retrievals work OK", "[arithmetic_binary_tr
     REQUIRE(mara::tree_of<3>(0.0)
         .insert(mara::make_tree_index(0, 1, 2).with_level(2), 1.0)
         .at(mara::make_tree_index(0, 1, 2).with_level(2)) == 1.0);
-}
-
-TEST_CASE("pointwise linear prolongation works in 1d", "[amr refine_verts]")
-{
-    using namespace nd;
-    using namespace mara::amr;
-
-    REQUIRE(mara::get<0>(linspace(0.0, 1.0, 11) | refine_verts<1>()).size() == 11);
-    REQUIRE(mara::get<1>(linspace(0.0, 1.0, 11) | refine_verts<1>()).size() == 11);
-
-    REQUIRE((mara::get<0>(linspace(0.0, 1.0, 11) | refine_verts<1>()) | read_index(0))  == 0.0);
-    REQUIRE((mara::get<0>(linspace(0.0, 1.0, 11) | refine_verts<1>()) | read_index(1))  == 0.05);
-    REQUIRE((mara::get<0>(linspace(0.0, 1.0, 11) | refine_verts<1>()) | read_index(2))  == 0.1);
-    REQUIRE((mara::get<0>(linspace(0.0, 1.0, 11) | refine_verts<1>()) | read_index(10)) == 0.5);
-
-    REQUIRE((mara::get<1>(linspace(0.0, 1.0, 11) | refine_verts<1>()) | read_index(0))  == 0.5 + 0.0);
-    REQUIRE((mara::get<1>(linspace(0.0, 1.0, 11) | refine_verts<1>()) | read_index(1))  == 0.5 + 0.05);
-    REQUIRE((mara::get<1>(linspace(0.0, 1.0, 11) | refine_verts<1>()) | read_index(2))  == 0.5 + 0.1);
-    REQUIRE((mara::get<1>(linspace(0.0, 1.0, 11) | refine_verts<1>()) | read_index(10)) == 0.5 + 0.5);
-}
-
-TEST_CASE("can refine a tree of arrays in 1d", "[amr arithmetic_binary_tree]")
-{
-    using namespace nd;
-    using namespace mara::amr;
-
-    // Is the only legal argument to bifurcate_if
-    auto refine_value_share = [] (auto value)
-    {
-        return (value | refine_verts<1>()).map([] (auto v) { return v.shared(); });
-    };
-
-    // Is legal argument to bifurcate_if or bifurcate_all
-    auto refine_value_no_share = [] (auto value)
-    {
-        return value | refine_verts<1>();
-    };
-
-    REQUIRE(mara::tree_of<1>(linspace(0.0, 1.0, 11)).size() == 1);
-    REQUIRE(mara::tree_of<1>(linspace(0.0, 1.0, 11)).bifurcate_all(refine_value_share).size() == 2);
-    REQUIRE(mara::tree_of<1>(linspace(0.0, 1.0, 11)).bifurcate_all(refine_value_no_share).size() == 2);
-    REQUIRE(mara::tree_of<1>(linspace(0.0, 1.0, 11).shared()).bifurcate_if([] (auto) { return true; }, refine_value_share).size() == 2);
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
