@@ -45,8 +45,6 @@
 #define cfl_number                    0.4
 #define density_floor                 0.0
 #define sound_speed_squared          1e-4
-// #define log10_sigma_diffusive_below  -6.0
-// #define log10_sigma_aggressive_above -2.0
 
 
 
@@ -131,14 +129,14 @@ namespace binary
 
 
     //=========================================================================
-    struct solution_state_t
+    struct solution_t
     {
         mara::unit_time<double>                       time = 0.0;
         mara::rational_number_t                       iteration = 0;
         nd::shared_array<mara::iso2d::conserved_t, 2> conserved;
 
         //=====================================================================
-        solution_state_t operator+(const solution_state_t& other) const
+        solution_t operator+(const solution_t& other) const
         {
             auto evaluate = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
 
@@ -148,7 +146,7 @@ namespace binary
                 conserved  + other.conserved | evaluate,
             };
         }
-        solution_state_t operator*(mara::rational_number_t scale) const
+        solution_t operator*(mara::rational_number_t scale) const
         {
             auto evaluate = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
 
@@ -164,7 +162,7 @@ namespace binary
     //=========================================================================
     struct app_state_t
     {
-        solution_state_t solution_state;
+        solution_t solution_state;
         solver_data_t solver_data;
         mara::schedule_t schedule;
         mara::config_t run_config;
@@ -191,18 +189,18 @@ namespace binary
     auto initial_disk_profile_ring  (const mara::config_t& cfg);
     auto initial_disk_profile_tang17(const mara::config_t& cfg);
 
-    auto diagnostic_fields(const solution_state_t& state, const solver_data_t& solver_data);
+    auto diagnostic_fields(const solution_t& state, const solver_data_t& solver_data);
     auto gravitational_acceleration_field(mara::unit_time<double> time, const solver_data_t& solver_data);
     auto sink_rate_field(mara::unit_time<double> time, const solver_data_t& solver_data);
     auto buffer_damping_rate_at_position(const mara::config_t& cfg);
     auto estimate_gradient_plm(double plm_theta);
     auto recover_primitive(const mara::iso2d::conserved_per_area_t& conserved);
-    auto advance(const solution_state_t& state, const solver_data_t& solver_data, mara::unit_time<double> dt);
-    auto next_solution(const solution_state_t& state, const solver_data_t& solver_data);
+    auto advance(const solution_t& state, const solver_data_t& solver_data, mara::unit_time<double> dt);
+    auto next_solution(const solution_t& state, const solver_data_t& solver_data);
 
 
     //=========================================================================
-    void write_solution(h5::Group&& group, const solution_state_t& state);
+    void write_solution(h5::Group&& group, const solution_t& state);
     void write_diagnostic_fields(h5::Group&& group, const diagnostic_fields_t& diagnostics);
     void write_checkpoint(const app_state_t& state, std::string outdir);
     void write_diagnostics(const app_state_t& state, std::string outdir);
@@ -350,8 +348,8 @@ auto binary::gravitational_acceleration_field(mara::unit_time<double> time, cons
     auto softening_radius = solver_data.softening_radius;
     auto accel = [softening_radius] (const mara::point_mass_t& body, auto x, auto y)
     {
-        auto field_point   = location_2d_t {{ x, y }};
-        auto mass_location = location_2d_t {{ body.position_x, body.position_y }};
+        auto field_point   = location_2d_t { x, y };
+        auto mass_location = location_2d_t { body.position_x, body.position_y };
 
         auto G   = mara::dimensional_value_t<3, -1, -2, double>(1.0);
         auto M   = mara::make_mass(body.mass);
@@ -398,15 +396,7 @@ auto binary::estimate_gradient_plm(double plm_theta)
         auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
         auto sgn = [] (auto x) { return std::copysign(1, x); };
 
-        // VARIABLE THETA IS DISABLED
-        // --------------------------
-        // auto clamp = [plm_theta] (double x) { return std::max(1.0, std::min(x, plm_theta)); };
-        // double s0 = log10_sigma_diffusive_below;
-        // double s1 = log10_sigma_aggressive_above;
-        // double th = clamp(1.0 + (std::log10(p0.sigma()) - s0) / (s1 - s0));
-
         double th = plm_theta;
-
         auto result = mara::iso2d::primitive_t();
 
         for (std::size_t i = 0; i < 3; ++i)
@@ -425,7 +415,7 @@ auto binary::recover_primitive(const mara::iso2d::conserved_per_area_t& conserve
     return mara::iso2d::recover_primitive(conserved, density_floor);
 }
 
-auto binary::advance(const solution_state_t& state, const solver_data_t& solver_data, mara::unit_time<double> dt)
+auto binary::advance(const solution_t& state, const solver_data_t& solver_data, mara::unit_time<double> dt)
 {
     auto force_to_source_terms = [] (force_2d_t v)
     {
@@ -495,7 +485,7 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
         return u1 | evaluate;
     };
 
-    auto next_state = solution_state_t();
+    auto next_state = solution_t();
     next_state.iteration = state.iteration + 1;
     next_state.time      = state.time + dt;
 
@@ -519,7 +509,7 @@ auto binary::advance(const solution_state_t& state, const solver_data_t& solver_
     return next_state;
 }
 
-auto binary::next_solution(const solution_state_t& state, const solver_data_t& solver_data)
+auto binary::next_solution(const solution_t& state, const solver_data_t& solver_data)
 {
     auto dt = solver_data.recommended_time_step;
     auto s0 = state;
@@ -545,7 +535,7 @@ auto binary::next_solution(const solution_state_t& state, const solver_data_t& s
 
 
 //=============================================================================
-auto binary::diagnostic_fields(const solution_state_t& state, const solver_data_t& solver_data)
+auto binary::diagnostic_fields(const solution_t& state, const solver_data_t& solver_data)
 {
     auto dA = cell_surface_area(solver_data.x_vertices, solver_data.y_vertices);
     auto [xc, yc] = nd::unzip(cell_center_cartprod(solver_data.x_vertices, solver_data.y_vertices));
@@ -561,7 +551,6 @@ auto binary::diagnostic_fields(const solution_state_t& state, const solver_data_
     auto vy = p | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_y));
     auto binary = mara::compute_two_body_state(solver_data.binary_params, state.time.value);
     auto evaluate = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
-
 
     auto result = diagnostic_fields_t();
     result.time            = state.time;
@@ -580,7 +569,7 @@ auto binary::diagnostic_fields(const solution_state_t& state, const solver_data_
 
 
 //=============================================================================
-void binary::write_solution(h5::Group&& group, const solution_state_t& state)
+void binary::write_solution(h5::Group&& group, const solution_t& state)
 {
     group.write("time", state.time);
     group.write("iteration", state.iteration);
@@ -698,12 +687,12 @@ auto binary::create_solver_data(const mara::config_t& cfg)
 
 auto binary::read_solution(h5::Group&& group)
 {
-    return solution_state_t(); // IMPLEMENT READING SOLUTION FROM CHECKPOINT
+    return solution_t(); // IMPLEMENT READING SOLUTION FROM CHECKPOINT
 }
 
 auto binary::new_solution(const mara::config_t& cfg)
 {
-    auto state = solution_state_t();
+    auto state = solution_t();
     state.time = 0.0;
     state.iteration = 0;
     state.conserved = create_solver_data(cfg).initial_conserved_field;
