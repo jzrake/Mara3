@@ -5,6 +5,8 @@
 src/app_compile_opts.hpp
 tutorial/tut1
 tutorial/tut2
+examples/advect_1d
+examples/advect_2d
 Makefile.in
 machine.py
 mara

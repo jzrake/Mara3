@@ -32,26 +32,31 @@ LDFLAGS  = -lhdf5
 
 # Build macros
 # =====================================================================
-SRC      := $(wildcard src/*.cpp)
-OBJ      := $(SRC:%.cpp=%.o)
-DEP      := $(SRC:%.cpp=%.d)
+SRC         := $(wildcard src/*.cpp)
+OBJ         := $(SRC:%.cpp=%.o)
+DEP         := $(SRC:%.cpp=%.d)
+EXE         := mara
+
+EXAMPLE_SRC := $(wildcard examples/*.cpp)
+EXAMPLE_DEP := $(EXAMPLE_SRC:%.cpp=%.d)
+EXAMPLE_EXE := $(EXAMPLE_SRC:%.cpp=%)
 
 
 # Build rules
 # =====================================================================
-#
+all: $(EXE) $(EXAMPLE_EXE) tutorial
 
-all: mara tutorial
-
-mara: $(OBJ)
+$(EXE): $(OBJ)
 	$(CXX) -o $@ $^ $(LDFLAGS)
+
+$(EXAMPLE_EXE): CXXFLAGS += -Isrc
 
 tutorial:
 	$(MAKE) -C tutorial
 
 clean:
-	$(RM) $(OBJ) $(DEP) mara
-
--include $(DEP)
+	$(RM) $(OBJ) $(DEP) $(EXE) $(EXAMPLE_EXE) $(EXAMPLE_DEP)
 
 .PHONY: tutorial
+
+-include $(DEP)
