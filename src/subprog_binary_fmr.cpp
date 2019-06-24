@@ -58,10 +58,10 @@ namespace binary_fmr
 
 
     //=========================================================================
-    using location_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
-    using velocity_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, -1, double>, 2>;
-    using acceleration_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, -2, double>, 2>;
-    using force_2d_t        = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 1, -2, double>, 2>;
+    using location_2d_t  = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
+    using velocity_2d_t  = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, -1, double>, 2>;
+    using accel_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, -2, double>, 2>;
+    using force_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 1, -2, double>, 2>;
 
     template<typename ArrayValueType>
     using quad_tree_t = mara::arithmetic_binary_tree_t<nd::shared_array<ArrayValueType, 2>, 2>;
@@ -110,24 +110,8 @@ namespace binary_fmr
         mara::unit_time<double>                        time = 0.0;
         mara::rational_number_t                        iteration = 0;
         quad_tree_t<mara::iso2d::conserved_per_area_t> conserved;
-
-        //=====================================================================
-        solution_t operator+(const solution_t& other) const
-        {
-            return {
-                time       + other.time,
-                iteration  + other.iteration,
-                (conserved + other.conserved).map(nd::to_shared()),
-            };
-        }
-        solution_t operator*(mara::rational_number_t scale) const
-        {
-            return {
-                time       * scale.as_double(),
-                iteration  * scale,
-                (conserved * scale.as_double()).map(nd::to_shared()),
-            };
-        }
+        solution_t operator+(const solution_t& other) const;
+        solution_t operator*(mara::rational_number_t scale) const;
     };
 
 
@@ -157,23 +141,30 @@ namespace binary_fmr
 
     //=========================================================================
     auto config_template();
-    auto initial_disk_profile(const mara::config_t& cfg);
+    auto initial_disk_profile(const mara::config_t& run_config);
 
 
     //=========================================================================
     auto create_run_config(int argc, const char* argv[]);
     auto create_vertices(const mara::config_t& run_config);
     auto create_solution(const mara::config_t& run_config);
-    auto create_solver_data(const mara::config_t& cfg);
-    auto create_schedule(const mara::config_t& cfg);
+    auto create_solver_data(const mara::config_t& run_config);
+    auto create_schedule(const mara::config_t& run_config);
     auto create_state(const mara::config_t& run_config);
-    auto create_next_function(const solver_data_t& solver_data);
 
 
     //=========================================================================
-    bool simulation_should_continue(const state_t& state);
+    auto next_solution(const solution_t& solution);
+    auto next_schedule(const state_t& state);
+    auto next_state(const state_t& state);
+
+
+    //=========================================================================
+    auto run_tasks(const state_t& state);
+    auto simulation_should_continue(const state_t& state);
     auto diagnostic_fields(const solution_t& solution, const mara::config_t& run_config);
-    void prepare_filesystem(const mara::config_t& cfg);
+    void prepare_filesystem(const mara::config_t& run_config);
+    void print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf);
 }
 
 
@@ -222,10 +213,10 @@ auto binary_fmr::config_template()
 
 
 //=============================================================================
-auto binary_fmr::initial_disk_profile(const mara::config_t& cfg)
+auto binary_fmr::initial_disk_profile(const mara::config_t& run_config)
 {
-    auto softening_radius  = cfg.get_double("softening_radius");
-    auto counter_rotate    = cfg.get_int("counter_rotate");
+    auto softening_radius  = run_config.get_double("softening_radius");
+    auto counter_rotate    = run_config.get_int("counter_rotate");
 
     return [=] (location_2d_t point)
     {
@@ -285,6 +276,28 @@ void mara::write(h5::Group& group, std::string name, const binary_fmr::diagnosti
 
 
 //=============================================================================
+binary_fmr::solution_t binary_fmr::solution_t::operator+(const solution_t& other) const
+{
+    return {
+        time       + other.time,
+        iteration  + other.iteration,
+        (conserved + other.conserved).map(nd::to_shared()),
+    };
+}
+
+binary_fmr::solution_t binary_fmr::solution_t::operator*(mara::rational_number_t scale) const
+{
+    return {
+        time       * scale.as_double(),
+        iteration  * scale,
+        (conserved * scale.as_double()).map(nd::to_shared()),
+    };
+}
+
+
+
+
+//=============================================================================
 auto binary_fmr::create_run_config(int argc, const char* argv[])
 {
     auto args = mara::argv_to_string_map(argc, argv);
@@ -296,7 +309,7 @@ auto binary_fmr::create_run_config(int argc, const char* argv[])
     : config_template().create().update(args);
 }
 
-auto binary_fmr::create_solver_data(const mara::config_t& cfg)
+auto binary_fmr::create_solver_data(const mara::config_t& run_config)
 {
     return solver_data_t{};
 }
@@ -334,9 +347,19 @@ auto binary_fmr::create_solution(const mara::config_t& run_config)
     return solution_t{0, 0.0, conserved};
 }
 
-auto binary_fmr::create_schedule(const mara::config_t& cfg)
+auto binary_fmr::create_schedule(const mara::config_t& run_config)
 {
-    return mara::schedule_t{};
+    auto restart = run_config.get<std::string>("restart");
+
+    if (restart.empty())
+    {
+        auto schedule = mara::schedule_t();
+        schedule.create_and_mark_as_due("write_checkpoint");
+        schedule.create_and_mark_as_due("write_diagnostics");
+        schedule.create_and_mark_as_due("write_time_series");
+        return schedule;
+    }
+    return mara::read_schedule(h5::File(restart, "r").open_group("schedule"));
 }
 
 auto binary_fmr::create_state(const mara::config_t& run_config)
@@ -348,16 +371,37 @@ auto binary_fmr::create_state(const mara::config_t& run_config)
     };
 }
 
-auto binary_fmr::create_next_function(const solver_data_t& solver_data)
+
+
+
+//=============================================================================
+auto binary_fmr::next_solution(const solution_t& solution)
 {
-    return [] (const state_t& state) { return state; };
+    return solution;
+}
+
+auto binary_fmr::next_schedule(const state_t& state)
+{
+    return mara::mark_tasks_in(state, state.solution.time.value,
+        {{"write_checkpoint",  state.run_config.get_double("cpi") * 2 * M_PI},
+         {"write_diagnostics", state.run_config.get_double("dfi") * 2 * M_PI},
+         {"write_time_series", state.run_config.get_double("tsi") * 2 * M_PI}});
+}
+
+auto binary_fmr::next_state(const state_t& state)
+{
+    return state_t{
+        next_solution(state.solution),
+        next_schedule(state),
+        state.run_config,
+    };
 }
 
 
 
 
 //=============================================================================
-bool binary_fmr::simulation_should_continue(const state_t& state)
+auto binary_fmr::simulation_should_continue(const state_t& state)
 {
     return state.solution.time / (2 * M_PI) < state.run_config.get<double>("tfinal");
 }
@@ -374,10 +418,71 @@ auto binary_fmr::diagnostic_fields(const solution_t& solution, const mara::confi
     };
 }
 
-void binary_fmr::prepare_filesystem(const mara::config_t& cfg)
+
+
+
+//=============================================================================
+auto binary_fmr::run_tasks(const state_t& state)
 {
-    auto outdir = cfg.get_string("outdir");
+
+
+    //=========================================================================
+    auto write_checkpoint  = [] (const state_t& state)
+    {
+        auto outdir = state.run_config.get_string("outdir");
+        auto count  = state.schedule.num_times_performed("write_checkpoint");
+        auto file   = h5::File(mara::filesystem::join(outdir, mara::create_numbered_filename("chkpt", count, "h5")), "w");
+        auto group  = file.require_group("/");
+        mara::write(group, "/", state);
+        std::printf("write checkpoint: %s\n", file.filename().data());
+        return mara::complete_task_in(state, "write_checkpoint");
+    };
+
+
+    //=========================================================================
+    auto write_diagnostics = [] (const state_t& state)
+    {
+        auto outdir = state.run_config.get_string("outdir");
+        auto count  = state.schedule.num_times_performed("write_diagnostics");
+        auto file   = h5::File(mara::filesystem::join(outdir, mara::create_numbered_filename("diagnostics", count, "h5")), "w");
+        auto group  = file.require_group("/");
+        mara::write(group, "/", diagnostic_fields(state.solution, state.run_config));
+        std::printf("write diagnostics: %s\n", file.filename().data());
+        return mara::complete_task_in(state, "write_diagnostics");
+    };
+
+
+    //=========================================================================
+    auto write_time_series = [] (const state_t& state)
+    {
+        // TODO
+        return mara::complete_task_in(state, "write_time_series");
+    };
+
+
+    return mara::run_scheduled_tasks(state, {
+        {"write_checkpoint",  write_checkpoint},
+        {"write_diagnostics", write_diagnostics},
+        {"write_time_series", write_time_series}});
+}
+
+void binary_fmr::prepare_filesystem(const mara::config_t& run_config)
+{
+    auto outdir = run_config.get_string("outdir");
     mara::filesystem::require_dir(outdir);
+}
+
+void binary_fmr::print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf)
+{
+    auto kzps = state
+    .solution
+    .conserved
+    .map([] (auto&& block) { return block.size(); })
+    .sum() / perf.execution_time_ms;
+
+    std::printf("[%04d] orbits=%3.7lf kzps=%3.2lf\n",
+        state.solution.iteration.as_integral(),
+        state.solution.time.value / (2 * M_PI), kzps);
 }
 
 
@@ -393,24 +498,24 @@ public:
         auto run_config  = binary_fmr::create_run_config(argc, argv);
         auto solver_data = binary_fmr::create_solver_data(run_config);
         auto state       = binary_fmr::create_state(run_config);
-        // auto next        = binary_fmr::create_next_function(solver_data);
+        auto next        = binary_fmr::next_state; //binary_fmr::create_next_function(solver_data);
         auto perf        = mara::perf_diagnostics_t();
 
         binary_fmr::prepare_filesystem(run_config);
         mara::pretty_print(std::cout, "config", run_config);
-        // state = run_tasks(state);
+        state = binary_fmr::run_tasks(state);
 
-        // while (binary_fmr::simulation_should_continue(state))
+        while (binary_fmr::simulation_should_continue(state))
         {
             // std::tie(state, perf) = mara::time_execution(mara::compose(run_tasks, next), state);
-            // print_run_loop_message(state, perf);
+            // binary_fmr::print_run_loop_message(state, perf);
         }
 
         auto file = h5::File("diagnostics.0000.h5", "w");
         auto group = file.require_group("/");
         mara::write(group, "/", diagnostic_fields(state.solution, run_config));
 
-        // run_tasks(next(state));
+        run_tasks(next(state));
         return 0;
     }
 

@@ -37,6 +37,15 @@
 namespace mara
 {
     class schedule_t;
+
+    template<typename State>
+    auto run_scheduled_tasks(const State& state, std::vector<std::pair<std::string, std::function<State(const State&)>>> tasks);
+
+    template<typename State>
+    auto complete_task_in(const State& state, std::string task_name);
+
+    template<typename State>
+    auto mark_tasks_in(const State& state, double time, std::vector<std::pair<std::string, double>> task_intervals);
 }
 
 
@@ -130,3 +139,56 @@ private:
     //=========================================================================
     std::map<std::string, task_t> tasks;
 };
+
+
+
+
+//=============================================================================
+template<typename State>
+auto mara::complete_task_in(const State& state, std::string task_name)
+{
+    auto next_state = state;
+    next_state.schedule.mark_as_completed(task_name);
+    return next_state;
+}
+
+
+
+
+//=============================================================================
+template<typename State>
+auto mara::run_scheduled_tasks(const State& state, std::vector<std::pair<std::string, std::function<State(const State&)>>> tasks)
+{
+    auto next_state = state;
+
+    for (const auto& task : tasks)
+    {
+        if (state.schedule.is_due(task.first))
+        {
+            next_state = task.second(state);
+        }
+    }
+    return next_state;
+}
+
+
+
+
+//=============================================================================
+template<typename State>
+auto mara::mark_tasks_in(const State& state, double time, std::vector<std::pair<std::string, double>> task_intervals)
+{
+    auto next_schedule = state.schedule;
+
+    for (const auto task : task_intervals)
+    {
+        auto name = task.first;
+        auto interval = task.second;
+
+        if (time - state.schedule.last_performed(name) >= interval)
+        {
+            next_schedule.mark_as_due(name, interval);
+        }
+    }
+    return next_schedule;
+}
