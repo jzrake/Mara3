@@ -47,9 +47,13 @@ namespace mara
 
     template<typename ValueType, std::size_t Rank>
     void read_tree(h5::Group&& group, arithmetic_binary_tree_t<ValueType, Rank>& tree);
+    template<typename ValueType, std::size_t Rank>
+    void read(h5::Group& group, std::string name, arithmetic_binary_tree_t<ValueType, Rank>& tree);
 
     template<typename ValueType, std::size_t Rank>
     void write_tree(h5::Group&& group, const arithmetic_binary_tree_t<ValueType, Rank>& tree);
+    template<typename ValueType, std::size_t Rank>
+    void write(h5::Group& group, std::string name, const arithmetic_binary_tree_t<ValueType, Rank>& tree);
 }
 
 
@@ -138,6 +142,12 @@ void mara::read_tree(h5::Group&& group, arithmetic_binary_tree_t<ValueType, Rank
     }
 }
 
+template<typename ValueType, std::size_t Rank>
+void mara::read(h5::Group& group, std::string name, arithmetic_binary_tree_t<ValueType, Rank>& tree)
+{
+    read_tree(group.require_group(name), tree);
+}
+
 
 
 
@@ -161,4 +171,10 @@ void mara::write_tree(h5::Group&& group, const arithmetic_binary_tree_t<ValueTyp
         auto [index, value] = index_and_value;
         group.write(format_tree_index(index), value);
     });
+}
+
+template<typename ValueType, std::size_t Rank>
+void mara::write(h5::Group& group, std::string name, const arithmetic_binary_tree_t<ValueType, Rank>& tree)
+{
+    write_tree(group.open_group(name), tree);
 }

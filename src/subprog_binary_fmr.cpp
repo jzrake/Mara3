@@ -143,6 +143,7 @@ namespace binary_fmr
     //=========================================================================
     struct diagnostic_fields_t
     {
+        mara::config_t                                 run_config;
         mara::unit_time<double>                        time;
         quad_tree_t<location_2d_t>                     vertices;
         quad_tree_t<mara::iso2d::conserved_per_area_t> conserved;
@@ -157,14 +158,6 @@ namespace binary_fmr
     //=========================================================================
     auto config_template();
     auto initial_disk_profile(const mara::config_t& cfg);
-
-    //=========================================================================
-    void write(h5::Group&& group, const solution_t& solution);
-    void write(h5::Group&& group, const state_t& state);
-    void write(h5::Group&& group, const diagnostic_fields_t& diagnostics);
-    void read(h5::Group&& group, solution_t& solution);
-    void read(h5::Group&& group, state_t& state);
-    void read(h5::Group&& group, diagnostic_fields_t& diagnostics);
 
 
     //=========================================================================
@@ -187,6 +180,17 @@ namespace binary_fmr
 
 
 //=============================================================================
+namespace mara
+{
+    void write(h5::Group& group, std::string name, const binary_fmr::solution_t& solution);
+    void write(h5::Group& group, std::string name, const binary_fmr::state_t& state);
+    void write(h5::Group& group, std::string name, const binary_fmr::diagnostic_fields_t& diagnostics);
+}
+
+
+
+
+//=============================================================================
 auto binary_fmr::config_template()
 {
     return mara::make_config_template()
@@ -198,6 +202,7 @@ auto binary_fmr::config_template()
     .item("tfinal",               1.0)          // simulation stop time (orbits)
     .item("depth",                  4)
     .item("block_size",            64)
+    .item("focus_factor",         1.0)
     .item("rk_order",               2)          // time-stepping Runge-Kutta order: 1 or 2
     .item("reconstruct_method", "plm")          // zone extrapolation method: pcm or plm
     .item("plm_theta",            1.8)          // plm theta parameter: [1.0, 2.0]
@@ -249,38 +254,31 @@ auto binary_fmr::initial_disk_profile(const mara::config_t& cfg)
 
 
 //=========================================================================
-void binary_fmr::write(h5::Group&& group, const solution_t& solution)
+void mara::write(h5::Group& group, std::string name, const binary_fmr::solution_t& solution)
 {
-    group.write("time", solution.time);
-    group.write("iteration", solution.iteration);
-    mara::write_tree(group.require_group("conserved"), solution.conserved);
+    auto location = group.require_group(name);
+    mara::write(location, "time",       solution.time);
+    mara::write(location, "iteration",  solution.iteration);
+    mara::write(location, "conserved",  solution.conserved);
 }
 
-void binary_fmr::write(h5::Group&& group, const state_t& state)
+void mara::write(h5::Group& group, std::string name, const binary_fmr::state_t& state)
 {
-    write(group.require_group("solution"), state.solution);
-    mara::write_schedule(group.require_group("schedule"), state.schedule);
+    auto location = group.require_group(name);
+    mara::write(location, "solution",   state.solution);
+    mara::write(location, "schedule",   state.schedule);
+    mara::write(location, "run_config", state.run_config);
 }
 
-void binary_fmr::write(h5::Group&& group, const diagnostic_fields_t& diagnostics)
+void mara::write(h5::Group& group, std::string name, const binary_fmr::diagnostic_fields_t& diagnostics)
 {
-    group.write("time", diagnostics.time);
-    group.write("position_of_mass1", diagnostics.position_of_mass1);
-    group.write("position_of_mass2", diagnostics.position_of_mass2);
-    mara::write_tree(group.require_group("vertices"), diagnostics.vertices);
-    mara::write_tree(group.require_group("conserved"), diagnostics.conserved);
-}
-
-void binary_fmr::read(h5::Group&& group, solution_t& solution)
-{
-}
-
-void binary_fmr::read(h5::Group&& group, state_t& state)
-{
-}
-
-void binary_fmr::read(h5::Group&& group, diagnostic_fields_t& diagnostics)
-{
+    auto location = group.require_group(name);
+    mara::write(location, "run_config",        diagnostics.run_config);
+    mara::write(location, "time",              diagnostics.time);
+    mara::write(location, "vertices",          diagnostics.vertices);
+    mara::write(location, "conserved",         diagnostics.conserved);
+    mara::write(location, "position_of_mass1", diagnostics.position_of_mass1);
+    mara::write(location, "position_of_mass2", diagnostics.position_of_mass2);
 }
 
 
@@ -305,13 +303,15 @@ auto binary_fmr::create_solver_data(const mara::config_t& cfg)
 
 auto binary_fmr::create_vertices(const mara::config_t& run_config)
 {
-    auto refinement_radius = [] (std::size_t level, double centroid_radius)
-    {
-        return centroid_radius < 2.0 / level;
-    };
     auto domain_radius = run_config.get_double("domain_radius");
+    auto focus_factor  = run_config.get_double("focus_factor");
     auto block_size    = run_config.get_int("block_size");
     auto depth         = run_config.get_int("depth");
+
+    auto refinement_radius = [focus_factor] (std::size_t level, double centroid_radius)
+    {
+        return centroid_radius < focus_factor / level;
+    };
     auto verts = mara::create_vertex_quadtree(refinement_radius, block_size, depth);
 
     return verts.map([domain_radius] (auto block)
@@ -365,6 +365,7 @@ bool binary_fmr::simulation_should_continue(const state_t& state)
 auto binary_fmr::diagnostic_fields(const solution_t& solution, const mara::config_t& run_config)
 {
     return diagnostic_fields_t{
+        run_config,
         solution.time,
         create_vertices(run_config),
         solution.conserved,
@@ -405,8 +406,10 @@ public:
             // print_run_loop_message(state, perf);
         }
 
-        binary_fmr::write(h5::File("diagnostics.0000.h5", "w").require_group("/"),
-            diagnostic_fields(state.solution, run_config));
+        auto file = h5::File("diagnostics.0000.h5", "w");
+        auto group = file.require_group("/");
+        mara::write(group, "/", diagnostic_fields(state.solution, run_config));
+
         // run_tasks(next(state));
         return 0;
     }
