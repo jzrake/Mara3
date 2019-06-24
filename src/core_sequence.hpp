@@ -346,8 +346,54 @@ struct mara::arithmetic_sequence_t
      * @return     What remains of the sequence after the last or first element
      *             is removed.
      */
-    auto init() const { return iota<Rank - 1>().map([this] (std::size_t n) { return this->operator[](n); }); }
-    auto tail() const { return iota<Rank - 1>().map([this] (std::size_t n) { return this->operator[](n + 1); }); }
+    auto init() const { return iota<Rank - 1>().map([this] (std::size_t n) { return __data[n]; }); }
+    auto tail() const { return iota<Rank - 1>().map([this] (std::size_t n) { return __data[n + 1]; }); }
+
+
+
+
+    /**
+     * @brief      Return a sequence of the same value type, consisting of the
+     *             values in this sequence, followed by the values in another.
+     *
+     * @param[in]  other      The other sequence
+     *
+     * @tparam     OtherRank  The rank of th other sequence
+     *
+     * @return     A new sequence
+     */
+    template<std::size_t OtherRank>
+    auto concat(const arithmetic_sequence_t<ValueType, OtherRank>& other) const
+    {
+        return iota<Rank + OtherRank>().map([this, &other] (std::size_t n)
+        {
+            return n < Rank ? __data[n] : other[n - Rank];
+        });
+    }
+
+
+
+
+    /**
+     * @brief      Return a sequence with the given value appended.
+     *
+     * @param[in]  value  The value to append
+     *
+     * @return     A (ValueType, Rank + 1) sequence
+     */
+    auto append(const ValueType& value) const { return concat(make_sequence(value)); }
+
+
+
+
+    /**
+     * @brief      Return a sequence with the given value prepended.
+     *
+     * @param[in]  value  The value to prepend
+     *
+     * @return     A (ValueType, Rank + 1) sequence
+     */
+    auto prepend(const ValueType& value) const { return make_sequence(value).concat(*this); }
 
 
 
