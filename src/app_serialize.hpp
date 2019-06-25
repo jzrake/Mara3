@@ -51,49 +51,14 @@ namespace mara
 
 
     //=========================================================================
-    template<typename ValueType>
-    void write(h5::Group& group, std::string name, const ValueType& value)
-    {
-        group.write(name, value);
-    }
-
-    template<typename ValueType>
-    void read(h5::Group& group, std::string name, ValueType& value)
-    {
-        group.read(name, value);
-    }
+    template<typename ValueType> void write(h5::Group& group, std::string name, const ValueType& value);
+    template<typename ValueType> void read(h5::Group& group, std::string name, ValueType& value);
+    template<typename ValueType> auto read(h5::Group&& group, std::string name);
 
 
     //=========================================================================
     inline std::string create_numbered_filename(std::string prefix, int count, std::string extension);
-
-    template<typename Writable, typename Serializable>
-    auto write_struct_providing_keyval_tuples(Writable& location, Serializable&& instance);
-
     template<std::size_t Rank> auto make_hdf5_hyperslab(const nd::access_pattern_t<Rank>& sel);
-
-
-    //=========================================================================
-    namespace detail
-    {
-        template<typename Function, typename Tuple, std::size_t... Is>
-        void foreach_tuple_impl(Function&& fn, Tuple&& t, std::index_sequence<Is...>);
-
-        template<typename Function, typename Tuple>
-        void foreach_tuple(Function&& fn, Tuple&& t);
-
-        template<typename Function, typename Tuple1, typename Tuple2, std::size_t... Is>
-        void foreach_tuple_impl(Function&& fn, Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>);
-
-        template<typename Function, typename Tuple1, typename Tuple2>
-        void foreach_tuple(Function&& fn, Tuple1&& t1, Tuple2&& t2);
-
-        template<typename Tuple1, typename Tuple2, std::size_t... Is>
-        auto tuple_pair_impl(Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>);
-
-        template<typename Tuple1, typename Tuple2>
-        auto tuple_pair(Tuple1&& t1, Tuple2&& t2);
-    };
 }
 
 
@@ -127,18 +92,6 @@ auto mara::read_schedule(h5::Group&& group)
     return schedule;
 }
 
-template<>
-void mara::write<mara::schedule_t>(h5::Group& group, std::string name, const schedule_t& schedule)
-{
-    write_schedule(group.require_group(name), schedule);
-}
-
-template<>
-void mara::read<mara::schedule_t>(h5::Group& group, std::string name, mara::schedule_t& value)
-{
-    value = read_schedule(group.open_group(name));
-}
-
 
 
 
@@ -149,12 +102,6 @@ void mara::write_config(h5::Group&& group, const config_t& run_config)
     {
         group.write(item.first, item.second);
     }
-}
-
-template<>
-void mara::write<mara::config_t>(h5::Group& group, std::string name, const config_t& run_config)
-{
-    write_config(group.require_group(name), run_config);
 }
 
 auto mara::read_config(h5::Group&& group)
@@ -178,6 +125,48 @@ auto mara::read_config(h5::Group&& group)
 
 
 //=============================================================================
+template<typename ValueType>
+void mara::write(h5::Group& group, std::string name, const ValueType& value)
+{
+    group.write(name, value);
+}
+
+template<typename ValueType>
+void mara::read(h5::Group& group, std::string name, ValueType& value)
+{
+    group.read(name, value);
+}
+
+template<typename ValueType>
+auto mara::read(h5::Group&& group, std::string name)
+{
+    ValueType result;
+    read(group, name, result);
+    return result;
+}
+
+template<>
+inline void mara::read<mara::schedule_t>(h5::Group& group, std::string name, mara::schedule_t& value)
+{
+    value = read_schedule(group.open_group(name));
+}
+
+template<>
+inline void mara::write<mara::schedule_t>(h5::Group& group, std::string name, const schedule_t& schedule)
+{
+    write_schedule(group.require_group(name), schedule);
+}
+
+template<>
+inline void mara::write<mara::config_t>(h5::Group& group, std::string name, const config_t& run_config)
+{
+    write_config(group.require_group(name), run_config);
+}
+
+
+
+
+//=============================================================================
 template<std::size_t Rank>
 auto mara::make_hdf5_hyperslab(const nd::access_pattern_t<Rank>& sel)
 {
@@ -190,79 +179,11 @@ auto mara::make_hdf5_hyperslab(const nd::access_pattern_t<Rank>& sel)
     return result;
 }
 
-
-
-
-//=============================================================================
 std::string mara::create_numbered_filename(std::string prefix, int count, std::string extension)
 {
     char filename[1024];
     std::snprintf(filename, 1024, "%s.%04d.%s", prefix.data(), count, extension.data());
     return filename;
-}
-
-
-
-
-//=============================================================================
-template<typename Writable, typename Serializable>
-auto mara::write_struct_providing_keyval_tuples(Writable& location, Serializable&& instance)
-{
-    auto f = [&] (auto&& name, auto&& value)
-    {
-        location.write(name, value);
-    };
-    mara::detail::foreach_tuple(f, instance.keys(), instance.values());
-}
-
-
-
-
-//=============================================================================
-template<typename Function, typename Tuple, std::size_t... Is>
-void mara::detail::foreach_tuple_impl(Function&& fn, Tuple&& t, std::index_sequence<Is...>)
-{
-    (fn(std::get<Is>(t)), ...);
-}
-
-template<typename Function, typename Tuple>
-void mara::detail::foreach_tuple(Function&& fn, Tuple&& t)
-{
-    return foreach_tuple_impl(
-        std::forward<Function>(fn),
-        std::forward<Tuple>(t),
-        std::make_index_sequence<std::tuple_size<Tuple>::value>());
-}
-
-template<typename Function, typename Tuple1, typename Tuple2, std::size_t... Is>
-void mara::detail::foreach_tuple_impl(Function&& fn, Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>)
-{
-    (fn(std::get<Is>(t1), std::get<Is>(t2)), ...);
-}
-
-template<typename Function, typename Tuple1, typename Tuple2>
-void mara::detail::foreach_tuple(Function&& fn, Tuple1&& t1, Tuple2&& t2)
-{
-    return foreach_tuple_impl(
-        std::forward<Function>(fn),
-        std::forward<Tuple1>(t1),
-        std::forward<Tuple2>(t2),
-        std::make_index_sequence<std::tuple_size<Tuple1>::value>());
-}
-
-template<typename Tuple1, typename Tuple2, std::size_t... Is>
-auto mara::detail::tuple_pair_impl(Tuple1&& t1, Tuple2&& t2, std::index_sequence<Is...>)
-{
-    return std::make_tuple(std::make_pair(std::get<Is>(t1), std::get<Is>(t2))...);
-}
-
-template<typename Tuple1, typename Tuple2>
-auto mara::detail::tuple_pair(Tuple1&& t1, Tuple2&& t2)
-{
-    return tuple_pair_impl(
-        std::forward<Tuple1>(t1),
-        std::forward<Tuple2>(t2),
-        std::make_index_sequence<std::tuple_size<Tuple1>::value>());
 }
 
 

@@ -133,9 +133,6 @@ namespace binary_fmr
         quad_tree_t<mara::iso2d::conserved_per_area_t> conserved;
         location_2d_t                                  position_of_mass1;
         location_2d_t                                  position_of_mass2;
-        // nd::shared_array<double, 2>                    sigma;
-        // nd::shared_array<double, 2>                    phi_velocity;
-        // nd::shared_array<double, 2>                    radial_velocity;
     };
 
 
@@ -173,20 +170,12 @@ namespace binary_fmr
 //=============================================================================
 namespace mara
 {
-    void write(h5::Group& group, std::string name, const binary_fmr::solution_t& solution);
-    void write(h5::Group& group, std::string name, const binary_fmr::state_t& state);
-    void write(h5::Group& group, std::string name, const binary_fmr::diagnostic_fields_t& diagnostics);
-    void read(h5::Group& group, std::string name, binary_fmr::solution_t& solution);
-    void read(h5::Group& group, std::string name, binary_fmr::state_t& state);
-    void read(h5::Group& group, std::string name, binary_fmr::diagnostic_fields_t& diagnostics);
-
-    template<typename ValueType>
-    auto read_hdf5(h5::Group&& group, std::string name)
-    {
-        ValueType result;
-        read(group, name, result);
-        return result;
-    }
+    template<> void write<binary_fmr::solution_t>         (h5::Group&, std::string, const binary_fmr::solution_t&);
+    template<> void write<binary_fmr::state_t>            (h5::Group&, std::string, const binary_fmr::state_t&);
+    template<> void write<binary_fmr::diagnostic_fields_t>(h5::Group&, std::string, const binary_fmr::diagnostic_fields_t&);
+    template<> void read<binary_fmr::solution_t>          (h5::Group&, std::string, binary_fmr::solution_t&);
+    template<> void read<binary_fmr::state_t>             (h5::Group&, std::string, binary_fmr::state_t&);
+    template<> void read<binary_fmr::diagnostic_fields_t> (h5::Group&, std::string, binary_fmr::diagnostic_fields_t&);
 }
 
 
@@ -256,7 +245,8 @@ auto binary_fmr::initial_disk_profile(const mara::config_t& run_config)
 
 
 //=========================================================================
-void mara::write(h5::Group& group, std::string name, const binary_fmr::solution_t& solution)
+template<>
+void mara::write<binary_fmr::solution_t>(h5::Group& group, std::string name, const binary_fmr::solution_t& solution)
 {
     auto location = group.require_group(name);
     mara::write(location, "time",       solution.time);
@@ -264,7 +254,8 @@ void mara::write(h5::Group& group, std::string name, const binary_fmr::solution_
     mara::write(location, "conserved",  solution.conserved);
 }
 
-void mara::write(h5::Group& group, std::string name, const binary_fmr::state_t& state)
+template<>
+void mara::write<binary_fmr::state_t>(h5::Group& group, std::string name, const binary_fmr::state_t& state)
 {
     auto location = group.require_group(name);
     mara::write(location, "solution",   state.solution);
@@ -272,7 +263,8 @@ void mara::write(h5::Group& group, std::string name, const binary_fmr::state_t& 
     mara::write(location, "run_config", state.run_config);
 }
 
-void mara::write(h5::Group& group, std::string name, const binary_fmr::diagnostic_fields_t& diagnostics)
+template<>
+void mara::write<binary_fmr::diagnostic_fields_t>(h5::Group& group, std::string name, const binary_fmr::diagnostic_fields_t& diagnostics)
 {
     auto location = group.require_group(name);
     mara::write(location, "run_config",        diagnostics.run_config);
@@ -283,7 +275,8 @@ void mara::write(h5::Group& group, std::string name, const binary_fmr::diagnosti
     mara::write(location, "position_of_mass2", diagnostics.position_of_mass2);
 }
 
-void mara::read(h5::Group& group, std::string name, binary_fmr::solution_t& solution)
+template<>
+void mara::read<binary_fmr::solution_t>(h5::Group& group, std::string name, binary_fmr::solution_t& solution)
 {
     auto location = group.open_group(name);
     mara::read(location, "time",       solution.time);
@@ -291,14 +284,16 @@ void mara::read(h5::Group& group, std::string name, binary_fmr::solution_t& solu
     mara::read(location, "conserved",  solution.conserved);
 }
 
-void mara::read(h5::Group& group, std::string name, binary_fmr::state_t& state)
+template<>
+void mara::read<binary_fmr::state_t>(h5::Group& group, std::string name, binary_fmr::state_t& state)
 {
     auto location = group.open_group(name);
     mara::read(location, "solution",   state.solution);
     mara::read(location, "schedule",   state.schedule);
 }
 
-void mara::read(h5::Group& group, std::string name, binary_fmr::diagnostic_fields_t& diagnostics)
+template<>
+void mara::read<binary_fmr::diagnostic_fields_t>(h5::Group& group, std::string name, binary_fmr::diagnostic_fields_t& diagnostics)
 {
     // TODO
 }
@@ -381,7 +376,7 @@ auto binary_fmr::create_solution(const mara::config_t& run_config)
         });
         return solution_t{0, 0.0, conserved};
     }
-    return mara::read_hdf5<solution_t>(h5::File(restart, "r").open_group("/"), "solution");
+    return mara::read<solution_t>(h5::File(restart, "r").open_group("/"), "solution");
 }
 
 auto binary_fmr::create_schedule(const mara::config_t& run_config)
@@ -535,7 +530,7 @@ public:
         auto run_config  = binary_fmr::create_run_config(argc, argv);
         auto solver_data = binary_fmr::create_solver_data(run_config);
         auto state       = binary_fmr::create_state(run_config);
-        auto next        = binary_fmr::next_state; //binary_fmr::create_next_function(solver_data);
+        auto next        = binary_fmr::next_state;
         auto perf        = mara::perf_diagnostics_t();
 
         binary_fmr::prepare_filesystem(run_config);
