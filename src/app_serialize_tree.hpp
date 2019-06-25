@@ -137,7 +137,7 @@ void mara::read_tree(h5::Group&& group, arithmetic_binary_tree_t<ValueType, Rank
 {
     for (auto dataset : group)
     {
-        auto value = group.read<std::size_t>(dataset);
+        auto value = group.read<ValueType>(dataset);
         tree = std::move(tree).insert(mara::read_tree_index<2>(dataset), value);
     }
 }

@@ -41,26 +41,37 @@
 //=============================================================================
 namespace mara
 {
+
+
+    //=========================================================================
     inline void write_schedule(h5::Group&& group, const schedule_t& schedule);
     inline auto read_schedule(h5::Group&& group);
     inline void write_config(h5::Group&& group, const config_t& run_config);
     inline auto read_config(h5::Group&& group);
 
-    inline void write(h5::Group& group, std::string name, const schedule_t& schedule);
-    inline void write(h5::Group& group, std::string name, const config_t& schedule);
 
+    //=========================================================================
     template<typename ValueType>
     void write(h5::Group& group, std::string name, const ValueType& value)
     {
         group.write(name, value);
     }
 
+    template<typename ValueType>
+    void read(h5::Group& group, std::string name, ValueType& value)
+    {
+        group.read(name, value);
+    }
+
+
+    //=========================================================================
     inline std::string create_numbered_filename(std::string prefix, int count, std::string extension);
 
     template<typename Writable, typename Serializable>
     auto write_struct_providing_keyval_tuples(Writable& location, Serializable&& instance);
 
     template<std::size_t Rank> auto make_hdf5_hyperslab(const nd::access_pattern_t<Rank>& sel);
+
 
     //=========================================================================
     namespace detail
@@ -100,11 +111,6 @@ void mara::write_schedule(h5::Group&& group, const schedule_t& schedule)
     }
 }
 
-void mara::write(h5::Group& group, std::string name, const schedule_t& schedule)
-{
-    write_schedule(group.require_group(name), schedule);
-}
-
 auto mara::read_schedule(h5::Group&& group)
 {
     auto schedule = mara::schedule_t();
@@ -121,6 +127,18 @@ auto mara::read_schedule(h5::Group&& group)
     return schedule;
 }
 
+template<>
+void mara::write<mara::schedule_t>(h5::Group& group, std::string name, const schedule_t& schedule)
+{
+    write_schedule(group.require_group(name), schedule);
+}
+
+template<>
+void mara::read<mara::schedule_t>(h5::Group& group, std::string name, mara::schedule_t& value)
+{
+    value = read_schedule(group.open_group(name));
+}
+
 
 
 
@@ -133,7 +151,8 @@ void mara::write_config(h5::Group&& group, const config_t& run_config)
     }
 }
 
-void mara::write(h5::Group& group, std::string name, const config_t& run_config)
+template<>
+void mara::write<mara::config_t>(h5::Group& group, std::string name, const config_t& run_config)
 {
     write_config(group.require_group(name), run_config);
 }
@@ -155,6 +174,10 @@ auto mara::read_config(h5::Group&& group)
     return config;
 }
 
+
+
+
+//=============================================================================
 template<std::size_t Rank>
 auto mara::make_hdf5_hyperslab(const nd::access_pattern_t<Rank>& sel)
 {

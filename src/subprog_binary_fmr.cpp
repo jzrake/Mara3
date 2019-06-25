@@ -176,6 +176,17 @@ namespace mara
     void write(h5::Group& group, std::string name, const binary_fmr::solution_t& solution);
     void write(h5::Group& group, std::string name, const binary_fmr::state_t& state);
     void write(h5::Group& group, std::string name, const binary_fmr::diagnostic_fields_t& diagnostics);
+    void read(h5::Group& group, std::string name, binary_fmr::solution_t& solution);
+    void read(h5::Group& group, std::string name, binary_fmr::state_t& state);
+    void read(h5::Group& group, std::string name, binary_fmr::diagnostic_fields_t& diagnostics);
+
+    template<typename ValueType>
+    auto read_hdf5(h5::Group&& group, std::string name)
+    {
+        ValueType result;
+        read(group, name, result);
+        return result;
+    }
 }
 
 
@@ -272,6 +283,26 @@ void mara::write(h5::Group& group, std::string name, const binary_fmr::diagnosti
     mara::write(location, "position_of_mass2", diagnostics.position_of_mass2);
 }
 
+void mara::read(h5::Group& group, std::string name, binary_fmr::solution_t& solution)
+{
+    auto location = group.open_group(name);
+    mara::read(location, "time",       solution.time);
+    mara::read(location, "iteration",  solution.iteration);
+    mara::read(location, "conserved",  solution.conserved);
+}
+
+void mara::read(h5::Group& group, std::string name, binary_fmr::state_t& state)
+{
+    auto location = group.open_group(name);
+    mara::read(location, "solution",   state.solution);
+    mara::read(location, "schedule",   state.schedule);
+}
+
+void mara::read(h5::Group& group, std::string name, binary_fmr::diagnostic_fields_t& diagnostics)
+{
+    // TODO
+}
+
 
 
 
@@ -335,16 +366,22 @@ auto binary_fmr::create_vertices(const mara::config_t& run_config)
 
 auto binary_fmr::create_solution(const mara::config_t& run_config)
 {
-    auto conserved = create_vertices(run_config).map([&run_config] (auto block)
+    auto restart = run_config.get<std::string>("restart");
+
+    if (restart.empty())
     {
-        return block
-        | nd::midpoint_on_axis(0)
-        | nd::midpoint_on_axis(1)
-        | nd::map(initial_disk_profile(run_config))
-        | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
-        | nd::to_shared();
-    });
-    return solution_t{0, 0.0, conserved};
+        auto conserved = create_vertices(run_config).map([&run_config] (auto block)
+        {
+            return block
+            | nd::midpoint_on_axis(0)
+            | nd::midpoint_on_axis(1)
+            | nd::map(initial_disk_profile(run_config))
+            | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
+            | nd::to_shared();
+        });
+        return solution_t{0, 0.0, conserved};
+    }
+    return mara::read_hdf5<solution_t>(h5::File(restart, "r").open_group("/"), "solution");
 }
 
 auto binary_fmr::create_schedule(const mara::config_t& run_config)
@@ -377,7 +414,7 @@ auto binary_fmr::create_state(const mara::config_t& run_config)
 //=============================================================================
 auto binary_fmr::next_solution(const solution_t& solution)
 {
-    return solution;
+    return solution; // TODO
 }
 
 auto binary_fmr::next_schedule(const state_t& state)
