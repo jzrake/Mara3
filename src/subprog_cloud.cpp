@@ -123,8 +123,14 @@ struct CloudProblem
         nd::shared_array<double, 1> shock_midpoint_radius;
         nd::shared_array<double, 1> shock_upstream_radius;
         nd::shared_array<double, 1> shock_pressure_radius;
-        nd::shared_array<double, 1> postshock_flow_power;
         nd::shared_array<double, 1> postshock_flow_gamma;
+        nd::shared_array<double, 1> postshock_flow_power;
+        nd::shared_array<double, 1> postshock_flow_power02;
+        nd::shared_array<double, 1> postshock_flow_power04;
+        nd::shared_array<double, 1> postshock_flow_power08;
+        nd::shared_array<double, 1> postshock_flow_power16;
+        nd::shared_array<double, 1> postshock_flow_power32;
+        nd::shared_array<double, 1> postshock_flow_power64;
         radial_vertex_array_t       radial_vertices;
         polar_vertex_array_t        polar_vertices;
     };
@@ -300,13 +306,19 @@ auto CloudProblem::make_diagnostic_fields(const solution_state_t& state, const m
     auto radial_cells = state.radial_vertices | nd::midpoint_on_axis(0);
     auto primitive    = state.conserved | nd::divide(dv) | nd::map(cons_to_prim);
 
-    auto solid_angle_at_theta  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-    auto total_energy_at_theta = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-    auto shock_midpoint_radius = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-    auto shock_upstream_radius = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-    auto shock_pressure_radius = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-    auto postshock_flow_power  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
-    auto postshock_flow_gamma  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto solid_angle_at_theta   = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto total_energy_at_theta  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto shock_midpoint_radius  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto shock_upstream_radius  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto shock_pressure_radius  = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto postshock_flow_gamma   = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto postshock_flow_power   = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto postshock_flow_power02 = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto postshock_flow_power04 = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto postshock_flow_power08 = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto postshock_flow_power16 = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto postshock_flow_power32 = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
+    auto postshock_flow_power64 = nd::make_unique_array<double>(state.polar_vertices.size() - 1);
 
     for (std::size_t j = 0; j < state.polar_vertices.size() - 1; ++j)
     {
@@ -315,7 +327,12 @@ auto CloudProblem::make_diagnostic_fields(const solution_state_t& state, const m
         auto midpoint_index = mara::find_shock_index(pj, gamma_law_index)[0];
         auto upstream_index = mara::find_index_of_pressure_plateau_ahead(pj, midpoint_index);
         auto pressure_index = mara::find_index_of_maximum_pressure_behind(pj, midpoint_index);
-        auto pshock = primitive(pressure_index, j);
+        auto i02 = midpoint_index >  2 ? midpoint_index -  2 : 0;
+        auto i04 = midpoint_index >  4 ? midpoint_index -  4 : 0;
+        auto i08 = midpoint_index >  8 ? midpoint_index -  8 : 0;
+        auto i16 = midpoint_index > 16 ? midpoint_index - 16 : 0;
+        auto i32 = midpoint_index > 32 ? midpoint_index - 32 : 0;
+        auto i64 = midpoint_index > 64 ? midpoint_index - 64 : 0;
 
         solid_angle_at_theta(j) = dAr(0, j) / state.radial_vertices(0) / state.radial_vertices(0);
         total_energy_at_theta(j) = uj | nd::map([] (auto u) { return u[4].value; }) | nd::multiply(reference.energy()) | nd::sum();
@@ -323,21 +340,33 @@ auto CloudProblem::make_diagnostic_fields(const solution_state_t& state, const m
         shock_upstream_radius(j) = radial_cells(upstream_index).value * reference.length();
         shock_pressure_radius(j) = radial_cells(pressure_index).value * reference.length();
 
-        postshock_flow_power(j) = (pshock.flux(rhat, gamma_law_index)[4] * dAr(pressure_index, j)).value * reference.power();
-        postshock_flow_gamma(j) =  pshock.lorentz_factor();
+        postshock_flow_gamma(j)   =  primitive(pressure_index,      j).lorentz_factor();
+        postshock_flow_power(j)   = (primitive(pressure_index,      j).flux(rhat, gamma_law_index)[4] * dAr(pressure_index, j)).value * reference.power();
+        postshock_flow_power02(j) = (primitive(i02, j).flux(rhat, gamma_law_index)[4] * dAr(i02, j)).value * reference.power();
+        postshock_flow_power04(j) = (primitive(i04, j).flux(rhat, gamma_law_index)[4] * dAr(i04, j)).value * reference.power();
+        postshock_flow_power08(j) = (primitive(i08, j).flux(rhat, gamma_law_index)[4] * dAr(i08, j)).value * reference.power();
+        postshock_flow_power16(j) = (primitive(i16, j).flux(rhat, gamma_law_index)[4] * dAr(i16, j)).value * reference.power();
+        postshock_flow_power32(j) = (primitive(i32, j).flux(rhat, gamma_law_index)[4] * dAr(i32, j)).value * reference.power();
+        postshock_flow_power64(j) = (primitive(i64, j).flux(rhat, gamma_law_index)[4] * dAr(i64, j)).value * reference.power();
     }
 
     auto result = diagnostic_fields_t();
 
     result.radial_vertices    = state.radial_vertices * reference.length() | nd::to_shared();
     result.polar_vertices     = state.polar_vertices;
-    result.solid_angle_at_theta  = std::move(solid_angle_at_theta).shared();
-    result.total_energy_at_theta = std::move(total_energy_at_theta).shared();
-    result.shock_midpoint_radius = std::move(shock_midpoint_radius).shared();
-    result.shock_upstream_radius = std::move(shock_upstream_radius).shared();
-    result.shock_pressure_radius = std::move(shock_pressure_radius).shared();
-    result.postshock_flow_power  = std::move(postshock_flow_power).shared();
-    result.postshock_flow_gamma  = std::move(postshock_flow_gamma).shared();
+    result.solid_angle_at_theta   = std::move(solid_angle_at_theta)  .shared();
+    result.total_energy_at_theta  = std::move(total_energy_at_theta) .shared();
+    result.shock_midpoint_radius  = std::move(shock_midpoint_radius) .shared();
+    result.shock_upstream_radius  = std::move(shock_upstream_radius) .shared();
+    result.shock_pressure_radius  = std::move(shock_pressure_radius) .shared();
+    result.postshock_flow_gamma   = std::move(postshock_flow_gamma)  .shared();
+    result.postshock_flow_power   = std::move(postshock_flow_power)  .shared();
+    result.postshock_flow_power02 = std::move(postshock_flow_power02).shared();
+    result.postshock_flow_power04 = std::move(postshock_flow_power04).shared();
+    result.postshock_flow_power08 = std::move(postshock_flow_power08).shared();
+    result.postshock_flow_power16 = std::move(postshock_flow_power16).shared();
+    result.postshock_flow_power32 = std::move(postshock_flow_power32).shared();
+    result.postshock_flow_power64 = std::move(postshock_flow_power64).shared();
 
     result.time               = state.time * reference.time();
     result.specific_entropy   = primitive | nd::map(std::bind(&mara::srhd::primitive_t::specific_entropy, _1, gamma_law_index)) | nd::to_shared();
@@ -662,9 +691,14 @@ void CloudProblem::write_diagnostics(const app_state_t& state, std::string outdi
     file.write("shock_midpoint_radius", diagnostics.shock_midpoint_radius);
     file.write("shock_upstream_radius", diagnostics.shock_upstream_radius);
     file.write("shock_pressure_radius", diagnostics.shock_pressure_radius);
-    file.write("postshock_flow_power",  diagnostics.postshock_flow_power);
     file.write("postshock_flow_gamma",  diagnostics.postshock_flow_gamma);
-
+    file.write("postshock_flow_power",  diagnostics.postshock_flow_power);
+    file.write("postshock_flow_power02",  diagnostics.postshock_flow_power02);
+    file.write("postshock_flow_power04",  diagnostics.postshock_flow_power04);
+    file.write("postshock_flow_power08",  diagnostics.postshock_flow_power08);
+    file.write("postshock_flow_power16",  diagnostics.postshock_flow_power16);
+    file.write("postshock_flow_power32",  diagnostics.postshock_flow_power32);
+    file.write("postshock_flow_power64",  diagnostics.postshock_flow_power64);
     std::printf("write diagnostics: %s\n", file.filename().data());
 }
 
