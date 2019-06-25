@@ -219,9 +219,9 @@ auto mara::get_cell_block(const arithmetic_binary_tree_t<ValueType, Rank>& tree,
              | mara::coarsen_cells<Rank>()
              | nd::to_shared();
     }
-    catch (const std::exception&)
+    catch (const std::exception& e)
     {
-        throw std::invalid_argument("mara::get_cell_block (tree has over-refined neighbors)");
+        throw std::invalid_argument("mara::get_cell_block (tree has over-refined neighbors?) " + std::string(e.what()));
     }
 }
 
@@ -253,8 +253,8 @@ auto mara::get_vertex_block(const arithmetic_binary_tree_t<ValueType, Rank>& tre
              | mara::coarsen_verts<Rank>()
              | nd::to_shared();
     }
-    catch (const std::exception&)
+    catch (const std::exception& e)
     {
-        throw std::invalid_argument("mara::get_vertex_block (tree has over-refined neighbors)");
+        throw std::invalid_argument("mara::get_vertex_block (tree has over-refined neighbors?) " + std::string(e.what()));
     }
 }

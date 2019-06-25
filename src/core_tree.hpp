@@ -493,6 +493,8 @@ struct mara::arithmetic_binary_tree_t
 
     bool      any() const { return has_value() ? bool(value()) : children().map([] (auto&& c) { return c.any(); }).any(); }
     bool      all() const { return has_value() ? bool(value()) : children().map([] (auto&& c) { return c.all(); }).all(); }
+    ValueType min() const { return has_value() ?      value()  : children().map([] (auto&& c) { return c.min(); }).min(); }
+    ValueType max() const { return has_value() ?      value()  : children().map([] (auto&& c) { return c.max(); }).max(); }
     ValueType sum() const { return has_value() ?      value()  : children().map([] (auto&& c) { return c.sum(); }).sum(); }
 
 
