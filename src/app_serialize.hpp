@@ -131,6 +131,18 @@ void mara::write(h5::Group& group, std::string name, const ValueType& value)
     group.write(name, value);
 }
 
+template<>
+inline void mara::write<mara::schedule_t>(h5::Group& group, std::string name, const schedule_t& schedule)
+{
+    write_schedule(group.require_group(name), schedule);
+}
+
+template<>
+inline void mara::write<mara::config_t>(h5::Group& group, std::string name, const config_t& run_config)
+{
+    write_config(group.require_group(name), run_config);
+}
+
 template<typename ValueType>
 void mara::read(h5::Group& group, std::string name, ValueType& value)
 {
@@ -149,18 +161,6 @@ template<>
 inline void mara::read<mara::schedule_t>(h5::Group& group, std::string name, mara::schedule_t& value)
 {
     value = read_schedule(group.open_group(name));
-}
-
-template<>
-inline void mara::write<mara::schedule_t>(h5::Group& group, std::string name, const schedule_t& schedule)
-{
-    write_schedule(group.require_group(name), schedule);
-}
-
-template<>
-inline void mara::write<mara::config_t>(h5::Group& group, std::string name, const config_t& run_config)
-{
-    write_config(group.require_group(name), run_config);
 }
 
 

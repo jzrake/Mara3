@@ -409,7 +409,11 @@ auto binary_fmr::create_state(const mara::config_t& run_config)
 //=============================================================================
 auto binary_fmr::next_solution(const solution_t& solution)
 {
-    return solution; // TODO
+    return solution_t{
+        solution.time + 0.1,
+        solution.iteration + 1,
+        solution.conserved, // TODO
+    };
 }
 
 auto binary_fmr::next_schedule(const state_t& state)
@@ -463,10 +467,10 @@ auto binary_fmr::run_tasks(const state_t& state)
     {
         auto outdir = state.run_config.get_string("outdir");
         auto count  = state.schedule.num_times_performed("write_checkpoint");
-        auto file   = h5::File(mara::filesystem::join(outdir, mara::create_numbered_filename("chkpt", count, "h5")), "w");
-        auto group  = file.require_group("/");
+        auto fname  = mara::filesystem::join(outdir, mara::create_numbered_filename("chkpt", count, "h5"));
+        auto group  = h5::File(fname, "w").open_group("/");
         mara::write(group, "/", state);
-        std::printf("write checkpoint: %s\n", file.filename().data());
+        std::printf("write checkpoint: %s\n", fname.data());
         return mara::complete_task_in(state, "write_checkpoint");
     };
 
@@ -476,10 +480,10 @@ auto binary_fmr::run_tasks(const state_t& state)
     {
         auto outdir = state.run_config.get_string("outdir");
         auto count  = state.schedule.num_times_performed("write_diagnostics");
-        auto file   = h5::File(mara::filesystem::join(outdir, mara::create_numbered_filename("diagnostics", count, "h5")), "w");
-        auto group  = file.require_group("/");
+        auto fname  = mara::filesystem::join(outdir, mara::create_numbered_filename("diagnostics", count, "h5"));
+        auto group  = h5::File(fname, "w").open_group("/");
         mara::write(group, "/", diagnostic_fields(state.solution, state.run_config));
-        std::printf("write diagnostics: %s\n", file.filename().data());
+        std::printf("write diagnostics: %s\n", fname.data());
         return mara::complete_task_in(state, "write_diagnostics");
     };
 
@@ -539,13 +543,9 @@ public:
 
         while (binary_fmr::simulation_should_continue(state))
         {
-            // std::tie(state, perf) = mara::time_execution(mara::compose(run_tasks, next), state);
-            // binary_fmr::print_run_loop_message(state, perf);
+            std::tie(state, perf) = mara::time_execution(mara::compose(binary_fmr::run_tasks, next), state);
+            binary_fmr::print_run_loop_message(state, perf);
         }
-
-        auto file = h5::File("diagnostics.0000.h5", "w");
-        auto group = file.require_group("/");
-        mara::write(group, "/", diagnostic_fields(state.solution, run_config));
 
         run_tasks(next(state));
         return 0;

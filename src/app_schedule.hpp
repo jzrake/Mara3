@@ -159,16 +159,16 @@ auto mara::complete_task_in(const State& state, std::string task_name)
 template<typename State>
 auto mara::run_scheduled_tasks(const State& state, std::vector<std::pair<std::string, std::function<State(const State&)>>> tasks)
 {
-    auto next_state = state;
+    auto next = state;
 
     for (const auto& task : tasks)
     {
         if (state.schedule.is_due(task.first))
         {
-            next_state = task.second(state);
+            next = task.second(next);
         }
     }
-    return next_state;
+    return next;
 }
 
 
