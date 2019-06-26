@@ -225,6 +225,13 @@ struct mara::dimensional_value_t
     }
 
 
+    T scalar() const
+    {
+        static_assert(C == 0 && G == 0 && S == 0, "cannot convert dimensional number to a scalar");
+        return value;
+    }
+
+
     /**
      * @brief      Return a compile-time tuple of this type's length/mass/time
      *             dimensions
