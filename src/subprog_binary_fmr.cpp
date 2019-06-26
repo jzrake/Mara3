@@ -126,7 +126,9 @@ namespace binary_fmr
         mara::config_t                                 run_config;
         mara::unit_time<double>                        time;
         quad_tree_t<location_2d_t>                     vertices;
-        quad_tree_t<mara::iso2d::conserved_per_area_t> conserved;
+        quad_tree_t<double>                            sigma;
+        quad_tree_t<double>                            radial_velocity;
+        quad_tree_t<double>                            phi_velocity;
         location_2d_t                                  position_of_mass1;
         location_2d_t                                  position_of_mass2;
     };
@@ -226,7 +228,7 @@ auto binary_fmr::initial_disk_profile(const mara::config_t& run_config)
         auto rc             = 2.5;
         auto r2             = x * x + y * y;
         auto r              = std::sqrt(r2);
-        auto sigma          = std::exp(-std::pow(r - rc, 2) / rc / 2);
+        auto sigma          = std::exp(-std::min(5.0, std::pow(r - rc, 2) / rc / 2));
         auto ag             = -GM * std::pow(r2 + rs * rs, -1.5) * r;
         auto omega2         = -ag / r;
         auto vp             = (counter_rotate ? -1 : 1) * r * std::sqrt(omega2);
@@ -325,7 +327,9 @@ void mara::write<binary_fmr::diagnostic_fields_t>(h5::Group& group, std::string 
     mara::write(location, "run_config",        diagnostics.run_config);
     mara::write(location, "time",              diagnostics.time);
     mara::write(location, "vertices",          diagnostics.vertices);
-    mara::write(location, "conserved",         diagnostics.conserved);
+    mara::write(location, "sigma",             diagnostics.sigma);
+    mara::write(location, "radial_velocity",   diagnostics.radial_velocity);
+    mara::write(location, "phi_velocity",      diagnostics.phi_velocity);
     mara::write(location, "position_of_mass1", diagnostics.position_of_mass1);
     mara::write(location, "position_of_mass2", diagnostics.position_of_mass2);
 }
@@ -354,7 +358,9 @@ void mara::read<binary_fmr::diagnostic_fields_t>(h5::Group& group, std::string n
     // mara::read(location, "run_config",        diagnostics.run_config);
     mara::read(location, "time",              diagnostics.time);
     mara::read(location, "vertices",          diagnostics.vertices);
-    mara::read(location, "conserved",         diagnostics.conserved);
+    mara::read(location, "sigma",             diagnostics.sigma);
+    mara::read(location, "radial_velocity",   diagnostics.radial_velocity);
+    mara::read(location, "phi_velocity",      diagnostics.phi_velocity);
     mara::read(location, "position_of_mass1", diagnostics.position_of_mass1);
     mara::read(location, "position_of_mass2", diagnostics.position_of_mass2);
 }
@@ -642,11 +648,45 @@ auto binary_fmr::diagnostic_fields(const solution_t& solution, const mara::confi
     auto solver_data = create_solver_data(run_config);
     auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
 
+    auto component = [] (std::size_t component)
+    {
+        return nd::map([component] (auto p) { return p[component]; });
+    };
+
+    auto area_from_vertices = [component] (auto vertices)
+    {
+        auto dx = vertices | component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
+        auto dy = vertices | component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
+        return dx * dy;
+    };
+
+    auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, density_floor);
+    auto v0 = solver_data.vertices;
+    auto c0 = v0.map(nd::midpoint_on_axis(0)).map(nd::midpoint_on_axis(1));
+    auto xc = c0.map(component(0));
+    auto yc = c0.map(component(1));
+    auto u0 = solution.conserved;
+    auto p0 = u0.map(nd::map(recover_primitive)).map(nd::to_shared());
+    auto dA = v0.map(area_from_vertices).map(nd::to_shared());
+
+    auto rc = (xc * xc + yc * yc).map(nd::map([] (mara::unit_area<double> r2) { return r2.pow<1, 2>(); }));
+    auto rhat_x =  xc / rc;
+    auto rhat_y =  yc / rc;
+    auto phat_x = -yc / rc;
+    auto phat_y =  xc / rc;
+    auto sigma = p0.map(nd::map(std::mem_fn(&mara::iso2d::primitive_t::sigma)));
+    auto vx    = p0.map(nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_x)));
+    auto vy    = p0.map(nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_y)));
+    auto vr    = vx * rhat_x + vy * rhat_y;
+    auto vp    = vx * phat_x + vy * phat_y;
+
     return diagnostic_fields_t{
         run_config,
         solution.time,
-        create_vertices(run_config),
-        solution.conserved,
+        v0,
+        sigma.map(nd::to_shared()),
+        vr   .map(nd::to_shared()),
+        vp   .map(nd::to_shared()),
         {binary.body1.position_x, binary.body1.position_y},
         {binary.body2.position_x, binary.body2.position_y},
     };
