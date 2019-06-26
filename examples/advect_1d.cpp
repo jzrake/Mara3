@@ -81,7 +81,7 @@ auto advance_concentration(const state_t& state, double dt)
 state_t create_my_initial_state()
 {
     auto sigma = 0.2;
-    std::size_t num_cells = 100;
+    std::size_t num_cells = 500;
     auto vertices = nd::linspace(-1,1,num_cells+1);
     auto cell_centers = midpoint(vertices); // has size num_cells
     auto concentration = cell_centers | nd::map([sigma] (double x) { return std::exp(-x * x / sigma / sigma);});
@@ -105,13 +105,13 @@ state_t next(const state_t& state)
 int main()
 {
 
-    system("exec rm -r examples/advect_1d_out/u*.h5");
+    //system("exec rm -r examples/advect_1d_out/u*.h5");
     //auto x = nd::linspace(0,1,100);
     auto state = create_my_initial_state();
     while (state.time < 200.)
     {
         std::ostringstream os;
-        os << "examples/advect_1d_out/u_" << state.iteration << ".h5";
+        os << "examples/advect_1d_out/u_" << state.iteration << "_res_" << state.concentration.size() << ".h5";
         std::string s = os.str();
         auto h5f = h5::File(s, "w");
         h5f.write("x", midpoint(state.vertices).shared());
