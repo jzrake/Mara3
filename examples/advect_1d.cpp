@@ -105,23 +105,31 @@ state_t next(const state_t& state)
 int main()
 {
 
+    system("exec rm -r examples/advect_1d_out/u*.h5");
     //auto x = nd::linspace(0,1,100);
     auto state = create_my_initial_state();
-    while (state.time < 5.)
+    while (state.time < 200.)
     {
+        std::ostringstream os;
+        os << "examples/advect_1d_out/u_" << state.iteration << ".h5";
+        std::string s = os.str();
+        auto h5f = h5::File(s, "w");
+        h5f.write("x", midpoint(state.vertices).shared());
+        h5f.write("u", state.concentration.shared());
+
         state = next(state);
         std::printf("%d %lf \n", state.iteration, state.time);
         //auto xx = nd::linspace(-1, 1, 100);
         //std::string s = "u_%d.h5", %state.iteration;
         //const char* c = s.c_str();
-        std::ostringstream os;
-        os << "examples/advect_1d_out/u_" << state.iteration << ".h5";
-        std::string s = os.str();
-        auto h5f = h5::File(s, "w");
+        //std::ostringstream os;
+        //os << "examples/advect_1d_out/u_" << state.iteration << ".h5";
+        //std::string s = os.str();
+        //auto h5f = h5::File(s, "w");
         //auto h5f = h5::File("u.h5", "w");
         //h5f.write("xx", xx.shared());
-        h5f.write("x", midpoint(state.vertices).shared());
-        h5f.write("u", state.concentration.shared());
+        //h5f.write("x", midpoint(state.vertices).shared());
+        //h5f.write("u", state.concentration.shared());
         //h5f.write("time", state.time.shared());
     }
 
