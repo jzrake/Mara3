@@ -47,7 +47,6 @@
 #include "model_two_body.hpp"
 #define cfl_number                    0.4
 #define density_floor                 0.0
-#define sound_speed_squared          1e-4
 
 
 
@@ -87,16 +86,19 @@ namespace binary
     struct solver_data_t
     {
         mara::unit_rate  <double>                      sink_rate;
-        mara::unit_length<double>                      sink_radius;
-        mara::unit_length<double>                      softening_radius;
         mara::unit_time  <double>                      recommended_time_step;
+        mara::unit_length<double>                      softening_radius;
+        mara::unit_length<double>                      sink_radius;
 
+        double                                         mach_number;
         double                                         plm_theta;
         int                                            rk_order;
         reconstruct_method_t                           reconstruct_method;
         riemann_solver_t                               riemann_solver;
         mara::two_body_parameters_t                    binary_params;
         quad_tree_t<location_2d_t>                     vertices;
+        quad_tree_t<mara::iso2d::conserved_per_area_t> initial_conserved;
+        quad_tree_t<mara::unit_rate<double>>           buffer_rate_field;
     };
 
 
@@ -211,7 +213,8 @@ auto binary::config_template()
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
     .item("buffer_damping_rate", 10.0)          // maximum rate of buffer zone, where solution is driven to initial state
-    .item("counter_rotate",         0);         // retrograde disk option: 0 or 1
+    .item("counter_rotate",         0)          // retrograde disk option: 0 or 1
+    .item("mach_number",         10.0);
 }
 
 
@@ -499,9 +502,27 @@ auto binary::create_solver_data(const mara::config_t& run_config)
         | nd::max();
     }).max());
 
+    auto buffer_rate_field = vertices.map([&run_config] (auto block)
+    {
+        return block
+        | nd::midpoint_on_axis(0)
+        | nd::midpoint_on_axis(1)
+        | nd::map([&run_config] (location_2d_t p)
+        {
+            auto tightness   = mara::dimensional_value_t<-1, 0, 0, double>(3.0);
+            auto buffer_rate = mara::dimensional_value_t< 0, 0,-1, double>(run_config.get_double("buffer_damping_rate"));
+            auto r1 = mara::make_length(run_config.get_double("domain_radius"));
+            auto rc = (p[0] * p[0] + p[1] * p[1]).pow<1, 2>();
+            auto y = (tightness * (rc - r1)).scalar();
+            return buffer_rate * (1.0 + std::tanh(y));
+        })
+        | nd::to_shared();
+    });
+
 
     //=========================================================================
     auto result = solver_data_t();
+    result.mach_number           = run_config.get_double("mach_number");
     result.sink_rate             = run_config.get_double("sink_rate");
     result.sink_radius           = run_config.get_double("sink_radius");
     result.softening_radius      = run_config.get_double("softening_radius");
@@ -509,7 +530,11 @@ auto binary::create_solver_data(const mara::config_t& run_config)
     result.rk_order              = run_config.get_int("rk_order");
     result.recommended_time_step = std::min(min_dx, min_dy) / max_velocity * cfl_number;
     result.binary_params         = create_binary_params(run_config);
+    result.buffer_rate_field     = buffer_rate_field;
     result.vertices              = vertices;
+    result.initial_conserved     = primitive
+    .map(nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area)))
+    .map(nd::to_shared());
 
     if      (run_config.get_string("riemann") == "hlle") result.riemann_solver = riemann_solver_t::hlle;
     else if (run_config.get_string("riemann") == "hllc") result.riemann_solver = riemann_solver_t::hllc;
@@ -624,13 +649,13 @@ auto binary::advance(const solution_t& solution, const solver_data_t& solver_dat
         };
     };
 
-    auto intercell_flux = [] (auto riemann_solver, std::size_t axis)
+    auto intercell_flux = [cs2=std::pow(solver_data.mach_number, -2.0)] (auto riemann_solver, std::size_t axis)
     {
-        return [axis, riemann_solver] (auto left_and_right_states)
+        return [axis, riemann_solver, cs2] (auto left_and_right_states)
         {
             using namespace std::placeholders;
             auto nh = mara::unit_vector_t::on_axis(axis);
-            auto riemann = std::bind(riemann_solver, _1, _2, sound_speed_squared, sound_speed_squared, nh);
+            auto riemann = std::bind(riemann_solver, _1, _2, cs2, cs2, nh);
             return left_and_right_states | nd::apply(riemann);
         };
     };
@@ -643,25 +668,23 @@ auto binary::advance(const solution_t& solution, const solver_data_t& solver_dat
 
     // This is to check for negative densities. I'll move it somewhere else
     // soon, or only run it when a failure happened.
-    solution
-    .conserved
-    .map(component(0))
-    .pair(solver_data
-        .vertices
-        .map(nd::midpoint_on_axis(0))
-        .map(nd::midpoint_on_axis(1)))
-    .sink([] (auto dx)
-    {
-        for (auto [d, x] : nd::zip(dx.first, dx.second))
-        {
-            if (d < 0)
-            {
-                std::cout << "Negative density: " << to_string(d) << " at " << to_string(x) << std::endl;
-            }
-        }
-    });
-
-
+    // solution
+    // .conserved
+    // .map(component(0))
+    // .pair(solver_data
+    //     .vertices
+    //     .map(nd::midpoint_on_axis(0))
+    //     .map(nd::midpoint_on_axis(1)))
+    // .sink([] (auto dx)
+    // {
+    //     for (auto [d, x] : nd::zip(dx.first, dx.second))
+    //     {
+    //         if (d < 0)
+    //         {
+    //             std::cout << "Negative density: " << to_string(d) << " at " << to_string(x) << std::endl;
+    //         }
+    //     }
+    // });
 
     auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, density_floor);
     auto v0 = solver_data.vertices;
@@ -677,7 +700,8 @@ auto binary::advance(const solution_t& solution, const solver_data_t& solver_dat
     auto m0 = u0.map(component(0)) * dA; // cell masses
     auto sg = (gravitational_acceleration_field(solution.time, solver_data) * m0).map(nd::map(force_to_source_terms));
     auto ss = -u0 * sink_rate_field(solution.time, solver_data) * dA;
-    auto u1 = u0 + (lx + ly + ss + sg) * dt / dA;
+    auto bz = (solver_data.initial_conserved - u0) * solver_data.buffer_rate_field * dA;
+    auto u1 = u0 + (lx + ly + ss + sg + bz) * dt / dA;
 
     return solution_t{
         solution.time + dt,
