@@ -42,8 +42,8 @@ std::unique_ptr<mara::sub_program_t> make_subprog_boilerlate();
 std::unique_ptr<mara::sub_program_t> make_subprog_partdom();
 std::unique_ptr<mara::sub_program_t> make_subprog_sedov();
 std::unique_ptr<mara::sub_program_t> make_subprog_cloud();
+std::unique_ptr<mara::sub_program_t> make_subprog_binary_v1();
 std::unique_ptr<mara::sub_program_t> make_subprog_binary();
-std::unique_ptr<mara::sub_program_t> make_subprog_binary_fmr();
 std::unique_ptr<mara::sub_program_t> make_subprog_amrsand();
 std::unique_ptr<mara::sub_program_t> make_subprog_test();
 
@@ -59,8 +59,8 @@ int main(int argc, const char* argv[])
     if constexpr (MARA_COMPILE_SUBPROGRAM_PARTDOM)     programs["partdom"]     = make_subprog_partdom();
     if constexpr (MARA_COMPILE_SUBPROGRAM_SEDOV)       programs["sedov"]       = make_subprog_sedov();
     if constexpr (MARA_COMPILE_SUBPROGRAM_CLOUD)       programs["cloud"]       = make_subprog_cloud();
+    if constexpr (MARA_COMPILE_SUBPROGRAM_BINARY_V1)   programs["binary_v1"]   = make_subprog_binary_v1();
     if constexpr (MARA_COMPILE_SUBPROGRAM_BINARY)      programs["binary"]      = make_subprog_binary();
-    if constexpr (MARA_COMPILE_SUBPROGRAM_BINARY_FMR)  programs["binary_fmr"]  = make_subprog_binary_fmr();
     if constexpr (MARA_COMPILE_SUBPROGRAM_AMRSAND)     programs["amrsand"]     = make_subprog_amrsand();
     if constexpr (MARA_COMPILE_SUBPROGRAM_TEST)        programs["test"]        = make_subprog_test();
 
