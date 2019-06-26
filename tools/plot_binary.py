@@ -44,7 +44,7 @@ def plot_single_file(
 
     for block_index in h5f['vertices']:
 
-        if int(block_index[0]) <= depth: continue
+        if int(block_index[0]) < depth: continue
 
         verts = h5f['vertices'][block_index]
         ls = np.log10(h5f['sigma'][block_index])

@@ -141,6 +141,10 @@ namespace binary
     auto sink_rate_field(mara::unit_time<double> time, const solver_data_t& solver_data);
 
 
+    auto estimate_gradient_plm(double plm_theta);
+    auto advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt);
+
+
     //=========================================================================
     auto create_run_config(int argc, const char* argv[]);
     auto create_vertices     (const mara::config_t& run_config);
@@ -295,6 +299,35 @@ auto binary::sink_rate_field(mara::unit_time<double> time, const solver_data_t& 
         | nd::midpoint_on_axis(1)
         | nd::map(sink);
     });
+}
+
+
+
+
+auto binary::estimate_gradient_plm(double plm_theta)
+{
+    return [plm_theta] (
+        const mara::iso2d::primitive_t& pl,
+        const mara::iso2d::primitive_t& p0,
+        const mara::iso2d::primitive_t& pr)
+    {
+        using std::min;
+        using std::fabs;
+        auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
+        auto sgn = [] (auto x) { return std::copysign(1, x); };
+
+        double th = plm_theta;
+        auto result = mara::iso2d::primitive_t();
+
+        for (std::size_t i = 0; i < 3; ++i)
+        {
+            auto a =  th * (p0[i] - pl[i]);
+            auto b = 0.5 * (pr[i] - pl[i]);
+            auto c =  th * (pr[i] - p0[i]);
+            result[i] = 0.25 * std::fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
+        }
+        return result;
+    };
 }
 
 
@@ -537,7 +570,7 @@ auto binary::create_state(const mara::config_t& run_config)
 
 
 //=============================================================================
-auto binary::next_solution(const solution_t& solution, const solver_data_t& solver_data)
+auto binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt)
 {
     auto component = [] (std::size_t component)
     {
@@ -549,8 +582,8 @@ auto binary::next_solution(const solution_t& solution, const solver_data_t& solv
         return tree.indexes().map([tree, axis] (auto index)
         {
             auto C = mara::get_cell_block(tree, index);
-            auto L = mara::get_cell_block(tree, index.prev_on(axis)) | nd::select_final(1, axis);
-            auto R = mara::get_cell_block(tree, index.next_on(axis)) | nd::select_first(1, axis);
+            auto L = mara::get_cell_block(tree, index.prev_on(axis)) | nd::select_final(2, axis);
+            auto R = mara::get_cell_block(tree, index.next_on(axis)) | nd::select_first(2, axis);
             return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis);
         });
     };
@@ -562,13 +595,32 @@ auto binary::next_solution(const solution_t& solution, const solver_data_t& solv
         return dx * dy;
     };
 
-    auto extrapolate_pcm = [] (std::size_t axis)
+    // auto extrapolate = [] (std::size_t axis)
+    // {
+    //     return [axis] (auto P)
+    //     {
+    //         auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
+    //         auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
+    //         return nd::zip(P | L, P | R);
+    //     };
+    // };
+
+    auto extrapolate = [plm_theta=solver_data.plm_theta] (std::size_t axis)
     {
-        return [axis] (auto P)
+        return [plm_theta, axis] (auto P)
         {
-            auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
-            auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
-            return nd::zip(P | L, P | R);
+            auto L1 = nd::select_axis(axis).from(0).to(1).from_the_end();
+            auto R1 = nd::select_axis(axis).from(1).to(0).from_the_end();
+            auto L2 = nd::select_axis(axis).from(1).to(2).from_the_end();
+            auto R2 = nd::select_axis(axis).from(2).to(1).from_the_end();
+
+            auto G = P
+            | nd::zip_adjacent3_on_axis(axis)
+            | nd::apply(estimate_gradient_plm(plm_theta));
+
+            return nd::zip(
+                (P | L2) + (G | L1) * 0.5,
+                (P | R2) - (G | R1) * 0.5);
         };
     };
 
@@ -588,16 +640,38 @@ auto binary::next_solution(const solution_t& solution, const solver_data_t& solv
         return mara::iso2d::flow_t{0.0, v[0].value, v[1].value};
     };
 
+
+    // This is to check for negative densities. I'll move it somewhere else
+    // soon, or only run it when a failure happened.
+    solution
+    .conserved
+    .map(component(0))
+    .pair(solver_data
+        .vertices
+        .map(nd::midpoint_on_axis(0))
+        .map(nd::midpoint_on_axis(1)))
+    .sink([] (auto dx)
+    {
+        for (auto [d, x] : nd::zip(dx.first, dx.second))
+        {
+            if (d < 0)
+            {
+                std::cout << "Negative density: " << to_string(d) << " at " << to_string(x) << std::endl;
+            }
+        }
+    });
+
+
+
     auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, density_floor);
-    auto dt = solver_data.recommended_time_step;
     auto v0 = solver_data.vertices;
     auto u0 = solution.conserved;
     auto p0 = u0.map(nd::map(recover_primitive)).map(nd::to_shared());
     auto dA = v0.map(area_from_vertices).map(nd::to_shared());
-    auto dx = v0.map(component(0)).map(nd::difference_on_axis(0)).map(nd::to_shared());
-    auto dy = v0.map(component(1)).map(nd::difference_on_axis(1)).map(nd::to_shared());
-    auto fx = extend(p0, 0).map(extrapolate_pcm(0)).map(intercell_flux(mara::iso2d::riemann_hlle, 0)) * dy;
-    auto fy = extend(p0, 1).map(extrapolate_pcm(1)).map(intercell_flux(mara::iso2d::riemann_hlle, 1)) * dx;
+    auto dx = v0.map([component] (auto v) { return v | component(0) | nd::difference_on_axis(0); });
+    auto dy = v0.map([component] (auto v) { return v | component(1) | nd::difference_on_axis(1); });
+    auto fx = extend(p0, 0).map(extrapolate(0)).map(intercell_flux(mara::iso2d::riemann_hllc, 0)) * dy;
+    auto fy = extend(p0, 1).map(extrapolate(1)).map(intercell_flux(mara::iso2d::riemann_hllc, 1)) * dx;
     auto lx = -fx.map(nd::difference_on_axis(0));
     auto ly = -fy.map(nd::difference_on_axis(1));
     auto m0 = u0.map(component(0)) * dA; // cell masses
@@ -610,10 +684,28 @@ auto binary::next_solution(const solution_t& solution, const solver_data_t& solv
         solution.iteration + 1,
         u1.map(nd::to_shared()),
     };
+}
 
-    // These are the same ops as the ones above, but create fewer intermediate trees:
-    // auto dx = v0.map([component] (auto v) { return v | component(0) | nd::difference_on_axis(0) | nd::to_shared(); });
-    // auto dy = v0.map([component] (auto v) { return v | component(1) | nd::difference_on_axis(1) | nd::to_shared(); });
+auto binary::next_solution(const solution_t& state, const solver_data_t& solver_data)
+{
+    auto dt = solver_data.recommended_time_step;
+    auto s0 = state;
+
+    switch (solver_data.rk_order)
+    {
+        case 1:
+        {
+            return advance(s0, solver_data, dt);
+        }
+        case 2:
+        {
+            auto b0 = mara::make_rational(1, 2);
+            auto s1 = advance(s0, solver_data, dt);
+            auto s2 = advance(s1, solver_data, dt);
+            return s0 * b0 + s2 * (1 - b0);
+        }
+    }
+    throw std::invalid_argument("binary::next_solution");
 }
 
 auto binary::next_schedule(const state_t& state)
