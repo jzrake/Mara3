@@ -135,15 +135,18 @@ namespace binary_fmr
     //=========================================================================
     auto config_template();
     auto initial_disk_profile(const mara::config_t& run_config);
+    auto gravitational_acceleration_field(mara::unit_time<double> time, const solver_data_t& solver_data);
+    auto sink_rate_field(mara::unit_time<double> time, const solver_data_t& solver_data);
 
 
     //=========================================================================
     auto create_run_config(int argc, const char* argv[]);
-    auto create_vertices(const mara::config_t& run_config);
-    auto create_solver_data(const mara::config_t& run_config);
-    auto create_solution(const mara::config_t& run_config);
-    auto create_schedule(const mara::config_t& run_config);
-    auto create_state(const mara::config_t& run_config);
+    auto create_vertices     (const mara::config_t& run_config);
+    auto create_binary_params(const mara::config_t& run_config);
+    auto create_solver_data  (const mara::config_t& run_config);
+    auto create_solution     (const mara::config_t& run_config);
+    auto create_schedule     (const mara::config_t& run_config);
+    auto create_state        (const mara::config_t& run_config);
 
 
     //=========================================================================
@@ -232,11 +235,65 @@ auto binary_fmr::initial_disk_profile(const mara::config_t& run_config)
 
         return mara::iso2d::primitive_t()
             .with_sigma(sigma)
-            .with_velocity_x(0)
-            .with_velocity_y(0);
-            // .with_velocity_x(vx)
-            // .with_velocity_y(vy);
+            .with_velocity_x(vx)
+            .with_velocity_y(vy);
     };
+}
+
+//=============================================================================
+auto binary_fmr::gravitational_acceleration_field(mara::unit_time<double> time, const solver_data_t& solver_data)
+{
+    auto binary = mara::compute_two_body_state(solver_data.binary_params, time.value);
+    auto accel = [softening_radius=solver_data.softening_radius] (const mara::point_mass_t& body, location_2d_t field_point)
+    {
+        auto mass_location = location_2d_t { body.position_x, body.position_y };
+
+        auto G   = mara::dimensional_value_t<3, -1, -2, double>(1.0);
+        auto M   = mara::make_mass(body.mass);
+        auto dr  = field_point - mass_location;
+        auto dr2 = dr[0] * dr[0] + dr[1] * dr[1];
+        auto rs2 = softening_radius * softening_radius;
+        return -dr / (dr2 + rs2).pow<3, 2>() * G * M;
+    };
+
+    auto acceleration = [binary, accel] (location_2d_t p)
+    {
+        return accel(binary.body1, p) + accel(binary.body2, p);
+    };
+
+    return solver_data.vertices.map([acceleration] (auto block)
+    {
+        return block
+        | nd::midpoint_on_axis(0)
+        | nd::midpoint_on_axis(1)
+        | nd::map(acceleration);
+    });
+}
+
+auto binary_fmr::sink_rate_field(mara::unit_time<double> time, const solver_data_t& solver_data)
+{
+    auto binary = mara::compute_two_body_state(solver_data.binary_params, time.value);
+    auto sink = [binary, sink_radius=solver_data.sink_radius, sink_rate=solver_data.sink_rate] (location_2d_t p)
+    {
+        auto dx1 = p[0] - mara::make_length(binary.body1.position_x);
+        auto dy1 = p[1] - mara::make_length(binary.body1.position_y);
+        auto dx2 = p[0] - mara::make_length(binary.body2.position_x);
+        auto dy2 = p[1] - mara::make_length(binary.body2.position_y);
+
+        auto s2 = sink_radius * sink_radius;
+        auto a2 = (dx1 * dx1 + dy1 * dy1) / s2 / 2.0;
+        auto b2 = (dx2 * dx2 + dy2 * dy2) / s2 / 2.0;
+
+        return sink_rate * 0.5 * (std::exp(-a2) + std::exp(-b2));
+    };
+
+    return solver_data.vertices.map([sink] (auto block)
+    {
+        return block
+        | nd::midpoint_on_axis(0)
+        | nd::midpoint_on_axis(1)
+        | nd::map(sink);
+    });
 }
 
 
@@ -358,6 +415,16 @@ auto binary_fmr::create_vertices(const mara::config_t& run_config)
     });
 }
 
+auto binary_fmr::create_binary_params(const mara::config_t& run_config)
+{
+    auto binary = mara::two_body_parameters_t();
+    binary.total_mass   = 1.0;
+    binary.separation   = run_config.get_double("separation");
+    binary.mass_ratio   = run_config.get_double("mass_ratio");
+    binary.eccentricity = run_config.get_double("eccentricity");
+    return binary;
+}
+
 auto binary_fmr::create_solver_data(const mara::config_t& run_config)
 {
     //=========================================================================
@@ -403,6 +470,7 @@ auto binary_fmr::create_solver_data(const mara::config_t& run_config)
     result.plm_theta             = run_config.get_double("plm_theta");
     result.rk_order              = run_config.get_int("rk_order");
     result.recommended_time_step = std::min(min_dx, min_dy) / max_velocity * cfl_number;
+    result.binary_params         = create_binary_params(run_config);
     result.vertices              = vertices;
 
     if      (run_config.get_string("riemann") == "hlle") result.riemann_solver = riemann_solver_t::hlle;
@@ -412,11 +480,6 @@ auto binary_fmr::create_solver_data(const mara::config_t& run_config)
     if      (run_config.get_string("reconstruct_method") == "pcm") result.reconstruct_method = reconstruct_method_t::pcm;
     else if (run_config.get_string("reconstruct_method") == "plm") result.reconstruct_method = reconstruct_method_t::plm;
     else throw std::invalid_argument("invalid reconstruct_method '" + run_config.get_string("reconstruct_method") + "', must be plm or pcm");
-
-    result.binary_params.total_mass   = 1.0;
-    result.binary_params.separation   = run_config.get_double("separation");
-    result.binary_params.mass_ratio   = run_config.get_double("mass_ratio");
-    result.binary_params.eccentricity = run_config.get_double("eccentricity");
 
     return result;
 }
@@ -494,14 +557,6 @@ auto binary_fmr::next_solution(const solution_t& solution, const solver_data_t& 
         return dx * dy;
     };
 
-    auto spacing_on_axis = [component] (std::size_t axis)
-    {
-        return [component, axis] (auto vertices)
-        {
-            return vertices | component(axis) | nd::difference_on_axis(axis);
-        };
-    };
-
     auto extrapolate_pcm = [] (std::size_t axis)
     {
         return [axis] (auto P)
@@ -523,25 +578,37 @@ auto binary_fmr::next_solution(const solution_t& solution, const solver_data_t& 
         };
     };
 
+    auto force_to_source_terms = [] (force_2d_t v)
+    {
+        return mara::iso2d::flow_t{0.0, v[0].value, v[1].value};
+    };
+
     auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, density_floor);
     auto dt = solver_data.recommended_time_step;
     auto v0 = solver_data.vertices;
     auto u0 = solution.conserved;
     auto p0 = u0.map(nd::map(recover_primitive)).map(nd::to_shared());
     auto dA = v0.map(area_from_vertices).map(nd::to_shared());
-    auto dx = v0.map(spacing_on_axis(0)).map(nd::to_shared());
-    auto dy = v0.map(spacing_on_axis(1)).map(nd::to_shared());
+    auto dx = v0.map(component(0)).map(nd::difference_on_axis(0)).map(nd::to_shared());
+    auto dy = v0.map(component(1)).map(nd::difference_on_axis(1)).map(nd::to_shared());
     auto fx = extend(p0, 0).map(extrapolate_pcm(0)).map(intercell_flux(mara::iso2d::riemann_hlle, 0)) * dy;
     auto fy = extend(p0, 1).map(extrapolate_pcm(1)).map(intercell_flux(mara::iso2d::riemann_hlle, 1)) * dx;
     auto lx = -fx.map(nd::difference_on_axis(0));
     auto ly = -fy.map(nd::difference_on_axis(1));
-    auto u1 = u0 + (lx + ly) * dt / dA;
+    auto m0 = u0.map(component(0)) * dA; // cell masses
+    auto sg = (gravitational_acceleration_field(solution.time, solver_data) * m0).map(nd::map(force_to_source_terms));
+    auto ss = -u0 * sink_rate_field(solution.time, solver_data) * dA;
+    auto u1 = u0 + (lx + ly + ss + sg) * dt / dA;
 
     return solution_t{
-        solution.time + 0.1,
+        solution.time + dt,
         solution.iteration + 1,
         u1.map(nd::to_shared()),
     };
+
+    // These are the same ops as the ones above, but create fewer intermediate trees:
+    // auto dx = v0.map([component] (auto v) { return v | component(0) | nd::difference_on_axis(0) | nd::to_shared(); });
+    // auto dy = v0.map([component] (auto v) { return v | component(1) | nd::difference_on_axis(1) | nd::to_shared(); });
 }
 
 auto binary_fmr::next_schedule(const state_t& state)
@@ -572,13 +639,16 @@ auto binary_fmr::simulation_should_continue(const state_t& state)
 
 auto binary_fmr::diagnostic_fields(const solution_t& solution, const mara::config_t& run_config)
 {
+    auto solver_data = create_solver_data(run_config);
+    auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
+
     return diagnostic_fields_t{
         run_config,
         solution.time,
         create_vertices(run_config),
         solution.conserved,
-        location_2d_t{0, 0}, // TODO
-        location_2d_t{0, 0}, // TODO
+        {binary.body1.position_x, binary.body1.position_y},
+        {binary.body2.position_x, binary.body2.position_y},
     };
 }
 
