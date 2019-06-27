@@ -163,7 +163,11 @@ struct mara::linked_list_t
      * @tparam     Second  The second iterator type
      */
     template<typename First, typename Second>
+<<<<<<< HEAD
     static from_reversed(First first, Second second)
+=======
+    static linked_list_t from_reversed(First first, Second second)
+>>>>>>> 91f733617eaf5bcc641b1acaa03e94ac048d5a57
     {
         linked_list_t result;
 
