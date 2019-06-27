@@ -171,7 +171,6 @@ auto advance_concentration( const state_t& state, double dt )
  * 
  * @return 		timestep	
  *
- * 				THIS DOESNT WORK RIGHT NOW
  */
 double get_dt( const state_t& state )
 {
