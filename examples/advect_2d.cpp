@@ -28,7 +28,10 @@
 #include <iostream>
 #include <sstream>
 #include <cstdio>
+#include <cassert>
 #include <cmath>
+
+#include "../src/app_config.hpp"
 
 #include "../src/core_ndarray.hpp"
 #include "../src/core_ndarray_ops.hpp"
@@ -45,14 +48,6 @@
 
 // ============================================================================
 
-struct config_g
-{
-	int    ncell;
-	double tfinal;
-
-	int output_n;
-	int output_N;
-};
 
 // Every file will have a struct called state_t
 struct state_t
@@ -85,12 +80,12 @@ double initial_condition( double x, double y )
  *  
  */
 
-state_t init( const config_g& config )
+state_t init( const mara::config_t& cfg )
 {
-	double vx = 1.0;
-	double vy = -1.0;
+	double vx = -1.0;
+	double vy =  1.0;
 
-	auto ncell = config.ncell;
+	auto ncell = cfg.get_int("resolution");
 	auto x_vertices = nd::linspace( -1, 1, ncell + 1 );
 	auto y_vertices = nd::linspace( -1, 1, ncell + 1 );
 
@@ -234,11 +229,11 @@ void output_state_h5( const state_t& state, std::string fname )
  *
  * @return 		string for the filename 
  */
-std::string get_output_filename( const config_g& config )
+std::string get_output_filename( const mara::config_t& cfg )
 {
-	char             buffer[256]; 
-	sprintf(         buffer, "%03d", config.output_n );
-	std::string num( buffer );
+	char            buffer[256]; 
+	sprintf(        buffer, "%03d", cfg.get_int("nout") );
+	std::string num(buffer);
 
 	return "checkpoint_" + num + ".h5";
 }
@@ -246,27 +241,40 @@ std::string get_output_filename( const config_g& config )
 
 //=============================================================================
 
-int main()
+int main(int argc, const char* argv[])
 {
-	int    ncell  = 200;
-	int    nout   = 50;
-	double tfinal = 10.0;
-	config_g config{ncell, tfinal, 0, nout};
+	auto cfg_template = mara::make_config_template()
+	 .item( "resolution", 100       )
+	 .item( "tfinal"    , 10.0      )
+	 .item( "outputs"   , 10        )
+	 .item( "nout"      , 0         )
+	 .item( "outdir"    , "RUNTEST");
 
-	auto state = init(config); //Instantiate instance of state struct
+	auto args       = mara::argv_to_string_map(argc, argv);
+	auto run_config = cfg_template.create().update(args);
+
+	mara::pretty_print(std::cout, "config", run_config);
+
+	// int    ncell  = 200;
+	// int    nout   = 50;
+	// double tfinal = 10.0;
+	// config_g config{ncell, tfinal, 0, nout};
+
+	auto state = init(run_config); //Instantiate instance of state struct
 	output_state_h5( state, "checkpoint_000.h5" );
 
-	double delta = config.tfinal / config.output_N;
-	while( state.time < config.tfinal )
+	double delta = run_config.get_double("tfinal") / run_config.get_int("outputs");
+	while( state.time < run_config.get_double("tfinal") )
 	{
 		state = next( state );
 		if( state.iteration%10  == 0)
 			printf( " %d : t = %0.2f \n", state.iteration, state.time );
 
-		if( state.time / delta - config.output_n > 1.0  )
+		if( state.time / delta - run_config.get_int("nout") > 1.0  )
 		{
-			config.output_n++;
-			auto fname = get_output_filename(config);
+			int nout   = run_config.get_int("nout");
+			run_config = run_config.set("nout", ++nout );
+			auto fname = get_output_filename(run_config);
 			output_state_h5( state, fname );
 		}
 	}
