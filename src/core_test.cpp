@@ -120,6 +120,16 @@ TEST_CASE("linked lists work as expected", "[linked_list]")
         REQUIRE(d.head() == 1);
     }
 
+    SECTION("concatenating lists works OK")
+    {
+        auto a = mara::linked_list_t<int>{0, 1, 2};
+        auto b = mara::linked_list_t<int>{3, 4, 5};
+        auto c = mara::linked_list_t<int>{0, 1, 2, 3, 4, 5};
+        auto d = mara::linked_list_t<int>{5, 4, 3, 2, 1, 0};
+        REQUIRE(a.concat(b) == c);
+        REQUIRE(a.concat(b).reverse() == d);
+    }
+
     SECTION("linked list iterators work right")
     {
         auto a = mara::linked_list_t<int>().append(1).append(2);
@@ -127,13 +137,29 @@ TEST_CASE("linked lists work as expected", "[linked_list]")
         REQUIRE(*it == 1); ++it;
         REQUIRE(*it == 2); ++it;
         REQUIRE( it == a.end());
+
+        std::size_t n = 0;
+
+        for (auto x : mara::linked_list_t<int>{0, 1, 2, 3, 4})
+        {
+            REQUIRE(x == n++);
+        }
     }
 
-    std::size_t n = 0;
-
-    for (auto x : mara::linked_list_t<int>{0, 1, 2, 3, 4})
+    SECTION("conversion to nd::array works OK")
     {
-        REQUIRE(x == n++);
+        auto d = mara::linked_list_t<int>{0, 1, 2, 3, 4};
+        auto A = nd::make_array_from(d);
+        REQUIRE(A.size() == 5);
+        REQUIRE((A == nd::arange(5) | nd::all()));
+        REQUIRE(mara::linked_list_t<int>(A.begin(), A.end()) == d);
+    }
+
+    SECTION("can construct and reverse large lists")
+    {
+        auto A = nd::arange(8192);
+        auto d = mara::linked_list_t<int>(A.begin(), A.end());
+        REQUIRE(d.size() == A.size());
     }
 }
 
