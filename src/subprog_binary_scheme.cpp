@@ -1,9 +1,12 @@
 #include "subprog_binary.hpp"
 #include "mesh_prolong_restrict.hpp"
+#include "mesh_tree_operators.hpp"
+#include "core_ndarray_ops.hpp"
 
 
 
 
+//=============================================================================
 namespace binary
 {
     auto gravitational_acceleration_field(mara::unit_time<double> time, const solver_data_t& solver_data);
@@ -14,6 +17,7 @@ namespace binary
 
 
 
+//=============================================================================
 auto binary::estimate_gradient_plm(double plm_theta)
 {
     return [plm_theta] (
@@ -98,6 +102,7 @@ auto binary::sink_rate_field(mara::unit_time<double> time, const solver_data_t& 
 
 
 
+//=============================================================================
 binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt)
 {
     auto component = [] (std::size_t component)
@@ -160,7 +165,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         return mara::iso2d::flow_t{0.0, v[0].value, v[1].value};
     };
 
-    auto evaluate = nd::to_shared(); // mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
+    auto evaluate = nd::to_shared();
     auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
     auto v0 = solver_data.vertices;
     auto u0 = solution.conserved;
@@ -183,5 +188,27 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         solution.time + dt,
         solution.iteration + 1,
         u1.map(evaluate),
+    };
+}
+
+
+
+
+//=============================================================================
+binary::solution_t binary::solution_t::operator+(const solution_t& other) const
+{
+    return {
+        time       + other.time,
+        iteration  + other.iteration,
+        (conserved + other.conserved).map(nd::to_shared()),
+    };
+}
+
+binary::solution_t binary::solution_t::operator*(mara::rational_number_t scale) const
+{
+    return {
+        time       * scale.as_double(),
+        iteration  * scale,
+        (conserved * scale.as_double()).map(nd::to_shared()),
     };
 }

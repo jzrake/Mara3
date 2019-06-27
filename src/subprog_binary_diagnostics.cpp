@@ -1,8 +1,10 @@
 #include "subprog_binary.hpp"
+#include "core_ndarray_ops.hpp"
 
 
 
 
+//=============================================================================
 binary::diagnostic_fields_t binary::diagnostic_fields(const solution_t& solution, const mara::config_t& run_config)
 {
     auto solver_data = create_solver_data(run_config);

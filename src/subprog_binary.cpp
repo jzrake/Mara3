@@ -29,17 +29,18 @@
 
 
 #include "subprog_binary.hpp"
+#include "mesh_tree_operators.hpp"
+#include "core_ndarray_ops.hpp"
 #include "app_serialize.hpp"
 #include "app_serialize_tree.hpp"
 #include "app_subprogram.hpp"
 #include "app_filesystem.hpp"
-#define cfl_number 0.4
 
 
 
 
 //=============================================================================
-auto binary::config_template()
+mara::config_template_t binary::create_config_template()
 {
     return mara::make_config_template()
     .item("restart",             std::string())
@@ -48,18 +49,19 @@ auto binary::config_template()
     .item("dfi",                  1.0)          // diagnostic field interval (orbits; diagnostics.????.h5)
     .item("tsi",                  0.1)          // time series interval (orbits)
     .item("tfinal",               1.0)          // simulation stop time (orbits)
+    .item("cfl_number",           0.4)          // the Courant number to use
     .item("depth",                  4)
     .item("block_size",            32)
-    .item("focus_factor",        0.75)
-    .item("focus_index",         1.00)
+    .item("focus_factor",        2.00)
+    .item("focus_index",         2.00)
     .item("rk_order",               2)          // time-stepping Runge-Kutta order: 1 or 2
     .item("reconstruct_method", "plm")          // zone extrapolation method: pcm or plm
     .item("plm_theta",            1.8)          // plm theta parameter: [1.0, 2.0]
     .item("riemann",           "hlle")          // riemann solver to use: hlle only (hllc disabled until further testing)
-    .item("softening_radius",     0.1)          // gravitational softening radius
-    .item("sink_radius",          0.1)          // radius of mass (and momentum) subtraction region
+    .item("softening_radius",    0.05)          // gravitational softening radius
+    .item("sink_radius",         0.05)          // radius of mass (and momentum) subtraction region
     .item("sink_rate",            1e2)          // sink rate at the point masses (orbital angular frequency)
-    .item("domain_radius",       48.0)          // half-size of square domain
+    .item("domain_radius",       12.0)          // half-size of square domain
     .item("separation",           1.0)          // binary separation: 0.0 or 1.0 (zero emulates a single body)
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
@@ -72,7 +74,7 @@ auto binary::config_template()
 
 
 //=============================================================================
-auto binary::initial_disk_profile(const mara::config_t& run_config)
+binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_config)
 {
     auto softening_radius  = run_config.get_double("softening_radius");
     auto counter_rotate    = run_config.get_int("counter_rotate");
@@ -100,44 +102,18 @@ auto binary::initial_disk_profile(const mara::config_t& run_config)
     };
 }
 
-
-
-
-//=============================================================================
-binary::solution_t binary::solution_t::operator+(const solution_t& other) const
-{
-    return {
-        time       + other.time,
-        iteration  + other.iteration,
-        (conserved + other.conserved).map(nd::to_shared()),
-    };
-}
-
-binary::solution_t binary::solution_t::operator*(mara::rational_number_t scale) const
-{
-    return {
-        time       * scale.as_double(),
-        iteration  * scale,
-        (conserved * scale.as_double()).map(nd::to_shared()),
-    };
-}
-
-
-
-
-//=============================================================================
-auto binary::create_run_config(int argc, const char* argv[])
+mara::config_t binary::create_run_config(int argc, const char* argv[])
 {
     auto args = mara::argv_to_string_map(argc, argv);
     return args.count("restart")
-    ? config_template()
+    ? create_config_template()
             .create()
             .update(mara::read_config(h5::File(args.at("restart"), "r").open_group("run_config")))
             .update(args)
-    : config_template().create().update(args);
+    : create_config_template().create().update(args);
 }
 
-auto binary::create_vertices(const mara::config_t& run_config)
+binary::quad_tree_t<binary::location_2d_t> binary::create_vertices(const mara::config_t& run_config)
 {
     auto domain_radius = run_config.get_double("domain_radius");
     auto focus_factor  = run_config.get_double("focus_factor");
@@ -157,7 +133,7 @@ auto binary::create_vertices(const mara::config_t& run_config)
     });
 }
 
-auto binary::create_binary_params(const mara::config_t& run_config)
+mara::two_body_parameters_t binary::create_binary_params(const mara::config_t& run_config)
 {
     auto binary = mara::two_body_parameters_t();
     binary.total_mass   = 1.0;
@@ -167,88 +143,7 @@ auto binary::create_binary_params(const mara::config_t& run_config)
     return binary;
 }
 
-binary::solver_data_t binary::create_solver_data(const mara::config_t& run_config)
-{
-    //=========================================================================
-    auto vertices = create_vertices(run_config);
-
-    auto primitive = vertices.map([&run_config] (auto block)
-    {
-        return block
-        | nd::midpoint_on_axis(0)
-        | nd::midpoint_on_axis(1)
-        | nd::map(initial_disk_profile(run_config));
-    });
-
-    auto min_dx = vertices.map([] (auto block)
-    {
-        return block
-        | nd::map([] (auto p) { return p[0]; })
-        | nd::difference_on_axis(0)
-        | nd::min();
-    }).min();
-
-    auto min_dy = vertices.map([] (auto block)
-    {
-        return block
-        | nd::map([] (auto p) { return p[1]; })
-        | nd::difference_on_axis(1)
-        | nd::min();
-    }).min();
-
-    auto max_velocity = std::max(mara::make_velocity(1.0), primitive.map([] (auto block)
-    {
-        return block
-        | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_magnitude))
-        | nd::max();
-    }).max());
-
-    auto buffer_rate_field = vertices.map([&run_config] (auto block)
-    {
-        return block
-        | nd::midpoint_on_axis(0)
-        | nd::midpoint_on_axis(1)
-        | nd::map([&run_config] (location_2d_t p)
-        {
-            auto tightness   = mara::dimensional_value_t<-1, 0, 0, double>(3.0);
-            auto buffer_rate = mara::dimensional_value_t< 0, 0,-1, double>(run_config.get_double("buffer_damping_rate"));
-            auto r1 = mara::make_length(run_config.get_double("domain_radius"));
-            auto rc = (p[0] * p[0] + p[1] * p[1]).pow<1, 2>();
-            auto y = (tightness * (rc - r1)).scalar();
-            return buffer_rate * (1.0 + std::tanh(y));
-        })
-        | nd::to_shared();
-    });
-
-
-    //=========================================================================
-    auto result = solver_data_t();
-    result.mach_number           = run_config.get_double("mach_number");
-    result.sink_rate             = run_config.get_double("sink_rate");
-    result.sink_radius           = run_config.get_double("sink_radius");
-    result.softening_radius      = run_config.get_double("softening_radius");
-    result.plm_theta             = run_config.get_double("plm_theta");
-    result.rk_order              = run_config.get_int("rk_order");
-    result.recommended_time_step = std::min(min_dx, min_dy) / max_velocity * cfl_number;
-    result.binary_params         = create_binary_params(run_config);
-    result.buffer_rate_field     = buffer_rate_field;
-    result.vertices              = vertices;
-    result.initial_conserved     = primitive
-    .map(nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area)))
-    .map(nd::to_shared());
-
-    if      (run_config.get_string("riemann") == "hlle") result.riemann_solver = riemann_solver_t::hlle;
-    // else if (run_config.get_string("riemann") == "hllc") result.riemann_solver = riemann_solver_t::hllc;
-    else throw std::invalid_argument("invalid riemann solver '" + run_config.get_string("riemann") + "', must be hlle");
-
-    if      (run_config.get_string("reconstruct_method") == "pcm") result.reconstruct_method = reconstruct_method_t::pcm;
-    else if (run_config.get_string("reconstruct_method") == "plm") result.reconstruct_method = reconstruct_method_t::plm;
-    else throw std::invalid_argument("invalid reconstruct_method '" + run_config.get_string("reconstruct_method") + "', must be plm or pcm");
-
-    return result;
-}
-
-auto binary::create_solution(const mara::config_t& run_config)
+binary::solution_t binary::create_solution(const mara::config_t& run_config)
 {
     auto restart = run_config.get<std::string>("restart");
 
@@ -259,7 +154,7 @@ auto binary::create_solution(const mara::config_t& run_config)
             return block
             | nd::midpoint_on_axis(0)
             | nd::midpoint_on_axis(1)
-            | nd::map(initial_disk_profile(run_config))
+            | nd::map(create_disk_profile(run_config))
             | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
             | nd::to_shared();
         });
@@ -268,7 +163,7 @@ auto binary::create_solution(const mara::config_t& run_config)
     return mara::read<solution_t>(h5::File(restart, "r").open_group("/"), "solution");
 }
 
-auto binary::create_schedule(const mara::config_t& run_config)
+mara::schedule_t binary::create_schedule(const mara::config_t& run_config)
 {
     auto restart = run_config.get<std::string>("restart");
 
@@ -283,7 +178,7 @@ auto binary::create_schedule(const mara::config_t& run_config)
     return mara::read_schedule(h5::File(restart, "r").open_group("schedule"));
 }
 
-auto binary::create_state(const mara::config_t& run_config)
+binary::state_t binary::create_state(const mara::config_t& run_config)
 {
     return state_t{
         create_solution(run_config),
@@ -344,6 +239,10 @@ auto binary::simulation_should_continue(const state_t& state)
     return state.solution.time / (2 * M_PI) < state.run_config.get<double>("tfinal");
 }
 
+
+
+
+//=============================================================================
 auto binary::run_tasks(const state_t& state)
 {
 
