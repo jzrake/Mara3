@@ -36,6 +36,7 @@
 #include "core_tree.hpp"
 #include "mesh_prolong_restrict.hpp"
 #include "mesh_tree_operators.hpp"
+// #include "app_parallel.hpp"
 #include "app_config.hpp"
 #include "app_filesystem.hpp"
 #include "app_performance.hpp"
@@ -201,6 +202,7 @@ auto binary::config_template()
     .item("depth",                  4)
     .item("block_size",            32)
     .item("focus_factor",        0.75)
+    .item("focus_index",         1.00)
     .item("rk_order",               2)          // time-stepping Runge-Kutta order: 1 or 2
     .item("reconstruct_method", "plm")          // zone extrapolation method: pcm or plm
     .item("plm_theta",            1.8)          // plm theta parameter: [1.0, 2.0]
@@ -441,12 +443,13 @@ auto binary::create_vertices(const mara::config_t& run_config)
 {
     auto domain_radius = run_config.get_double("domain_radius");
     auto focus_factor  = run_config.get_double("focus_factor");
+    auto focus_index   = run_config.get_double("focus_index");
     auto block_size    = run_config.get_int("block_size");
     auto depth         = run_config.get_int("depth");
 
-    auto refinement_radius = [focus_factor] (std::size_t level, double centroid_radius)
+    auto refinement_radius = [focus_factor, focus_index] (std::size_t level, double centroid_radius)
     {
-        return centroid_radius < focus_factor / level;
+        return centroid_radius < focus_factor / std::pow(level, focus_index);
     };
     auto verts = mara::create_vertex_quadtree(refinement_radius, block_size, depth);
 
@@ -620,16 +623,6 @@ auto binary::advance(const solution_t& solution, const solver_data_t& solver_dat
         return dx * dy;
     };
 
-    // auto extrapolate = [] (std::size_t axis)
-    // {
-    //     return [axis] (auto P)
-    //     {
-    //         auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
-    //         auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
-    //         return nd::zip(P | L, P | R);
-    //     };
-    // };
-
     auto extrapolate = [plm_theta=solver_data.plm_theta] (std::size_t axis)
     {
         return [plm_theta, axis] (auto P)
@@ -641,11 +634,13 @@ auto binary::advance(const solution_t& solution, const solver_data_t& solver_dat
 
             auto G = P
             | nd::zip_adjacent3_on_axis(axis)
-            | nd::apply(estimate_gradient_plm(plm_theta));
+            | nd::apply(estimate_gradient_plm(plm_theta))
+            | nd::multiply(0.5)
+            | nd::to_shared();
 
             return nd::zip(
-                (P | L2) + (G | L1) * 0.5,
-                (P | R2) - (G | R1) * 0.5);
+                (P | L2) + (G | L1),
+                (P | R2) - (G | R1));
         };
     };
 
@@ -686,11 +681,13 @@ auto binary::advance(const solution_t& solution, const solver_data_t& solver_dat
     //     }
     // });
 
+
+    auto evaluate = nd::to_shared(); // mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
     auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, density_floor);
     auto v0 = solver_data.vertices;
     auto u0 = solution.conserved;
-    auto p0 = u0.map(nd::map(recover_primitive)).map(nd::to_shared());
-    auto dA = v0.map(area_from_vertices).map(nd::to_shared());
+    auto p0 = u0.map(nd::map(recover_primitive)).map(evaluate);
+    auto dA = v0.map(area_from_vertices).map(evaluate);
     auto dx = v0.map([component] (auto v) { return v | component(0) | nd::difference_on_axis(0); });
     auto dy = v0.map([component] (auto v) { return v | component(1) | nd::difference_on_axis(1); });
     auto fx = extend(p0, 0).map(extrapolate(0)).map(intercell_flux(mara::iso2d::riemann_hllc, 0)) * dy;
@@ -698,7 +695,8 @@ auto binary::advance(const solution_t& solution, const solver_data_t& solver_dat
     auto lx = -fx.map(nd::difference_on_axis(0));
     auto ly = -fy.map(nd::difference_on_axis(1));
     auto m0 = u0.map(component(0)) * dA; // cell masses
-    auto sg = (gravitational_acceleration_field(solution.time, solver_data) * m0).map(nd::map(force_to_source_terms));
+    auto ag = gravitational_acceleration_field(solution.time, solver_data);
+    auto sg = (ag * m0).map(nd::map(force_to_source_terms));
     auto ss = -u0 * sink_rate_field(solution.time, solver_data) * dA;
     auto bz = (solver_data.initial_conserved - u0) * solver_data.buffer_rate_field * dA;
     auto u1 = u0 + (lx + ly + ss + sg + bz) * dt / dA;
@@ -706,7 +704,7 @@ auto binary::advance(const solution_t& solution, const solver_data_t& solver_dat
     return solution_t{
         solution.time + dt,
         solution.iteration + 1,
-        u1.map(nd::to_shared()),
+        u1.map(evaluate),
     };
 }
 
