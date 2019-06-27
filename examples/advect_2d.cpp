@@ -227,6 +227,22 @@ void output_state_h5( const state_t& state, std::string fname )
 	h5f.close();
 }
 
+/**
+ * @brief		Generate filename for checkpoint
+ * 
+ * @param		config struct for this run
+ *
+ * @return 		string for the filename 
+ */
+std::string get_output_filename( const config_g& config )
+{
+	char             buffer[256]; 
+	sprintf(         buffer, "%03d", config.output_n );
+	std::string num( buffer );
+
+	return "checkpoint_" + num + ".h5";
+}
+
 
 //=============================================================================
 
@@ -250,13 +266,7 @@ int main()
 		if( state.time / delta - config.output_n > 1.0  )
 		{
 			config.output_n++;
-
-			//std::stringstream ss;
-			//ss << std::setw(3) << std::setfill("0") << config.output_n;
-			char buffer[256]; sprintf( buffer, "%03d", config.output_n );
-			std::string num(buffer);
-			std::string fname = "checkpoint_" + num + ".h5";
-
+			auto fname = get_output_filename(config);
 			output_state_h5( state, fname );
 		}
 	}
