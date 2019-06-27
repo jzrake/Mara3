@@ -153,24 +153,25 @@ auto mara::prolong_cells(std::size_t axis)
         return nd::make_array([axis, coarse] (auto i)
         {
             // This is a cheap second-order cell prolongation
-            auto Im = i;
-            auto I0 = i;
-            auto Ip = i;
-            auto N0 = coarse.shape(axis);
+            // auto Im = i;
+            // auto I0 = i;
+            // auto Ip = i;
+            // auto N0 = coarse.shape(axis);
 
-            Im[axis] = i[axis] / 2 - 1;
-            I0[axis] = i[axis] / 2;
-            Ip[axis] = i[axis] / 2 + 1;
+            // Im[axis] = i[axis] / 2 - 1;
+            // I0[axis] = i[axis] / 2;
+            // Ip[axis] = i[axis] / 2 + 1;
 
-            auto dx =  i[axis] % 2 == 0 ? -0.25 : +0.25;
-            auto Dp = I0[axis] < N0 - 1 ? coarse(Ip) - coarse(I0) : coarse(I0) - coarse(Im);
-            auto Dm = I0[axis] >      0 ? coarse(I0) - coarse(Im) : coarse(Ip) - coarse(I0);
+            // auto dx =  i[axis] % 2 == 0 ? -0.25 : +0.25;
+            // auto Dp = I0[axis] < N0 - 1 ? coarse(Ip) - coarse(I0) : coarse(I0) - coarse(Im);
+            // auto Dm = I0[axis] >      0 ? coarse(I0) - coarse(Im) : coarse(Ip) - coarse(I0);
 
-            auto yi = coarse(I0) + (Dm + Dp) * dx * 0.5;
-            return yi;
+            // auto yi = coarse(I0) + (Dm + Dp) * dx * 0.5;
+            // return yi;
 
             // This is a first-order prolongation
-            // return coarse(coarsen_index_cells(i, axis));
+            // WARNING: a prolongation test will fail if doing uniform.
+            return coarse(coarsen_index_cells(i, axis));
         }, prolong_shape_cells(coarse.shape(), axis));
     };
 }
