@@ -26,15 +26,12 @@
 #include <iostream>
 #include "core_hdf5.hpp"
 #include "core_ndarray.hpp"
-#include "core_ndarray_ops.hpp"
 #include "core_tree.hpp"
 #include "core_rational.hpp"
-#include "mesh_tree_operators.hpp"
 #include "app_config.hpp"
 #include "app_performance.hpp"
 #include "app_schedule.hpp"
 #include "app_serialize.hpp"
-
 #include "physics_iso2d.hpp"
 #include "model_two_body.hpp"
 
@@ -47,10 +44,11 @@ namespace binary
 
 
     //=========================================================================
-    using location_2d_t  = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
-    using velocity_2d_t  = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, -1, double>, 2>;
-    using accel_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, -2, double>, 2>;
-    using force_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 1, -2, double>, 2>;
+    using location_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
+    using velocity_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, -1, double>, 2>;
+    using accel_2d_t    = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, -2, double>, 2>;
+    using force_2d_t    = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 1, -2, double>, 2>;
+    using primitive_field_t = std::function<mara::iso2d::primitive_t(location_2d_t)>;
 
     template<typename ArrayValueType>
     using quad_tree_t = mara::arithmetic_binary_tree_t<nd::shared_array<ArrayValueType, 2>, 2>;
@@ -127,18 +125,20 @@ namespace binary
 
 
     //=========================================================================
-    auto config_template();
-    auto initial_disk_profile(const mara::config_t& run_config);
+    mara::config_template_t      create_config_template();
+    mara::config_t               create_run_config   (int argc, const char* argv[]);
+    mara::schedule_t             create_schedule     (const mara::config_t& run_config);
+    mara::two_body_parameters_t  create_binary_params(const mara::config_t& run_config);
+    quad_tree_t<location_2d_t>   create_vertices     (const mara::config_t& run_config);
+    solution_t                   create_solution     (const mara::config_t& run_config);
+    state_t                      create_state        (const mara::config_t& run_config);
+    solver_data_t                create_solver_data  (const mara::config_t& run_config);
+    primitive_field_t            create_disk_profile (const mara::config_t& run_config);
 
 
     //=========================================================================
-    auto create_run_config(int argc, const char* argv[]);
-    auto create_vertices     (const mara::config_t& run_config);
-    auto create_binary_params(const mara::config_t& run_config);
-    auto create_solution     (const mara::config_t& run_config);
-    auto create_schedule     (const mara::config_t& run_config);
-    auto create_state        (const mara::config_t& run_config);
-    solver_data_t create_solver_data(const mara::config_t& run_config);
+    solution_t advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt);
+    diagnostic_fields_t diagnostic_fields(const solution_t& solution, const mara::config_t& run_config);
 
 
     //=========================================================================
@@ -152,11 +152,6 @@ namespace binary
     auto simulation_should_continue(const state_t& state);
     void prepare_filesystem(const mara::config_t& run_config);
     void print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf);
-
-
-    //=========================================================================
-    solution_t advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt);
-    diagnostic_fields_t diagnostic_fields(const solution_t& solution, const mara::config_t& run_config);
 }
 
 
