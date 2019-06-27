@@ -206,7 +206,7 @@ auto binary::config_template()
     .item("rk_order",               2)          // time-stepping Runge-Kutta order: 1 or 2
     .item("reconstruct_method", "plm")          // zone extrapolation method: pcm or plm
     .item("plm_theta",            1.8)          // plm theta parameter: [1.0, 2.0]
-    .item("riemann",           "hllc")          // riemann solver to use: hlle or hllc
+    .item("riemann",           "hlle")          // riemann solver to use: hlle only (hllc disabled until further testing)
     .item("softening_radius",     0.1)          // gravitational softening radius
     .item("sink_radius",          0.1)          // radius of mass (and momentum) subtraction region
     .item("sink_rate",            1e2)          // sink rate at the point masses (orbital angular frequency)
@@ -540,8 +540,8 @@ auto binary::create_solver_data(const mara::config_t& run_config)
     .map(nd::to_shared());
 
     if      (run_config.get_string("riemann") == "hlle") result.riemann_solver = riemann_solver_t::hlle;
-    else if (run_config.get_string("riemann") == "hllc") result.riemann_solver = riemann_solver_t::hllc;
-    else throw std::invalid_argument("invalid riemann solver '" + run_config.get_string("riemann") + "', must be hlle or hllc");
+    // else if (run_config.get_string("riemann") == "hllc") result.riemann_solver = riemann_solver_t::hllc;
+    else throw std::invalid_argument("invalid riemann solver '" + run_config.get_string("riemann") + "', must be hlle");
 
     if      (run_config.get_string("reconstruct_method") == "pcm") result.reconstruct_method = reconstruct_method_t::pcm;
     else if (run_config.get_string("reconstruct_method") == "plm") result.reconstruct_method = reconstruct_method_t::plm;
@@ -690,8 +690,8 @@ auto binary::advance(const solution_t& solution, const solver_data_t& solver_dat
     auto dA = v0.map(area_from_vertices).map(evaluate);
     auto dx = v0.map([component] (auto v) { return v | component(0) | nd::difference_on_axis(0); });
     auto dy = v0.map([component] (auto v) { return v | component(1) | nd::difference_on_axis(1); });
-    auto fx = extend(p0, 0).map(extrapolate(0)).map(intercell_flux(mara::iso2d::riemann_hllc, 0)) * dy;
-    auto fy = extend(p0, 1).map(extrapolate(1)).map(intercell_flux(mara::iso2d::riemann_hllc, 1)) * dx;
+    auto fx = extend(p0, 0).map(extrapolate(0)).map(intercell_flux(mara::iso2d::riemann_hlle, 0)) * dy;
+    auto fy = extend(p0, 1).map(extrapolate(1)).map(intercell_flux(mara::iso2d::riemann_hlle, 1)) * dx;
     auto lx = -fx.map(nd::difference_on_axis(0));
     auto ly = -fy.map(nd::difference_on_axis(1));
     auto m0 = u0.map(component(0)) * dA; // cell masses
