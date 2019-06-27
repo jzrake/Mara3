@@ -33,6 +33,7 @@
 #include "core_geometric.hpp"
 #include "core_matrix.hpp"
 #include "core_sequence.hpp"
+#include "core_linked_list.hpp"
 #include "core_tree.hpp"
 #include "core_ndarray.hpp"
 
@@ -80,6 +81,59 @@ TEST_CASE("sequence algorithms work correctly", "[covariant_sequence]")
         REQUIRE(A.transpose()[1][1] == A[1][1]);
         REQUIRE(A.transpose()[1][0] == A[0][1]);
         REQUIRE(A.transpose()[2][1] == A[1][2]);
+    }
+}
+
+TEST_CASE("linked lists work as expected", "[linked_list]")
+{
+    SECTION("prepending to build lists works OK")
+    {
+        auto a = mara::linked_list_t<int>();
+        auto b = a.prepend(1);
+        auto c = b.prepend(2);
+        auto d = c.prepend(3);
+
+        REQUIRE(a.size() == 0);
+        REQUIRE(b.size() == 1);
+        REQUIRE(c.size() == 2);
+        REQUIRE(d.size() == 3);
+        REQUIRE_THROWS(a.head());
+        REQUIRE(b.head() == 1);
+        REQUIRE(c.head() == 2);
+        REQUIRE(d.head() == 3);
+    }
+
+    SECTION("appending to build lists works OK")
+    {
+        auto a = mara::linked_list_t<int>();
+        auto b = a.append(1);
+        auto c = b.append(2);
+        auto d = c.append(3);
+
+        REQUIRE(a.size() == 0);
+        REQUIRE(b.size() == 1);
+        REQUIRE(c.size() == 2);
+        REQUIRE(d.size() == 3);
+        REQUIRE_THROWS(a.head());
+        REQUIRE(b.head() == 1);
+        REQUIRE(c.head() == 1);
+        REQUIRE(d.head() == 1);
+    }
+
+    SECTION("linked list iterators work right")
+    {
+        auto a = mara::linked_list_t<int>().append(1).append(2);
+        auto it = a.begin();
+        REQUIRE(*it == 1); ++it;
+        REQUIRE(*it == 2); ++it;
+        REQUIRE( it == a.end());
+    }
+
+    std::size_t n = 0;
+
+    for (auto x : mara::linked_list_t<int>{0, 1, 2, 3, 4})
+    {
+        REQUIRE(x == n++);
     }
 }
 
