@@ -24,17 +24,18 @@
 */
 #include <cmath>
 #include <iostream>
-#include "core_hdf5.hpp"
-#include "core_ndarray.hpp"
-#include "core_tree.hpp"
-#include "core_rational.hpp"
 #include "app_compile_opts.hpp"
 #include "app_config.hpp"
 #include "app_performance.hpp"
 #include "app_schedule.hpp"
 #include "app_serialize.hpp"
-#include "physics_iso2d.hpp"
+#include "core_hdf5.hpp"
+#include "core_linked_list.hpp"
+#include "core_ndarray.hpp"
+#include "core_rational.hpp"
+#include "core_tree.hpp"
 #include "model_two_body.hpp"
+#include "physics_iso2d.hpp"
 
 
 
@@ -103,15 +104,6 @@ namespace binary
 
 
     //=========================================================================
-    struct state_t
-    {
-        solution_t solution;
-        mara::schedule_t schedule;
-        mara::config_t run_config;
-    };
-
-
-    //=========================================================================
     struct diagnostic_fields_t
     {
         mara::config_t                                 run_config;
@@ -122,6 +114,26 @@ namespace binary
         quad_tree_t<double>                            phi_velocity;
         location_2d_t                                  position_of_mass1;
         location_2d_t                                  position_of_mass2;
+    };
+
+
+    //=========================================================================
+    struct time_series_sample_t
+    {
+        mara::unit_time<double> time;
+        mara::unit_mass<double> total_disk_mass;
+        mara::unit_mass<double> accreted_mass_1;
+        mara::unit_mass<double> accreted_mass_2;
+    };
+
+
+    //=========================================================================
+    struct state_t
+    {
+        solution_t                                solution;
+        mara::schedule_t                          schedule;
+        mara::linked_list_t<time_series_sample_t> time_series;
+        mara::config_t                            run_config;
     };
 
 

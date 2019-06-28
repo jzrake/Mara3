@@ -199,6 +199,7 @@ binary::state_t binary::create_state(const mara::config_t& run_config)
     return state_t{
         create_solution(run_config),
         create_schedule(run_config),
+        {time_series_sample_t{}, time_series_sample_t{}, time_series_sample_t{}},
         run_config,
     };
 }
@@ -242,6 +243,7 @@ auto binary::next_state(const state_t& state, const solver_data_t& solver_data)
     return state_t{
         next_solution(state.solution, solver_data),
         next_schedule(state),
+        state.time_series,
         state.run_config,
     };
 }

@@ -40,6 +40,41 @@
 
 
 //=============================================================================
+struct hdf5_compound_test_t
+{
+    int a = 1;
+    double b = 3.14;
+
+    bool operator==(const hdf5_compound_test_t& other) const { return a == other.a && b == other.b; }
+};
+
+
+
+
+//=============================================================================
+template<>
+struct h5::hdf5_type_info<hdf5_compound_test_t>
+{
+    using native_type = hdf5_compound_test_t;
+    static auto make_datatype_for(const native_type& value)
+    {
+        return h5::Datatype::compound<hdf5_compound_test_t>({
+            {"a", offsetof(hdf5_compound_test_t, a), Datatype::native_int()},
+            {"b", offsetof(hdf5_compound_test_t, b), Datatype::native_double()},
+        });
+    }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+};
+
+
+
+
+//=============================================================================
 SCENARIO("Files can be created", "[h5::File]")
 {
     GIVEN("A file opened for writing")
@@ -317,6 +352,24 @@ SCENARIO("Data sets can be created, read, and written to", "[h5::Dataset]")
         }
         mara::filesystem::remove_file("test.h5");
     }
+
+    GIVEN("A file opened for writing and a compound data type")
+    {
+        auto data = hdf5_compound_test_t{};
+        auto file = h5::File("test.h5", "w");
+        auto type = h5::make_datatype_for(data);
+        auto space = h5::Dataspace::scalar();
+        auto dset = file.require_dataset("data", type, space);
+
+        THEN("The compound type can be written to a scalar dataset")
+        {
+            REQUIRE_NOTHROW(file.require_dataset("data", type, space));
+            REQUIRE_NOTHROW(dset.write(data));
+            REQUIRE(dset.read<hdf5_compound_test_t>() == data);
+            REQUIRE_THROWS(dset.read<int>());
+        }
+        mara::filesystem::remove_file("test.h5");
+    }
 }
 
 TEST_CASE("trees can be written to HDF5", "[arithmetic_binary_tree]")
@@ -362,6 +415,26 @@ TEST_CASE("trees can be written to HDF5", "[arithmetic_binary_tree]")
             }
             mara::filesystem::remove_file("test.h5");
         }
+    }
+}
+
+TEST_CASE("lists can be written to HDF5", "[linked_list]")
+{
+    GIVEN("A file opened for writing")
+    {
+        auto file = h5::File("test.h5", "w");
+
+        WHEN("A list is written to the array")
+        {
+            auto a = mara::linked_list_t<double>().append(1.0).append(2.0);
+            file.write("a", a);
+
+            THEN("It can be read back again")
+            {
+                REQUIRE(file.read<decltype(a)>("a") == a);
+            }
+        }
+        mara::filesystem::remove_file("test.h5");
     }
 }
 
