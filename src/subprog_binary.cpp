@@ -174,7 +174,7 @@ binary::solution_t binary::create_solution(const mara::config_t& run_config)
             | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
             | nd::to_shared();
         });
-        return solution_t{0, 0.0, conserved};
+        return solution_t{0, 0.0, conserved, {}, {}, {}};
     }
     return mara::read<solution_t>(h5::File(restart, "r").open_group("/"), "solution");
 }
@@ -199,7 +199,7 @@ binary::state_t binary::create_state(const mara::config_t& run_config)
     return state_t{
         create_solution(run_config),
         create_schedule(run_config),
-        {time_series_sample_t{}, time_series_sample_t{}, time_series_sample_t{}},
+        {},
         run_config,
     };
 }

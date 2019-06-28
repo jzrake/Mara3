@@ -95,9 +95,14 @@ namespace binary
     //=========================================================================
     struct solution_t
     {
-        mara::unit_time<double>                        time = 0.0;
-        mara::rational_number_t                        iteration = 0;
-        quad_tree_t<mara::iso2d::conserved_per_area_t> conserved;
+        mara::unit_time<double>                                   time = 0.0;
+        mara::rational_number_t                                   iteration = 0;
+        quad_tree_t<mara::iso2d::conserved_per_area_t>            conserved;
+
+        mara::arithmetic_sequence_t<mara::unit_mass  <double>, 2> mass_accreted_on = {};
+        mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> integrated_torque_on = {};
+        mara::arithmetic_sequence_t<mara::unit_energy<double>, 2> work_done_on = {};
+
         solution_t operator+(const solution_t& other) const;
         solution_t operator*(mara::rational_number_t scale) const;
     };
@@ -120,10 +125,11 @@ namespace binary
     //=========================================================================
     struct time_series_sample_t
     {
-        mara::unit_time<double> time;
-        mara::unit_mass<double> total_disk_mass;
-        mara::unit_mass<double> accreted_mass_1;
-        mara::unit_mass<double> accreted_mass_2;
+        mara::unit_time<double> time = 0.0;
+        mara::unit_mass<double> total_disk_mass = 0.0;
+        mara::arithmetic_sequence_t<mara::unit_mass  <double>, 2> mass_accreted_on = {};
+        mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> integrated_torque_on = {};
+        mara::arithmetic_sequence_t<mara::unit_energy<double>, 2> work_done_on = {};
     };
 
 

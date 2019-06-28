@@ -15,8 +15,9 @@ struct h5::hdf5_type_info<binary::time_series_sample_t>
         return h5::Datatype::compound<native_type>({
             h5_compound_type_member(native_type, time),
             h5_compound_type_member(native_type, total_disk_mass),
-            h5_compound_type_member(native_type, accreted_mass_1),
-            h5_compound_type_member(native_type, accreted_mass_2),
+            h5_compound_type_member(native_type, mass_accreted_on),
+            h5_compound_type_member(native_type, integrated_torque_on),
+            h5_compound_type_member(native_type, work_done_on),
         });
     }
     static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
@@ -38,6 +39,9 @@ void mara::write<binary::solution_t>(h5::Group& group, std::string name, const b
     mara::write(location, "time",       solution.time);
     mara::write(location, "iteration",  solution.iteration);
     mara::write(location, "conserved",  solution.conserved);
+    mara::write(location, "mass_accreted_on",  solution.mass_accreted_on);
+    mara::write(location, "integrated_torque_on", solution.integrated_torque_on);
+    mara::write(location, "work_done_on",      solution.work_done_on);
 }
 
 template<>
@@ -71,6 +75,9 @@ void mara::read<binary::solution_t>(h5::Group& group, std::string name, binary::
     mara::read(location, "time",       solution.time);
     mara::read(location, "iteration",  solution.iteration);
     mara::read(location, "conserved",  solution.conserved);
+    mara::read(location, "mass_accreted_on",     solution.mass_accreted_on);
+    mara::read(location, "integrated_torque_on", solution.integrated_torque_on);
+    mara::read(location, "work_done_on",         solution.work_done_on);
 }
 
 template<>

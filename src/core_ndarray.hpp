@@ -1869,7 +1869,7 @@ auto nd::sum()
 
         for (const auto& i : array.indexes())
         {
-            result += array(i);
+            result = result + array(i);
         }
         return result;
     };
