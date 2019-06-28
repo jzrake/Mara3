@@ -40,6 +40,22 @@
 
 
 //=============================================================================
+namespace binary
+{
+    auto next_solution(const solution_t& solution, const solver_data_t& solver_data);
+    auto next_schedule(const state_t& state);
+    auto next_state(const state_t& state, const solver_data_t& solver_data);
+
+    auto run_tasks(const state_t& state);
+    auto simulation_should_continue(const state_t& state);
+    void prepare_filesystem(const mara::config_t& run_config);
+    void print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf);
+}
+
+
+
+
+//=============================================================================
 mara::config_template_t binary::create_config_template()
 {
     return mara::make_config_template()

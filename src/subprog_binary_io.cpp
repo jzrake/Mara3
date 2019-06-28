@@ -1,6 +1,6 @@
-
 #include "subprog_binary.hpp"
 #include "app_serialize_tree.hpp"
+#if MARA_COMPILE_SUBPROGRAM_BINARY
 
 
 
@@ -68,3 +68,5 @@ void mara::read<binary::diagnostic_fields_t>(h5::Group& group, std::string name,
     mara::read(location, "position_of_mass1", diagnostics.position_of_mass1);
     mara::read(location, "position_of_mass2", diagnostics.position_of_mass2);
 }
+
+#endif // MARA_COMPILE_SUBPROGRAM_BINARY

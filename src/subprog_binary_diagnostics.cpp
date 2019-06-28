@@ -1,5 +1,6 @@
 #include "subprog_binary.hpp"
 #include "core_ndarray_ops.hpp"
+#if MARA_COMPILE_SUBPROGRAM_BINARY
 
 
 
@@ -53,3 +54,5 @@ binary::diagnostic_fields_t binary::diagnostic_fields(const solution_t& solution
         {binary.body2.position_x, binary.body2.position_y},
     };
 }
+
+#endif // MARA_COMPILE_SUBPROGRAM_BINARY

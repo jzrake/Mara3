@@ -1,5 +1,6 @@
 #include "subprog_binary.hpp"
 #include "core_ndarray_ops.hpp"
+#if MARA_COMPILE_SUBPROGRAM_BINARY
 
 
 
@@ -84,3 +85,5 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
 
     return result;
 }
+
+#endif // MARA_COMPILE_SUBPROGRAM_BINARY

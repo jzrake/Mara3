@@ -28,7 +28,7 @@
 
 #pragma once
 #include <memory>            // std::shared_ptr
-#include <initializer_list>  // initializer_list
+#include <initializer_list>  // std::initializer_list
 
 
 

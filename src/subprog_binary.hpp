@@ -28,6 +28,7 @@
 #include "core_ndarray.hpp"
 #include "core_tree.hpp"
 #include "core_rational.hpp"
+#include "app_compile_opts.hpp"
 #include "app_config.hpp"
 #include "app_performance.hpp"
 #include "app_schedule.hpp"
@@ -134,24 +135,8 @@ namespace binary
     state_t                      create_state        (const mara::config_t& run_config);
     solver_data_t                create_solver_data  (const mara::config_t& run_config);
     primitive_field_t            create_disk_profile (const mara::config_t& run_config);
-
-
-    //=========================================================================
-    solution_t advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt);
-    diagnostic_fields_t diagnostic_fields(const solution_t& solution, const mara::config_t& run_config);
-
-
-    //=========================================================================
-    auto next_solution(const solution_t& solution, const solver_data_t& solver_data);
-    auto next_schedule(const state_t& state);
-    auto next_state(const state_t& state, const solver_data_t& solver_data);
-
-
-    //=========================================================================
-    auto run_tasks(const state_t& state);
-    auto simulation_should_continue(const state_t& state);
-    void prepare_filesystem(const mara::config_t& run_config);
-    void print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf);
+    solution_t                   advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt);
+    diagnostic_fields_t          diagnostic_fields(const solution_t& solution, const mara::config_t& run_config);
 }
 
 

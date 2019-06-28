@@ -2,6 +2,7 @@
 #include "mesh_prolong_restrict.hpp"
 #include "mesh_tree_operators.hpp"
 #include "core_ndarray_ops.hpp"
+#if MARA_COMPILE_SUBPROGRAM_BINARY
 
 
 
@@ -212,3 +213,5 @@ binary::solution_t binary::solution_t::operator*(mara::rational_number_t scale) 
         (conserved * scale.as_double()).map(nd::to_shared()),
     };
 }
+
+#endif // MARA_COMPILE_SUBPROGRAM_BINARY
