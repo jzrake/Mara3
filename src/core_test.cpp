@@ -160,6 +160,7 @@ TEST_CASE("linked lists work as expected", "[linked_list]")
         auto A = nd::arange(8192);
         auto d = mara::linked_list_t<int>(A.begin(), A.end());
         REQUIRE(d.size() == A.size());
+        REQUIRE(d == d.reverse().reverse());
     }
 }
 
