@@ -188,7 +188,7 @@ mara::schedule_t binary::create_schedule(const mara::config_t& run_config)
         auto schedule = mara::schedule_t();
         schedule.create_and_mark_as_due("write_checkpoint");
         schedule.create_and_mark_as_due("write_diagnostics");
-        schedule.create_and_mark_as_due("write_time_series");
+        schedule.create_and_mark_as_due("record_time_series");
         return schedule;
     }
     return mara::read_schedule(h5::File(restart, "r").open_group("schedule"));
@@ -233,9 +233,9 @@ auto binary::next_solution(const solution_t& state, const solver_data_t& solver_
 auto binary::next_schedule(const state_t& state)
 {
     return mara::mark_tasks_in(state, state.solution.time.value,
-        {{"write_checkpoint",  state.run_config.get_double("cpi") * 2 * M_PI},
-         {"write_diagnostics", state.run_config.get_double("dfi") * 2 * M_PI},
-         {"write_time_series", state.run_config.get_double("tsi") * 2 * M_PI}});
+        {{"write_checkpoint",   state.run_config.get_double("cpi") * 2 * M_PI},
+         {"write_diagnostics",  state.run_config.get_double("dfi") * 2 * M_PI},
+         {"record_time_series", state.run_config.get_double("tsi") * 2 * M_PI}});
 }
 
 auto binary::next_state(const state_t& state, const solver_data_t& solver_data)
@@ -292,17 +292,23 @@ auto binary::run_tasks(const state_t& state)
 
 
     //=========================================================================
-    auto write_time_series = [] (const state_t& state)
+    auto record_time_series = [] (state_t state)
     {
-        // TODO
-        return mara::complete_task_in(state, "write_time_series");
+        auto sample = time_series_sample_t();
+        sample.time                 = state.solution.time;
+        sample.total_disk_mass      = 0.0; // TODO
+        sample.mass_accreted_on     = state.solution.mass_accreted_on;
+        sample.integrated_torque_on = state.solution.integrated_torque_on;
+        sample.work_done_on         = state.solution.work_done_on;
+        state.time_series = state.time_series.prepend(sample);
+        return mara::complete_task_in(state, "record_time_series");
     };
 
 
     return mara::run_scheduled_tasks(state, {
         {"write_checkpoint",  write_checkpoint},
         {"write_diagnostics", write_diagnostics},
-        {"write_time_series", write_time_series}});
+        {"record_time_series", record_time_series}});
 }
 
 void binary::prepare_filesystem(const mara::config_t& run_config)

@@ -10,12 +10,8 @@
 //=============================================================================
 namespace binary
 {
-    // auto gravitational_acceleration_field(mara::unit_time<double> time, const solver_data_t& solver_data);
-    // auto sink_rate_field(mara::unit_time<double> time, const solver_data_t& solver_data);    
-
     auto grav_vdot_field(const solver_data_t& solver_data, location_2d_t body_location, mara::unit_mass<double> body_mass);
     auto sink_rate_field(const solver_data_t& solver_data, location_2d_t sink_location);
-
     auto estimate_gradient_plm(double plm_theta);
 }
 
@@ -48,62 +44,6 @@ auto binary::estimate_gradient_plm(double plm_theta)
         return result;
     };
 }
-
-// auto binary::gravitational_acceleration_field(mara::unit_time<double> time, const solver_data_t& solver_data)
-// {
-//     auto binary = mara::compute_two_body_state(solver_data.binary_params, time.value);
-//     auto accel = [softening_radius=solver_data.softening_radius] (const mara::point_mass_t& body, location_2d_t field_point)
-//     {
-//         auto mass_location = location_2d_t { body.position_x, body.position_y };
-
-//         auto G   = mara::dimensional_value_t<3, -1, -2, double>(1.0);
-//         auto M   = mara::make_mass(body.mass);
-//         auto dr  = field_point - mass_location;
-//         auto dr2 = dr[0] * dr[0] + dr[1] * dr[1];
-//         auto rs2 = softening_radius * softening_radius;
-//         return -dr / (dr2 + rs2).pow<3, 2>() * G * M;
-//     };
-
-//     auto acceleration = [binary, accel] (location_2d_t p)
-//     {
-//         return accel(binary.body1, p) + accel(binary.body2, p);
-//     };
-
-//     return solver_data.vertices.map([acceleration] (auto block)
-//     {
-//         return block
-//         | nd::midpoint_on_axis(0)
-//         | nd::midpoint_on_axis(1)
-//         | nd::map(acceleration);
-//     });
-// }
-
-// auto binary::sink_rate_field(mara::unit_time<double> time, const solver_data_t& solver_data)
-// {
-//     auto binary = mara::compute_two_body_state(solver_data.binary_params, time.value);
-//     auto sink = [binary, sink_radius=solver_data.sink_radius, sink_rate=solver_data.sink_rate] (location_2d_t p)
-//     {
-//         auto dx1 = p[0] - mara::make_length(binary.body1.position_x);
-//         auto dy1 = p[1] - mara::make_length(binary.body1.position_y);
-//         auto dx2 = p[0] - mara::make_length(binary.body2.position_x);
-//         auto dy2 = p[1] - mara::make_length(binary.body2.position_y);
-
-//         auto s2 = sink_radius * sink_radius;
-//         auto a2 = (dx1 * dx1 + dy1 * dy1) / s2 / 2.0;
-//         auto b2 = (dx2 * dx2 + dy2 * dy2) / s2 / 2.0;
-
-//         return sink_rate * 0.5 * (std::exp(-a2) + std::exp(-b2));
-//     };
-
-//     return solver_data.vertices.map([sink] (auto block)
-//     {
-//         return block
-//         | nd::midpoint_on_axis(0)
-//         | nd::midpoint_on_axis(1)
-//         | nd::map(sink);
-//     });
-// }
-
 
 auto binary::grav_vdot_field(const solver_data_t& solver_data, location_2d_t body_location, mara::unit_mass<double> body_mass)
 {
@@ -143,6 +83,7 @@ auto binary::sink_rate_field(const solver_data_t& solver_data, location_2d_t sin
         | nd::map(sink);
     });
 }
+
 
 
 
@@ -303,10 +244,10 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     // The total force on each component, Mdot's, Ldot's, and Edot's.
     //=========================================================================
-    auto fg1_tot = fg1.map(nd::sum()).sum();
-    auto fg2_tot = fg2.map(nd::sum()).sum();
-    auto ss1_tot = ss1.map(component(0)).map(nd::sum()).sum();
-    auto ss2_tot = ss2.map(component(0)).map(nd::sum()).sum();
+    auto fg1_tot = -fg1.map(nd::sum()).sum();
+    auto fg2_tot = -fg2.map(nd::sum()).sum();
+    auto ss1_tot = -ss1.map(component(0)).map(nd::sum()).sum();
+    auto ss2_tot = -ss2.map(component(0)).map(nd::sum()).sum();
     auto Mdot = mara::make_sequence(ss1_tot, ss2_tot);
     auto Ldot = mara::make_sequence(cross_prod_z(fg1_tot, body1_pos), cross_prod_z(fg2_tot, body2_pos));
     auto Edot = mara::make_sequence((fg1_tot * body1_vel).sum(), (fg2_tot * body2_vel).sum());

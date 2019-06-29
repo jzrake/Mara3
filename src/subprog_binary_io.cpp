@@ -50,7 +50,7 @@ void mara::write<binary::state_t>(h5::Group& group, std::string name, const bina
     auto location = group.require_group(name);
     mara::write(location, "solution",    state.solution);
     mara::write(location, "schedule",    state.schedule);
-    mara::write(location, "time_series", state.time_series);
+    mara::write(location, "time_series", state.time_series.reverse());
     mara::write(location, "run_config",  state.run_config);
 }
 
@@ -87,6 +87,7 @@ void mara::read<binary::state_t>(h5::Group& group, std::string name, binary::sta
     mara::read(location, "solution",      state.solution);
     mara::read(location, "time_series",   state.time_series);
     mara::read(location, "schedule",      state.schedule);
+    state.time_series = state.time_series.reverse();
 }
 
 template<>
