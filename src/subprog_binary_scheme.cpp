@@ -3,6 +3,7 @@
 #include "mesh_tree_operators.hpp"
 #include "core_ndarray_ops.hpp"
 #if MARA_COMPILE_SUBPROGRAM_BINARY
+#define tree_launch std::launch::async
 
 
 
@@ -123,7 +124,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
             auto L = mara::get_cell_block(tree, index.prev_on(axis)) | nd::select_final(2, axis);
             auto R = mara::get_cell_block(tree, index.next_on(axis)) | nd::select_first(2, axis);
             return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis);
-        });
+        }, tree_launch);
     };
 
 
@@ -215,12 +216,12 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     //=========================================================================
     auto v0  =  solver_data.vertices;
     auto u0  =  solution.conserved;
-    auto p0  =  u0.map(nd::map(recover_primitive)).map(evaluate);
-    auto dA  =  v0.map(area_from_vertices).map(evaluate);
+    auto p0  =  u0.map(nd::map(recover_primitive)).map(evaluate, tree_launch);
+    auto dA  =  v0.map(area_from_vertices).map(evaluate, tree_launch);
     auto dx  =  v0.map([component] (auto v) { return v | component(0) | nd::difference_on_axis(0); });
     auto dy  =  v0.map([component] (auto v) { return v | component(1) | nd::difference_on_axis(1); });
-    auto fx  =  extend(p0, 0).map(extrapolate(0)).map(intercell_flux(mara::iso2d::riemann_hlle, 0)) * dy;
-    auto fy  =  extend(p0, 1).map(extrapolate(1)).map(intercell_flux(mara::iso2d::riemann_hlle, 1)) * dx;
+    auto fx  =  extend(p0, 0).map(extrapolate(0), tree_launch).map(intercell_flux(mara::iso2d::riemann_hlle, 0)) * dy;
+    auto fy  =  extend(p0, 1).map(extrapolate(1), tree_launch).map(intercell_flux(mara::iso2d::riemann_hlle, 1)) * dx;
     auto lx  = -fx.map(nd::difference_on_axis(0));
     auto ly  = -fy.map(nd::difference_on_axis(1));
     auto m0  =  u0.map(component(0)) * dA; // cell masses
@@ -244,10 +245,10 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     // The total force on each component, Mdot's, Ldot's, and Edot's.
     //=========================================================================
-    auto fg1_tot = -fg1.map(nd::sum()).sum();
-    auto fg2_tot = -fg2.map(nd::sum()).sum();
-    auto ss1_tot = -ss1.map(component(0)).map(nd::sum()).sum();
-    auto ss2_tot = -ss2.map(component(0)).map(nd::sum()).sum();
+    auto fg1_tot = -fg1.map(nd::sum(), tree_launch).sum();
+    auto fg2_tot = -fg2.map(nd::sum(), tree_launch).sum();
+    auto ss1_tot = -ss1.map(component(0)).map(nd::sum(), tree_launch).sum();
+    auto ss2_tot = -ss2.map(component(0)).map(nd::sum(), tree_launch).sum();
     auto Mdot = mara::make_sequence(ss1_tot, ss2_tot);
     auto Ldot = mara::make_sequence(cross_prod_z(fg1_tot, body1_pos), cross_prod_z(fg2_tot, body2_pos));
     auto Edot = mara::make_sequence((fg1_tot * body1_vel).sum(), (fg2_tot * body2_vel).sum());
@@ -258,7 +259,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     return solution_t{
         solution.time + dt,
         solution.iteration + 1,
-        u1.map(evaluate),
+        u1.map(evaluate, tree_launch),
         solution.mass_accreted_on     + Mdot * dt,
         solution.integrated_torque_on + Ldot * dt,
         solution.work_done_on         + Edot * dt,
@@ -274,7 +275,7 @@ binary::solution_t binary::solution_t::operator+(const solution_t& other) const
     return {
         time       + other.time,
         iteration  + other.iteration,
-        (conserved + other.conserved).map(nd::to_shared()),
+        (conserved + other.conserved).map(nd::to_shared(), tree_launch),
         mass_accreted_on     + other.mass_accreted_on,
         integrated_torque_on + other.integrated_torque_on,
         work_done_on         + other.work_done_on,
@@ -286,7 +287,7 @@ binary::solution_t binary::solution_t::operator*(mara::rational_number_t scale) 
     return {
         time       * scale.as_double(),
         iteration  * scale,
-        (conserved * scale.as_double()).map(nd::to_shared()),
+        (conserved * scale.as_double()).map(nd::to_shared(), tree_launch),
         mass_accreted_on     * scale.as_double(),
         integrated_torque_on * scale.as_double(),
         work_done_on         * scale.as_double(),

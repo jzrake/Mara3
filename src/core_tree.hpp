@@ -31,6 +31,7 @@
 #include <memory>
 #include <optional>
 #include <variant>
+#include <future>
 #include "core_sequence.hpp"
 
 
@@ -559,9 +560,10 @@ struct mara::arithmetic_binary_tree_t
     /**
      * @brief      Map a function over the values of this tree.
      *
-     * @param      fn        The function to map
+     * @param      fn              The function to map
      *
-     * @tparam     Function  The type of the function object
+     * @tparam     Function        The type of the function object
+     * @tparam     ResultTreeType  The result tree type (deduced)
      *
      * @return     A new tree, with the same shape as this one, and its values
      *             transformed element-wise.
@@ -575,6 +577,35 @@ struct mara::arithmetic_binary_tree_t
             return {fn(value())};
         }
         return {detail::to_shared_ptr(children().map([fn] (auto&& t) { return t.map(fn); }))};
+    }
+
+
+
+
+    /**
+     * @brief      Overload of map, taking an async execution policy.
+     *
+     * @param      fn           The function to map asynchronously
+     * @param[in]  launch_mode  The launch mode: std::launch::async or
+     *                          std::launch::deferred
+     *
+     * @tparam     Function     The function type
+     *
+     * @return     A tree identical to the result of map above, but evaluated on
+     *             separate threads (or a single thread if deferred is given as
+     *             the launch_mode)
+     */
+    template<typename Function>
+    auto map(Function&& fn, std::launch launch_mode)
+    {
+        return map([fn, launch_mode] (auto&& v)
+        {
+            return std::make_shared
+            <std::future
+            <std::invoke_result_t<Function, ValueType>>>
+            (std::async(launch_mode, fn, std::forward<decltype(v)>(v)));
+        })
+        .map([] (auto&& future_ptr) { return future_ptr->get(); });
     }
 
 
