@@ -849,18 +849,18 @@ struct mara::arithmetic_binary_tree_t
 
 
     //=========================================================================
-    template<typename T> auto operator+ (const T& v) const { return map(std::bind(std::plus<>(),          std::placeholders::_1, v)); }
-    template<typename T> auto operator- (const T& v) const { return map(std::bind(std::minus<>(),         std::placeholders::_1, v)); }
-    template<typename T> auto operator* (const T& v) const { return map(std::bind(std::multiplies<>(),    std::placeholders::_1, v)); }
-    template<typename T> auto operator/ (const T& v) const { return map(std::bind(std::divides<>(),       std::placeholders::_1, v)); }
-    template<typename T> auto operator&&(const T& v) const { return map(std::bind(std::logical_and<>(),   std::placeholders::_1, v)); }
-    template<typename T> auto operator||(const T& v) const { return map(std::bind(std::logical_or<>(),    std::placeholders::_1, v)); }
-    template<typename T> auto operator==(const T& v) const { return map(std::bind(std::equal_to<>(),      std::placeholders::_1, v)); }
-    template<typename T> auto operator!=(const T& v) const { return map(std::bind(std::not_equal_to<>(),  std::placeholders::_1, v)); }
-    template<typename T> auto operator<=(const T& v) const { return map(std::bind(std::less_equal<>(),    std::placeholders::_1, v)); }
-    template<typename T> auto operator>=(const T& v) const { return map(std::bind(std::greater_equal<>(), std::placeholders::_1, v)); }
-    template<typename T> auto operator< (const T& v) const { return map(std::bind(std::less<>(),          std::placeholders::_1, v)); }
-    template<typename T> auto operator> (const T& v) const { return map(std::bind(std::greater<>(),       std::placeholders::_1, v)); }
+    template<typename T> auto operator+ (const T& v) const { return map([&v] (auto&& t) { return t +  v; }); }
+    template<typename T> auto operator- (const T& v) const { return map([&v] (auto&& t) { return t -  v; }); }
+    template<typename T> auto operator* (const T& v) const { return map([&v] (auto&& t) { return t *  v; }); }
+    template<typename T> auto operator/ (const T& v) const { return map([&v] (auto&& t) { return t /  v; }); }
+    template<typename T> auto operator&&(const T& v) const { return map([&v] (auto&& t) { return t && v; }); }
+    template<typename T> auto operator||(const T& v) const { return map([&v] (auto&& t) { return t || v; }); }
+    template<typename T> auto operator==(const T& v) const { return map([&v] (auto&& t) { return t == v; }); }
+    template<typename T> auto operator!=(const T& v) const { return map([&v] (auto&& t) { return t != v; }); }
+    template<typename T> auto operator<=(const T& v) const { return map([&v] (auto&& t) { return t <= v; }); }
+    template<typename T> auto operator>=(const T& v) const { return map([&v] (auto&& t) { return t >= v; }); }
+    template<typename T> auto operator< (const T& v) const { return map([&v] (auto&& t) { return t <  v; }); }
+    template<typename T> auto operator> (const T& v) const { return map([&v] (auto&& t) { return t >  v; }); }
 
     template<typename T> auto operator+ (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::plus<>()); }
     template<typename T> auto operator- (const arithmetic_binary_tree_t<T, Rank>& v) const { return binary_op(v, std::minus<>()); }
