@@ -32,7 +32,7 @@ def plot_single_block(ax, h5_verts, h5_values, edges=False, **kwargs):
 
 
 
-def plot_single_file(
+def plot_single_file_with_vel(
     fig,
     filename,
     depth=0,
@@ -75,29 +75,128 @@ def plot_single_file(
 
 
 
-def make_movie(args):
+def plot_single_file_sigma_only(
+    fig,
+    filename,
+    depth=0,
+    edges=False,
+    sigma_range=[None, None],
+    vr_range=[None, None],
+    vp_range=[None, None]):
+
+    ax, cax = fig.subplots(nrows=2, ncols=1, gridspec_kw={'height_ratios': [19, 1]})
+    h5f = h5py.File(filename, 'r')
+
+    for block_index in h5f['vertices']:
+
+        if int(block_index[0]) < depth:
+            continue
+
+        verts = h5f['vertices'][block_index]
+        ls = np.log10(h5f['sigma'][block_index])
+        m0 = plot_single_block(ax, verts, ls, edges=edges, cmap='inferno', vmin=sigma_range[0], vmax=sigma_range[1])
+
+    fig.colorbar(m0, cax=cax, orientation='horizontal')
+
+    ax.set_title(r'$\log_{10} \Sigma$')
+    ax.set_xlabel(r'$x$')
+    ax.set_ylabel(r'$y$')
+    ax.set_aspect('equal')
+    ax.set_xticks([])
+
+    return fig
+
+
+
+def make_movie_impl(args, plot_fn, figsize=[16, 6]):
     from matplotlib.animation import FFMpegWriter
 
     dpi = 200
     res = 768
 
     writer = FFMpegWriter(fps=10)
-    fig = plt.figure(figsize=[15, 8])
+    fig = plt.figure(figsize=figsize)
 
     with writer.saving(fig, args.output, dpi):
         for filename in args.filenames:
             print(filename)
-            plot_single_file(fig, filename, edges=args.edges, depth=args.depth, **get_ranges(args))
+            plot_fn(fig, filename, edges=args.edges, depth=args.depth, **get_ranges(args))
             writer.grab_frame()
             fig.clf()
 
 
 
-def raise_figure_windows(args):
+def raise_figure_windows_impl(args, plot_fn, figsize=[16, 6]):
     for filename in args.filenames:
         print(filename)
-        fig = plt.figure(figsize=[16, 6])
-        plot_single_file(fig, filename, edges=args.edges, depth=args.depth, **get_ranges(args))
+        fig = plt.figure(figsize=figsize)
+        plot_fn(fig, filename, edges=args.edges, depth=args.depth, **get_ranges(args))
+    plt.show()
+
+
+
+def make_movie(args):
+    if args.with_vel:
+        make_movie_impl(args, plot_single_file_with_vel, figsize=[16, 6])
+    else:
+        make_movie_impl(args, plot_single_file_sigma_only, figsize=[10, 10])
+
+
+
+def raise_figure_windows(args):
+    if args.with_vel:
+        raise_figure_windows_impl(args, plot_single_file_with_vel, figsize=[16, 6])
+    else:
+        raise_figure_windows_impl(args, plot_single_file_sigma_only, figsize=[10, 10])
+
+
+
+def unzip_time_series(h5_time_series):
+    ts = h5_time_series[:]
+    return {k:[s[i] for s in ts] for i, k in enumerate(ts.dtype.names)}
+
+
+
+def time_series(args):
+
+    fig = plt.figure(figsize=[15, 8])
+    ax1 = fig.add_subplot(2, 1, 1)
+    ax2 = fig.add_subplot(2, 1, 2)
+
+    colors = plt.cm.viridis(np.linspace(0.3, 0.7, len(args.filenames)))
+
+    for c, fname in zip(colors, args.filenames):
+        h5f = h5py.File(fname, 'r')
+        ts = unzip_time_series(h5f['time_series'])
+
+        t  = np.array([s / 2 / np.pi for s in ts['time']])
+        M1 = np.array([s[0] for s in ts['mass_accreted_on']])
+        M2 = np.array([s[1] for s in ts['mass_accreted_on']])
+        L1 = np.array([s[0] for s in ts['integrated_torque_on']])
+        L2 = np.array([s[1] for s in ts['integrated_torque_on']])
+        E1 = np.array([s[0] for s in ts['work_done_on']])
+        E2 = np.array([s[1] for s in ts['work_done_on']])
+
+        Mdot1 = np.diff(M1) / np.diff(t)
+        Mdot2 = np.diff(M2) / np.diff(t)
+        Ldot1 = np.diff(L1) / np.diff(t)
+        Ldot2 = np.diff(L2) / np.diff(t)
+
+        Mdot = Mdot1 + Mdot2
+        Ldot = Ldot1 + Ldot2
+
+        ax1.plot(t[:-1], Mdot, lw=1.0, c=c, label=fname)
+        ax2.plot(t[:-1], Ldot / Mdot, lw=1.0, c=c, label=fname)
+
+        steady = np.where(t[:-1] > 12.0)
+        ax1.axhline(np.mean(Mdot[steady]),                         lw=1.0, c=c, ls='--')
+        ax2.axhline(np.mean(Ldot[steady]) / np.mean(Mdot[steady]), lw=1.0, c=c, ls='--')
+
+    ax1.legend()
+    ax1.set_ylabel(r'$\dot M$')
+    ax1.set_yscale('log')
+    ax2.set_xlabel("Orbits")
+    ax2.set_ylabel(r'$\dot L / \dot M$')
     plt.show()
 
 
@@ -106,6 +205,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("filenames", nargs='+')
     parser.add_argument("--movie", action='store_true')
+    parser.add_argument("--time-series", '-t', action='store_true')
+    parser.add_argument("--with-vel", action='store_true')
     parser.add_argument("--output", "-o", default="output.mp4")
     parser.add_argument("--sigma", default="default", type=str)
     parser.add_argument("--depth", default=0, type=int)
@@ -115,7 +216,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.movie:
+    if args.time_series:
+        time_series(args)
+    elif args.movie:
         make_movie(args)
     else:
         raise_figure_windows(args)

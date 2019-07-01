@@ -140,6 +140,11 @@ namespace binary
         mara::schedule_t                          schedule;
         mara::linked_list_t<time_series_sample_t> time_series;
         mara::config_t                            run_config;
+
+        state_t with(const solution_t&                                new_solution)    const { return {new_solution, schedule, time_series, run_config}; }
+        state_t with(const mara::schedule_t&                          new_schedule)    const { return {solution, new_schedule, time_series, run_config}; }
+        state_t with(const mara::config_t&                            new_run_config)  const { return {solution, schedule, time_series, new_run_config}; }
+        state_t with(const mara::linked_list_t<time_series_sample_t>& new_time_series) const { return {solution, schedule, new_time_series, run_config}; }
     };
 
 

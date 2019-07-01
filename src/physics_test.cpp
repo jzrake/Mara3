@@ -32,6 +32,7 @@
 #include "core_geometric.hpp"
 #include "physics_euler.hpp"
 #include "physics_iso2d.hpp"
+#include "model_two_body.hpp"
 #define gamma_law_index (5. / 3)
 
 
@@ -119,6 +120,35 @@ TEST_CASE("Isothermal 2d system", "[mara::iso2d::primitive_t]")
         REQUIRE(Pl.gas_pressure(al2) == Approx(Pr.gas_pressure(ar2)));
         REQUIRE(vars.contact_speed() == 0.0);
     }
+}
+
+TEST_CASE("Two body gravity model works as expected", "[model_two_body]")
+{
+    auto dt = 1e-4;
+    auto binary = mara::two_body_parameters_t{};
+    auto state0 = mara::compute_two_body_state(binary, dt * 0.0);
+    auto state1 = mara::compute_two_body_state(binary, dt * 0.5);
+    auto state2 = mara::compute_two_body_state(binary, dt * 1.0);
+    auto dx1 = state2.body1.position_x - state0.body1.position_x;
+    auto dy1 = state2.body1.position_y - state0.body1.position_y;
+    auto dx2 = state2.body2.position_x - state0.body2.position_x;
+    auto dy2 = state2.body2.position_y - state0.body2.position_y;
+    CHECK(dx1 / dt == Approx(state1.body1.velocity_x));
+    CHECK(dy1 / dt == Approx(state1.body1.velocity_y));
+    CHECK(dx2 / dt == Approx(state1.body2.velocity_x));
+    CHECK(dy2 / dt == Approx(state1.body2.velocity_y));
+    CHECK(state0.body1.position_x ==  0.5);
+    CHECK(state0.body2.position_x == -0.5);
+    CHECK(state0.body1.position_y ==  0.0);
+    CHECK(state0.body2.position_y ==  0.0);
+    CHECK(state0.body1.velocity_y > 0.0);
+    CHECK(state0.body2.velocity_y < 0.0);
+    CHECK(state2.body1.velocity_x < 0.0);
+    CHECK(state2.body2.velocity_x > 0.0);
+    CHECK(state2.body2.position_x * state2.body2.velocity_y - state2.body2.position_y * state2.body2.velocity_x > 0.0);
+    CHECK(state0.body2.position_x * state0.body2.velocity_y - state0.body2.position_y * state0.body2.velocity_x ==
+          state2.body2.position_x * state2.body2.velocity_y - state2.body2.position_y * state2.body2.velocity_x);
+
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST

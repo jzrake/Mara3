@@ -39,9 +39,9 @@ void mara::write<binary::solution_t>(h5::Group& group, std::string name, const b
     mara::write(location, "time",       solution.time);
     mara::write(location, "iteration",  solution.iteration);
     mara::write(location, "conserved",  solution.conserved);
-    mara::write(location, "mass_accreted_on",  solution.mass_accreted_on);
+    mara::write(location, "mass_accreted_on",     solution.mass_accreted_on);
     mara::write(location, "integrated_torque_on", solution.integrated_torque_on);
-    mara::write(location, "work_done_on",      solution.work_done_on);
+    mara::write(location, "work_done_on",         solution.work_done_on);
 }
 
 template<>
