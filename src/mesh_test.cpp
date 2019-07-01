@@ -59,7 +59,7 @@ TEST_CASE("pointwise linear prolongation works in 1d", "[amr refine_verts]")
     REQUIRE((mara::get<1>(linspace(0.0, 1.0, 11) | refine_verts<1>()) | read_index(10)) == 0.5 + 0.5);
 }
 
-TEST_CASE("cell-wise linear prolongation works in 1d", "[amr] [refine_cells] [!shouldfail]")
+TEST_CASE("cell-wise linear prolongation works in 1d", "[amr] [refine_cells] [!mayfail]")
 {
     auto x0 = nd::linspace(0, 1, 11) | nd::midpoint_on_axis(0);
     auto X1 = nd::linspace(0, 1, 21) | nd::midpoint_on_axis(0);
@@ -71,7 +71,7 @@ TEST_CASE("cell-wise linear prolongation works in 1d", "[amr] [refine_cells] [!s
     }
 }
 
-TEST_CASE("cell-wise linear prolongation works in 2d", "[amr refine_cells] [!shouldfail]")
+TEST_CASE("cell-wise linear prolongation works in 2d", "[amr refine_cells] [!mayfail]")
 {
     auto make_vertex_2d = [] (double x, double y) { return mara::amr_types::vertex_2d_t{x, y}; };
     auto height_func = [] (auto x) { return (x[0] + x[1] * 0.0).value; };
