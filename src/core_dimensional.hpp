@@ -51,6 +51,9 @@ namespace mara
     template<typename T> using unit_flow         = dimensional_value_t< 0, 1,-1, T>;
     template<typename T> using unit_mass_density = dimensional_value_t<-3, 1, 0, T>;
     template<typename T> using unit_flow_density = dimensional_value_t<-3, 1,-1, T>;
+    template<typename T> using unit_energy       = dimensional_value_t< 2, 1,-2, T>;
+    template<typename T> using unit_torque       = dimensional_value_t< 2, 1,-2, T>;
+    template<typename T> using unit_angmom       = dimensional_value_t< 2, 1,-1, T>;
 
     template<typename T> auto make_scalar(T value);
     template<typename T> auto make_length(T value);
@@ -64,6 +67,9 @@ namespace mara
     template<typename T> auto make_flow(T value);
     template<typename T> auto make_mass_density(T value);
     template<typename T> auto make_flow_density(T value);
+    template<typename T> auto make_energy(T value);
+    template<typename T> auto make_torque(T value);
+    template<typename T> auto make_angmom(T value);
 
     template<int C, int G, int S, typename T> auto to_string(dimensional_value_t<C, G, S, T> x);
 }
@@ -225,6 +231,13 @@ struct mara::dimensional_value_t
     }
 
 
+    T scalar() const
+    {
+        static_assert(C == 0 && G == 0 && S == 0, "cannot convert dimensional number to a scalar");
+        return value;
+    }
+
+
     /**
      * @brief      Return a compile-time tuple of this type's length/mass/time
      *             dimensions
@@ -268,6 +281,9 @@ template<typename T> auto mara::make_flux        (T value) { return make_dimensi
 template<typename T> auto mara::make_flow        (T value) { return make_dimensional< 0, 1,-1>(value); }
 template<typename T> auto mara::make_mass_density(T value) { return make_dimensional<-3, 1, 0>(value); }
 template<typename T> auto mara::make_flow_density(T value) { return make_dimensional<-3, 1,-1>(value); }
+template<typename T> auto mara::make_energy      (T value) { return make_dimensional< 2, 1,-2>(value); }
+template<typename T> auto mara::make_torque      (T value) { return make_dimensional< 2, 1,-2>(value); }
+template<typename T> auto mara::make_angmom      (T value) { return make_dimensional< 2, 1,-1>(value); }
 
 
 

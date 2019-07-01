@@ -218,7 +218,7 @@ struct mara::arithmetic_sequence_t
         auto result = ValueType{};
 
         for (std::size_t i = 0; i < Rank; ++i)
-            result += this->operator[](i);
+            result = result + this->operator[](i);
 
         return result;
     }

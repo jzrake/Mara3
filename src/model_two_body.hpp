@@ -56,7 +56,8 @@ namespace mara
         double mass       = 1.0;
         double position_x = 0.0;
         double position_y = 0.0;
-        double position_z = 0.0;
+        double velocity_x = 0.0;
+        double velocity_y = 0.0;
     };
 
 
@@ -113,40 +114,40 @@ mara::two_body_state_t mara::compute_two_body_state(const two_body_parameters_t&
     double e = params.eccentricity;
     double q = params.mass_ratio;
     double a = params.separation;
-    double omega_binary = a == 0.0 ? 0.0 : std::sqrt(params.total_mass / a / a / a);
+    double omega = a == 0.0 ? 0.0 : std::sqrt(params.total_mass / a / a / a);
     double mu = q / (1.0 + q);
 
-    auto make_result_from_f_and_r = [&] (double f, double r)
+    auto make_result_from_E_and_a = [&] (double E, double a)
     {
-        // f is the true anomoly (omega * t for circular orbits)
-        // r is the effective separation (a for circular orbits)
+        // E is the eccentric anomoly (omega * t for circular orbits)
+        // a is the separation
         auto result = two_body_state_t();
         result.body1.mass = params.total_mass * (1 - mu);
         result.body2.mass = params.total_mass * mu;
-        result.body1.position_x = mu * r * std::cos(f);
-        result.body1.position_y = mu * r * std::sin(f);
-        result.body2.position_x = mu * r * std::cos(f + M_PI) / q;
-        result.body2.position_y = mu * r * std::sin(f + M_PI) / q;
+        result.body1.position_x = -a * mu * (e - std::cos(E));
+        result.body1.position_y = +a * mu * (0 + std::sin(E)) * std::sqrt(1 - e * e);
+        result.body2.position_x = -result.body1.position_x / q;
+        result.body2.position_y = -result.body1.position_y / q;
+        result.body1.velocity_x = -a * mu * omega / (1 - e * std::cos(E)) * std::sin(E);
+        result.body1.velocity_y = +a * mu * omega / (1 - e * std::cos(E)) * std::cos(E) * std::sqrt(1 - e * e);
+        result.body2.velocity_x = -result.body1.velocity_x / q;
+        result.body2.velocity_y = -result.body1.velocity_y / q;
         return result;
     };
 
     if (params.eccentricity > 0.0)
     {
-        auto M = omega_binary * t; // mean anomoly
+        auto M = omega * t; // mean anomoly
         auto anomoly_equation   = [e, M] (double E) { return E - e * std::sin(E) - M; };
         auto anomoly_derivative = [e]    (double E) { return 1 - e * std::cos(E); };
 
         double E = two_body::detail::solve_newton_rapheson(anomoly_equation, anomoly_derivative, M);
-        double x = a * (std::cos(E) - e);
-        double y = a * (std::sin(E) * std::sqrt(1.0 - e * e));
-        double r = std::sqrt(x * x + y * y);
-        double f = std::atan2(y, x);
-        return make_result_from_f_and_r(f, r);
+        return make_result_from_E_and_a(E, a);
     }
     else
     {
-        double f = omega_binary * t;
-        double r = params.separation;
-        return make_result_from_f_and_r(f, r);
+        double E = omega * t;
+        double a = params.separation;
+        return make_result_from_E_and_a(E, a);
     }
 }

@@ -113,7 +113,6 @@ mara::cubic_roots_t mara::cubic_roots(double c3, double c2, double c1, double c0
 
 
 
-
 /**
  * @brief      Compute the zeros of a quartic polynomial given by sum(d_n x^n)
  *

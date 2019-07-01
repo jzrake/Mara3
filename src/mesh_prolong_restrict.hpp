@@ -29,6 +29,7 @@
 #pragma once
 #include "core_ndarray.hpp"
 #include "core_sequence.hpp"
+#include "math_interpolation.hpp"
 
 
 
@@ -150,27 +151,21 @@ auto mara::prolong_cells(std::size_t axis)
 {
     return [axis] (auto coarse)
     {
-        return nd::make_array([axis, coarse] (auto i)
+        return nd::make_array([axis, coarse=coarse | nd::bounds_check()] (auto i)
         {
-            // This is a cheap second-order cell prolongation
-            auto Im = i;
-            auto I0 = i;
-            auto Ip = i;
-            auto N0 = coarse.shape(axis);
+            auto I = coarsen_index_cells(i, axis);
 
-            Im[axis] = i[axis] / 2 - 1;
-            I0[axis] = i[axis] / 2;
-            Ip[axis] = i[axis] / 2 + 1;
-
-            auto dx =  i[axis] % 2 == 0 ? -0.25 : +0.25;
-            auto Dp = I0[axis] < N0 - 1 ? coarse(Ip) - coarse(I0) : coarse(I0) - coarse(Im);
-            auto Dm = I0[axis] >      0 ? coarse(I0) - coarse(Im) : coarse(Ip) - coarse(I0);
-
-            auto yi = coarse(I0) + (Dm + Dp) * dx * 0.5;
-            return yi;
-
-            // This is a first-order prolongation
-            // return coarse(coarsen_index_cells(i, axis));
+            try {
+                auto pl = coarse(I.prev_on(axis));
+                auto p0 = coarse(I);
+                auto pr = coarse(I.next_on(axis));
+                auto dx = i[axis] % 2 == 0 ? -0.25 : +0.25;
+                return p0 + plm_gradient(pl, p0, pr, 1.0) * dx;
+            }
+            catch (const std::out_of_range&)
+            {
+                return coarse(I);
+            }
         }, prolong_shape_cells(coarse.shape(), axis));
     };
 }

@@ -36,6 +36,12 @@
 
 
 //=============================================================================
+#define h5_compound_type_member(type, name) {#name, offsetof(type, name), h5::make_datatype_for(type().name)}
+
+
+
+
+//=============================================================================
 namespace h5
 {
     template <class GroupType, class DatasetType>
@@ -55,6 +61,7 @@ namespace h5
     template<typename T> struct hdf5_type_info {};
     template<typename T> static auto make_datatype_for(const T&);
     template<typename T> static auto make_dataspace_for(const T&);
+    template<typename T> static auto convert_to_writable(const T&);
     template<typename T> static auto prepare(const Datatype&, const Dataspace&);
     template<typename T> static auto get_address(T&);
     template<typename T> static auto get_address(const T&);
@@ -179,10 +186,28 @@ class h5::Datatype final
 public:
 
     //=========================================================================
-    static Datatype native_double()    { return H5Tcopy(H5T_NATIVE_DOUBLE); }
-    static Datatype native_int()       { return H5Tcopy(H5T_NATIVE_INT); }
-    static Datatype native_ulong()     { return H5Tcopy(H5T_NATIVE_ULONG); }
-    static Datatype c_s1()             { return H5Tcopy(H5T_C_S1); }
+    static Datatype native_double()             { return H5Tcopy(H5T_NATIVE_DOUBLE); }
+    static Datatype native_int()                { return H5Tcopy(H5T_NATIVE_INT); }
+    static Datatype native_ulong()              { return H5Tcopy(H5T_NATIVE_ULONG); }
+    static Datatype c_s1()                      { return H5Tcopy(H5T_C_S1); }
+
+
+    //=========================================================================
+    template<typename StructureType>
+    static Datatype compound(std::initializer_list<std::tuple<const char*, std::ptrdiff_t, Datatype>> members)
+    {
+        static_assert(std::is_standard_layout<StructureType>::value,
+            "can only make compound HDF5 types from standard layout structs");
+
+        auto h5_type = H5Tcreate(H5T_COMPOUND, sizeof(StructureType));
+
+        for (auto member : members)
+        {
+            H5Tinsert(h5_type, std::get<0>(member), std::get<1>(member), std::get<2>(member).id);
+        }
+        return h5_type;
+    }
+
 
     //=========================================================================
     ~Datatype() { close(); }
@@ -398,6 +423,7 @@ struct h5::hdf5_type_info<char>
     using native_type = char;
     static auto make_datatype_for(const native_type&) { return Datatype::c_s1(); }
     static auto make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
     static auto prepare(const Datatype&, const Dataspace&) { return native_type(); }
     static auto finalize(native_type&& value) { return std::move(value); }
     static auto get_address(native_type& value) { return &value; }
@@ -408,24 +434,26 @@ template<>
 struct h5::hdf5_type_info<int>
 {
     using native_type = int;
-    static Datatype make_datatype_for(const native_type&) { return Datatype::native_int(); }
-    static Dataspace make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
-    static native_type prepare(const Datatype&, const Dataspace&) { return native_type(); }
+    static auto make_datatype_for(const native_type&) { return Datatype::native_int(); }
+    static auto make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace&) { return native_type(); }
     static auto finalize(native_type&& value) { return std::move(value); }
-    static void* get_address(native_type& value) { return &value; }
-    static const void* get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+    static auto get_address(const native_type& value) { return &value; }
 };
 
 template<>
 struct h5::hdf5_type_info<unsigned long>
 {
     using native_type = unsigned long;
-    static Datatype make_datatype_for(const native_type&) { return Datatype::native_ulong(); }
-    static Dataspace make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
-    static native_type prepare(const Datatype&, const Dataspace&) { return native_type(); }
+    static auto make_datatype_for(const native_type&) { return Datatype::native_ulong(); }
+    static auto make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace&) { return native_type(); }
     static auto finalize(native_type&& value) { return std::move(value); }
-    static void* get_address(native_type& value) { return &value; }
-    static const void* get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+    static auto get_address(const native_type& value) { return &value; }
 };
 
 template<>
@@ -434,6 +462,7 @@ struct h5::hdf5_type_info<double>
     using native_type = double;
     static auto make_datatype_for(const native_type&) { return Datatype::native_double(); }
     static auto make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
     static auto prepare(const Datatype&, const Dataspace&) { return native_type(); }
     static auto finalize(native_type&& value) { return std::move(value); }
     static auto get_address(native_type& value) { return &value; }
@@ -446,6 +475,7 @@ struct h5::hdf5_type_info<std::string>
     using native_type = std::string;
     static auto make_datatype_for(const native_type& value) { return Datatype::c_s1().with_size(std::max(std::size_t(1), value.size())); }
     static auto make_dataspace_for(const native_type&) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
     static auto prepare(const Datatype& type, const Dataspace&) { return native_type(type.size(), 0); }
     static auto finalize(native_type&& value) { return std::move(value); }
     static auto get_address(native_type& value) { return value.data(); }
@@ -458,6 +488,7 @@ struct h5::hdf5_type_info<std::vector<ValueType>>
     using native_type = std::vector<ValueType>;
     static auto make_datatype_for(const native_type&) { return h5::make_datatype_for(ValueType()); }
     static auto make_dataspace_for(const native_type& value) { return Dataspace{value.size()}; }
+    static auto convert_to_writable(const native_type& value) { return value; }
     static auto prepare(const Datatype&, const Dataspace& space) { return native_type(space.size()); }
     static auto finalize(native_type&& value) { return std::move(value); }
     static auto get_address(native_type& value) { return value.data(); }
@@ -468,11 +499,12 @@ struct h5::hdf5_type_info<std::vector<ValueType>>
 
 
 //=============================================================================
-template<typename T> auto h5::make_datatype_for(const T& v) { return hdf5_type_info<T>::make_datatype_for(v); }
-template<typename T> auto h5::make_dataspace_for(const T& v) { return hdf5_type_info<T>::make_dataspace_for(v); }
+template<typename T> auto h5::make_datatype_for(const T& v)                  { return hdf5_type_info<T>::make_datatype_for(v); }
+template<typename T> auto h5::make_dataspace_for(const T& v)                 { return hdf5_type_info<T>::make_dataspace_for(v); }
+template<typename T> auto h5::convert_to_writable(const T& v)                { return hdf5_type_info<T>::convert_to_writable(v); }
 template<typename T> auto h5::prepare(const Datatype& t, const Dataspace& s) { return hdf5_type_info<T>::prepare(t, s); }
-template<typename T> auto h5::get_address(T& v) { return hdf5_type_info<T>::get_address(v); }
-template<typename T> auto h5::get_address(const T& v) { return hdf5_type_info<T>::get_address(v); }
+template<typename T> auto h5::get_address(T& v)                              { return hdf5_type_info<T>::get_address(v); }
+template<typename T> auto h5::get_address(const T& v)                        { return hdf5_type_info<T>::get_address(v); }
 
 
 
@@ -661,9 +693,10 @@ public:
     template<typename T>
     void write(const T& value, const Dataspace& fspace)
     {
-        auto data = get_address(value);
-        auto type = make_datatype_for(value);
-        auto mspace = make_dataspace_for(value);
+        auto writable = convert_to_writable(value);
+        auto data = get_address(writable);
+        auto type = make_datatype_for(writable);
+        auto mspace = make_dataspace_for(writable);
         check_compatible(type);
         detail::check(H5Dwrite(link.id, type.id, mspace.id, fspace.id, H5P_DEFAULT, data));
     }
@@ -831,9 +864,10 @@ public:
     template<typename T>
     void write(const std::string& name, const T& value)
     {
-        auto type  = make_datatype_for(value);
-        auto space = make_dataspace_for(value);
-        require_dataset(name, type, space).write(value);
+        auto writable = convert_to_writable(value);
+        auto type  = make_datatype_for(writable);
+        auto space = make_dataspace_for(writable);
+        require_dataset(name, type, space).write(writable);
     }
 
     template<typename T>

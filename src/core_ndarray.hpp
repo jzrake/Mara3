@@ -398,6 +398,28 @@ public:
     bool operator> (const index_t<Rank>& b) const { for (std::size_t i = 0; i < Rank; ++i) { if (! (this->operator[](i) >  b[i])) return false; } return true; }
     bool operator<=(const index_t<Rank>& b) const { for (std::size_t i = 0; i < Rank; ++i) { if (! (this->operator[](i) <= b[i])) return false; } return true; }
     bool operator>=(const index_t<Rank>& b) const { for (std::size_t i = 0; i < Rank; ++i) { if (! (this->operator[](i) >= b[i])) return false; } return true; }
+
+    index_t next_on(std::size_t axis) const
+    {
+        if (axis >= Rank)
+        {
+            throw std::invalid_argument("nd::index_t::next_on (axis cannot be greater than or equal to rank)");
+        }
+        auto result = *this;
+        result[axis] += 1;
+        return result;
+    }
+
+    index_t prev_on(std::size_t axis) const
+    {
+        if (axis >= Rank)
+        {
+            throw std::invalid_argument("nd::index_t::prev_on (axis cannot be greater than or equal to rank)");
+        }
+        auto result = *this;
+        result[axis] -= 1;
+        return result;
+    }
 };
 
 
@@ -1869,7 +1891,7 @@ auto nd::sum()
 
         for (const auto& i : array.indexes())
         {
-            result += array(i);
+            result = result + array(i);
         }
         return result;
     };
