@@ -45,11 +45,8 @@ namespace binary
     auto next_solution(const solution_t& solution, const solver_data_t& solver_data);
     auto next_schedule(const state_t& state);
     auto next_state(const state_t& state, const solver_data_t& solver_data);
-
     auto run_tasks(const state_t& state);
     auto simulation_should_continue(const state_t& state);
-    void prepare_filesystem(const mara::config_t& run_config);
-    void print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf);
 }
 
 
@@ -70,6 +67,7 @@ mara::config_template_t binary::create_config_template()
     .item("block_size",            32)
     .item("focus_factor",        2.00)
     .item("focus_index",         2.00)
+    .item("threaded",               1)          // set to 0 to disable multi-threaded tree updates
     .item("rk_order",               2)          // time-stepping Runge-Kutta order: 1 or 2
     .item("reconstruct_method", "plm")          // zone extrapolation method: pcm or plm
     .item("plm_theta",            1.8)          // plm theta parameter: [1.0, 2.0]
@@ -347,6 +345,7 @@ public:
         auto perf        = mara::perf_diagnostics_t();
 
         binary::prepare_filesystem(run_config);
+        binary::set_scheme_globals(run_config);
         mara::pretty_print(std::cout, "config", run_config);
         state = binary::run_tasks(state);
 

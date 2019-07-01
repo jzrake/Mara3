@@ -1,9 +1,10 @@
-#include "subprog_binary.hpp"
+#include "core_ndarray_ops.hpp"
+#include "math_interpolation.hpp"
 #include "mesh_prolong_restrict.hpp"
 #include "mesh_tree_operators.hpp"
-#include "core_ndarray_ops.hpp"
+#include "subprog_binary.hpp"
 #if MARA_COMPILE_SUBPROGRAM_BINARY
-#define tree_launch std::launch::async
+static std::launch tree_launch = std::launch::deferred;
 
 
 
@@ -13,39 +14,21 @@ namespace binary
 {
     auto grav_vdot_field(const solver_data_t& solver_data, location_2d_t body_location, mara::unit_mass<double> body_mass);
     auto sink_rate_field(const solver_data_t& solver_data, location_2d_t sink_location);
-    auto estimate_gradient_plm(double plm_theta);
 }
 
 
 
 
 //=============================================================================
-auto binary::estimate_gradient_plm(double plm_theta)
+void binary::set_scheme_globals(const mara::config_t& run_config)
 {
-    return [plm_theta] (
-        const mara::iso2d::primitive_t& pl,
-        const mara::iso2d::primitive_t& p0,
-        const mara::iso2d::primitive_t& pr)
-    {
-        using std::min;
-        using std::fabs;
-        auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
-        auto sgn = [] (auto x) { return std::copysign(1, x); };
-
-        double th = plm_theta;
-        auto result = mara::iso2d::primitive_t();
-
-        for (std::size_t i = 0; i < 3; ++i)
-        {
-            auto a =  th * (p0[i] - pl[i]);
-            auto b = 0.5 * (pr[i] - pl[i]);
-            auto c =  th * (pr[i] - p0[i]);
-            result[i] = 0.25 * std::fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
-        }
-        return result;
-    };
+    tree_launch = run_config.get_int("threaded") == 0 ? std::launch::deferred : std::launch::async;
 }
 
+
+
+
+//=============================================================================
 auto binary::grav_vdot_field(const solver_data_t& solver_data, location_2d_t body_location, mara::unit_mass<double> body_mass)
 {
     auto accel = [body_location, body_mass, softening_radius=solver_data.softening_radius](location_2d_t field_point)
@@ -156,6 +139,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     {
         return [plm_theta, axis] (auto P)
         {
+            using namespace std::placeholders;
             auto L1 = nd::select_axis(axis).from(0).to(1).from_the_end();
             auto R1 = nd::select_axis(axis).from(1).to(0).from_the_end();
             auto L2 = nd::select_axis(axis).from(1).to(2).from_the_end();
@@ -163,7 +147,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
             auto G = P
             | nd::zip_adjacent3_on_axis(axis)
-            | nd::apply(estimate_gradient_plm(plm_theta))
+            | nd::apply([plm_theta] (auto a, auto b, auto c) { return mara::plm_gradient(a, b, c, plm_theta); })
             | nd::multiply(0.5)
             | nd::to_shared();
 

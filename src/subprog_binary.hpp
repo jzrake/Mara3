@@ -153,8 +153,14 @@ namespace binary
     state_t                      create_state        (const mara::config_t& run_config);
     solver_data_t                create_solver_data  (const mara::config_t& run_config);
     primitive_field_t            create_disk_profile (const mara::config_t& run_config);
+
     solution_t                   advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt);
     diagnostic_fields_t          diagnostic_fields(const solution_t& solution, const mara::config_t& run_config);
+
+    void set_scheme_globals    (const mara::config_t& run_config);
+    void prepare_filesystem    (const mara::config_t& run_config);
+    void set_scheme_globals    (const mara::config_t& run_config);
+    void print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf);
 }
 
 
