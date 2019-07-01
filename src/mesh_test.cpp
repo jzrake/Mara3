@@ -65,13 +65,13 @@ TEST_CASE("cell-wise linear prolongation works in 1d", "[amr] [refine_cells] [!m
     auto X1 = nd::linspace(0, 1, 21) | nd::midpoint_on_axis(0);
     auto X2 = x0 | mara::prolong_cells(0);
 
-    for (auto [X1i, X2i] : nd::zip(X1, X2))
+    for (auto [X1i, X2i] : nd::zip(X1, X2) | nd::select_axis(0).from(2).to(2).from_the_end()) // edges are done at first order
     {
         REQUIRE(X1i == Approx(X2i));
     }
 }
 
-TEST_CASE("cell-wise linear prolongation works in 2d", "[amr refine_cells] [!mayfail]")
+TEST_CASE("cell-wise linear prolongation works in 2d", "[amr refine_cells]")
 {
     auto make_vertex_2d = [] (double x, double y) { return mara::amr_types::vertex_2d_t{x, y}; };
     auto height_func = [] (auto x) { return (x[0] + x[1] * 0.0).value; };
@@ -100,7 +100,7 @@ TEST_CASE("cell-wise linear prolongation works in 2d", "[amr refine_cells] [!may
     CHECK(prolonged_values1( 9,  7) == Approx(prolonged_values2( 9,  7)).epsilon(1e-12));
     CHECK(prolonged_values1( 9,  9) == Approx(prolonged_values2( 9,  9)).epsilon(1e-12));
     CHECK(prolonged_values1( 7, 11) == Approx(prolonged_values2( 7, 11)).epsilon(1e-12));
-    CHECK(prolonged_values1( 0, 19) == Approx(prolonged_values2( 0, 19)).epsilon(1e-12));
+    CHECK(prolonged_values1( 0, 19) == Approx(values( 0, 9)).epsilon(1e-12)); // edges are done at first order
 }
 
 TEST_CASE("can manufacture vertex blocks in a 1d vertex tree", "[amr get_vertex_block]")

@@ -29,6 +29,7 @@
 #pragma once
 #include "core_ndarray.hpp"
 #include "core_sequence.hpp"
+#include "math_interpolation.hpp"
 
 
 
@@ -152,15 +153,19 @@ auto mara::prolong_cells(std::size_t axis)
     {
         return nd::make_array([axis, coarse=coarse | nd::bounds_check()] (auto i)
         {
-            // auto pl = coarse(coarsen_index(i, axis).prev_on(axis));
-            // auto p0 = coarse(coarsen_index(i, axis));
-            // auto pr = coarse(coarsen_index(i, axis).next_on(axis));
-            // auto dx = i[axis] % 2 == 0 ? -0.25 : +0.25;
-            // return p0 + plm_gradient(p0, pl, pr, 1.0) * dx;
+            auto I = coarsen_index_cells(i, axis);
 
-            // This is a first-order prolongation
-            // WARNING: a prolongation test will fail if doing uniform.
-            return coarse(coarsen_index_cells(i, axis));
+            try {
+                auto pl = coarse(I.prev_on(axis));
+                auto p0 = coarse(I);
+                auto pr = coarse(I.next_on(axis));
+                auto dx = i[axis] % 2 == 0 ? -0.25 : +0.25;
+                return p0 + plm_gradient(pl, p0, pr, 1.0) * dx;
+            }
+            catch (const std::out_of_range&)
+            {
+                return coarse(I);
+            }
         }, prolong_shape_cells(coarse.shape(), axis));
     };
 }
