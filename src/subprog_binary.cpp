@@ -264,9 +264,10 @@ auto binary::run_tasks(const state_t& state)
         auto count  = state.schedule.num_times_performed("write_checkpoint");
         auto fname  = mara::filesystem::join(outdir, mara::create_numbered_filename("chkpt", count, "h5"));
         auto group  = h5::File(fname, "w").open_group("/");
-        mara::write(group, "/", state);
+        auto next_state = mara::complete_task_in(state, "write_checkpoint");
+        mara::write(group, "/", next_state);
         std::printf("write checkpoint: %s\n", fname.data());
-        return mara::complete_task_in(state, "write_checkpoint");
+        return next_state;
     };
 
 
