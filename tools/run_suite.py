@@ -20,19 +20,19 @@ Date: {date}
 
 
 
-def mara_command(subprog, **kwargs):
-    return './mara {} {}'.format(subprog,
+def mara_command(subprog, exe='mara', **kwargs):
+    return './{} {} {}'.format(exe, subprog,
         ' '.join(['{}={}'.format(k, v) for k, v in kwargs.items()]))
 
 
 
-def run_script(template, subprog, runid='test', nodes=1, hours=8, **kwargs):
+def run_script(template, subprog, exe='mara', runid='test', nodes=1, hours=8, **kwargs):
     return template.format(
         nodes=nodes,
         hours=hours,
         job_name=runid,
         output=os.path.join(kwargs.get('outdir', './'), runid + '.out'),
-        command=mara_command(subprog, **kwargs))
+        command=mara_command(subprog, exe=exe, **kwargs))
 
 
 
@@ -82,6 +82,7 @@ if __name__ == "__main__":
         submit_content = run_script(
             machine['submit_script'],
             suite['subprog'],
+            exe=suite.get('exe', 'mara'),
             runid=runid,
             nodes=suite['job_params']['nodes'],
             hours=suite['job_params']['hours'],
