@@ -82,6 +82,33 @@ struct mara::linked_list_t
 
 
 
+    /**
+     * @brief      Destroys the linked list.
+     *
+     * @note       Care is taken not to overflow the stack by recursive shared
+     *             pointer free's. This destructor is not thread-safe! See Sec.
+     *             8.1.4 of Functional Programming in C++ by Ivan Čukić.
+     */
+    ~linked_list_t()
+    {
+        auto next_node = std::move(__next);    
+
+        while (next_node)
+        {
+            if (! next_node.unique())
+                break;
+
+            std::shared_ptr<linked_list_t> rest;
+            std::swap(rest, next_node->__next);
+
+            next_node.reset();
+            next_node = std::move(rest);
+        }
+    }
+
+
+
+
     linked_list_t() {}
 
 
@@ -97,6 +124,10 @@ struct mara::linked_list_t
     : __value(value)
     , __next(std::make_shared<linked_list_t>(next))
     {
+        if (__next == nullptr)
+        {
+            throw std::bad_alloc();
+        }
     }
 
 
@@ -166,7 +197,15 @@ struct mara::linked_list_t
      */
     std::size_t size() const
     {
-        return empty() ? 0 : 1 + tail().size();
+        auto result = std::size_t(0);
+        auto it = begin();
+
+        while (it != end())
+        {
+            ++result;
+            ++it;
+        }
+        return result;
     }
 
 
@@ -224,9 +263,17 @@ struct mara::linked_list_t
      * @return     A new list
      * 
      */
-    linked_list_t reverse(const linked_list_t& last={}) const
+    linked_list_t reverse() const
     {
-        return empty() ? last : tail().reverse({head(), last});
+        auto A = *this;
+        auto B = linked_list_t();
+
+        while (! A.empty())
+        {
+            B = B.prepend(A.head());
+            A = A.tail();
+        }
+        return B;
     }
 
 
