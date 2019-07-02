@@ -182,7 +182,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     // Minor helper functions
     //=========================================================================
     auto evaluate = nd::to_shared();
-    auto force_to_source_terms = [] (force_2d_t v) { return mara::iso2d::flow_t{0.0, v[0].value, v[1].value}; };
+    auto force_to_source_terms = [] (force_2d_t f) { return mara::iso2d::flow_t{0.0, f[0].value, f[1].value}; };
     auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
     auto cross_prod_z = [] (auto r, auto f) { return r[0] * f[1] - r[1] * f[0]; };
 
@@ -234,7 +234,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto ss1_tot = -ss1.map(component(0)).map(nd::sum(), tree_launch).sum();
     auto ss2_tot = -ss2.map(component(0)).map(nd::sum(), tree_launch).sum();
     auto Mdot = mara::make_sequence(ss1_tot, ss2_tot);
-    auto Ldot = mara::make_sequence(cross_prod_z(fg1_tot, body1_pos), cross_prod_z(fg2_tot, body2_pos));
+    auto Ldot = mara::make_sequence(cross_prod_z(body1_pos, fg1_tot), cross_prod_z(body2_pos, fg2_tot));
     auto Edot = mara::make_sequence((fg1_tot * body1_vel).sum(), (fg2_tot * body2_vel).sum());
 
 

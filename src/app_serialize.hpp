@@ -72,7 +72,7 @@ void mara::write_schedule(h5::Group&& group, const schedule_t& schedule)
     {
         auto h5_task = group.require_group(task.first);
         h5_task.write("name", task.second.name);
-        h5_task.write("num_times_performed", task.second.num_times_performed + 1);
+        h5_task.write("num_times_performed", task.second.num_times_performed);
         h5_task.write("last_performed", task.second.last_performed);
     }
 }

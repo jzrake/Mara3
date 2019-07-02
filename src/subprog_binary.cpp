@@ -139,9 +139,9 @@ binary::quad_tree_t<binary::location_2d_t> binary::create_vertices(const mara::c
     {
         return centroid_radius < focus_factor / std::pow(level, focus_index);
     };
-    auto verts = mara::create_vertex_quadtree(refinement_radius, block_size, depth);
 
-    return verts.map([domain_radius] (auto block)
+    return mara::create_vertex_quadtree(refinement_radius, block_size, depth)
+    .map([domain_radius] (auto block)
     {
         return (block * domain_radius).shared();
     });
@@ -159,47 +159,41 @@ mara::two_body_parameters_t binary::create_binary_params(const mara::config_t& r
 
 binary::solution_t binary::create_solution(const mara::config_t& run_config)
 {
-    auto restart = run_config.get<std::string>("restart");
-
-    if (restart.empty())
+    auto conserved = create_vertices(run_config).map([&run_config] (auto block)
     {
-        auto conserved = create_vertices(run_config).map([&run_config] (auto block)
-        {
-            return block
-            | nd::midpoint_on_axis(0)
-            | nd::midpoint_on_axis(1)
-            | nd::map(create_disk_profile(run_config))
-            | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
-            | nd::to_shared();
-        });
-        return solution_t{0, 0.0, conserved, {}, {}, {}};
-    }
-    return mara::read<solution_t>(h5::File(restart, "r").open_group("/"), "solution");
+        return block
+        | nd::midpoint_on_axis(0)
+        | nd::midpoint_on_axis(1)
+        | nd::map(create_disk_profile(run_config))
+        | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
+        | nd::to_shared();
+    });
+    return solution_t{0, 0.0, conserved, {}, {}, {}};
 }
 
 mara::schedule_t binary::create_schedule(const mara::config_t& run_config)
 {
-    auto restart = run_config.get<std::string>("restart");
-
-    if (restart.empty())
-    {
-        auto schedule = mara::schedule_t();
-        schedule.create_and_mark_as_due("write_checkpoint");
-        schedule.create_and_mark_as_due("write_diagnostics");
-        schedule.create_and_mark_as_due("record_time_series");
-        return schedule;
-    }
-    return mara::read_schedule(h5::File(restart, "r").open_group("schedule"));
+    auto schedule = mara::schedule_t();
+    schedule.create_and_mark_as_due("write_checkpoint");
+    schedule.create_and_mark_as_due("write_diagnostics");
+    schedule.create_and_mark_as_due("record_time_series");
+    return schedule;
 }
 
 binary::state_t binary::create_state(const mara::config_t& run_config)
 {
-    return state_t{
-        create_solution(run_config),
-        create_schedule(run_config),
-        {},
-        run_config,
-    };
+    auto restart = run_config.get<std::string>("restart");
+
+    if (restart.empty())
+    {
+        return {
+            create_solution(run_config),
+            create_schedule(run_config),
+            {},
+            run_config,
+        };
+    }
+    return mara::read<state_t>(h5::File(restart, "r").open_group("/"), "/").with(run_config);
 }
 
 
@@ -270,9 +264,10 @@ auto binary::run_tasks(const state_t& state)
         auto count  = state.schedule.num_times_performed("write_checkpoint");
         auto fname  = mara::filesystem::join(outdir, mara::create_numbered_filename("chkpt", count, "h5"));
         auto group  = h5::File(fname, "w").open_group("/");
-        mara::write(group, "/", state);
+        auto next_state = mara::complete_task_in(state, "write_checkpoint");
+        mara::write(group, "/", next_state);
         std::printf("write checkpoint: %s\n", fname.data());
-        return mara::complete_task_in(state, "write_checkpoint");
+        return next_state;
     };
 
 

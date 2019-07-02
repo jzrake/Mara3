@@ -44,9 +44,16 @@ def load_suite(suite_file):
 
 
 def load_machine(machine_file):
-    machine_file_defs = dict()
-    exec(open(machine_file).read(), machine_file_defs)
-    return machine_file_defs['machine']
+    try:
+        machine_file_defs = dict()
+        exec(open(machine_file).read(), machine_file_defs)
+        return machine_file_defs['machine']
+    except:
+        print("Using the default machine parameters")
+        return {
+            'submit_command': 'bash',
+            'submit_script': '{command}',
+        }
 
 
 
