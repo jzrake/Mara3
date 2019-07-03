@@ -231,8 +231,10 @@ def time_series(args):
 
         t  = np.array([s / 2 / np.pi for s in ts['time']])
         Md = np.array([s for s in ts['disk_mass']])
+        Me = np.array([s for s in ts['mass_ejected']])
         M1 = np.array([s[0] for s in ts['mass_accreted_on']])
         M2 = np.array([s[1] for s in ts['mass_accreted_on']])
+
         L1 = np.array([s[0] for s in ts['integrated_torque_on']])
         L2 = np.array([s[1] for s in ts['integrated_torque_on']])
         E1 = np.array([s[0] for s in ts['work_done_on']])
@@ -247,10 +249,11 @@ def time_series(args):
         Ldot = Ldot1 + Ldot2
         steady = np.where(t[:-1] > args.saturation_time)
 
-        ax1.plot(t, M1, c='k', lw=1, ls='-')
-        ax1.plot(t, M2, c='r', lw=3, ls='--')
-        ax1.plot(t, Md)
-        ax1.plot(t, M1 + M2 + Md, lw=5)
+        ax1.plot(t, M1, c='g', lw=1, ls='-',  label=r'$M_1$')
+        ax1.plot(t, M2, c='r', lw=2, ls='--', label=r'$M_2$')
+        ax1.plot(t, Md, c='g', label=r'$\Delta M_{\rm disk}$')
+        ax1.plot(t, Me, c='b', label=r'$M_{\rm ejected}$')
+        ax1.plot(t, M1 + M2 + Md + Me, c='orange', lw=3, label=r'$M_{\rm tot}$')
 
         plot_moving_average(ax2, t[:-1], Mdot,        window_size=10000, avg_only=args.avg_only, c=c, lw=2, label=fname)
         plot_moving_average(ax3, t[:-1], Ldot / Mdot, window_size=10000, avg_only=args.avg_only, c=c, lw=2, label=fname)
@@ -263,6 +266,8 @@ def time_series(args):
         except:
             print("Warning: no data points are available after the saturation time (try with e.g. --saturation-time=50)")
 
+    ax1.set_yscale('log')
+    ax1.legend()
     ax2.legend()
     ax2.set_ylabel(r'$\dot M$')
     ax2.set_yscale('log')
