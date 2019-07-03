@@ -103,9 +103,9 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     {
         return tree.indexes().map([tree, axis] (auto index)
         {
-            auto C = mara::get_cell_block(tree, index);
-            auto L = mara::get_cell_block(tree, index.prev_on(axis)) | nd::select_final(2, axis);
-            auto R = mara::get_cell_block(tree, index.next_on(axis)) | nd::select_first(2, axis);
+            auto C = tree.at(index);
+            auto L = mara::get_cell_block(tree, index.prev_on(axis), mara::compose(nd::to_shared(), nd::select_final(2, axis)));
+            auto R = mara::get_cell_block(tree, index.next_on(axis), mara::compose(nd::to_shared(), nd::select_first(2, axis)));
             return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis);
         }, tree_launch);
     };
