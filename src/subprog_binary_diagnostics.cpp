@@ -6,22 +6,56 @@
 
 
 //=============================================================================
-binary::diagnostic_fields_t binary::diagnostic_fields(const solution_t& solution, const mara::config_t& run_config)
+static auto component(std::size_t component)
 {
-    auto solver_data = create_solver_data(run_config);
-    auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
+    return nd::map([component] (auto p) { return p[component]; });
+};
 
-    auto component = [] (std::size_t component)
-    {
-        return nd::map([component] (auto p) { return p[component]; });
-    };
-
-    auto area_from_vertices = [component] (auto vertices)
+static auto area_from_vertices()
+{
+    return [] (auto vertices)
     {
         auto dx = vertices | component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
         auto dy = vertices | component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
         return dx * dy;
     };
+};
+
+
+
+
+//=============================================================================
+mara::unit_mass<double> binary::disk_mass(const solution_t& solution, const solver_data_t& solver_data)
+{
+    auto v0 = solver_data.vertices;
+    auto u0 = solution.conserved;
+    auto dA = v0.map(area_from_vertices());
+    auto sigma = u0.map(component(0));
+    return (sigma * dA).map(nd::sum()).sum();
+}
+
+mara::unit_angmom<double> binary::disk_angular_momentum(const solution_t& solution, const solver_data_t& solver_data)
+{
+    auto v0 = solver_data.vertices;
+    auto u0 = solution.conserved;
+    auto dA = v0.map(area_from_vertices());
+    auto c0 = v0.map(nd::midpoint_on_axis(0)).map(nd::midpoint_on_axis(1));
+    auto xc = c0.map(component(0));
+    auto yc = c0.map(component(1));
+    auto px = u0.map(component(1)) * mara::make_velocity(1.0); // iso2d::conserved_t are all 'mass' ;(
+    auto py = u0.map(component(2)) * mara::make_velocity(1.0);
+    auto Lz = xc * py - yc * px;
+    return (Lz * dA).map(nd::sum()).sum();
+}
+
+
+
+
+//=============================================================================
+binary::diagnostic_fields_t binary::diagnostic_fields(const solution_t& solution, const mara::config_t& run_config)
+{
+    auto solver_data = create_solver_data(run_config);
+    auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
 
     auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
     auto v0 = solver_data.vertices;
@@ -30,7 +64,7 @@ binary::diagnostic_fields_t binary::diagnostic_fields(const solution_t& solution
     auto yc = c0.map(component(1));
     auto u0 = solution.conserved;
     auto p0 = u0.map(nd::map(recover_primitive)).map(nd::to_shared());
-    auto dA = v0.map(area_from_vertices).map(nd::to_shared());
+    auto dA = v0.map(area_from_vertices()).map(nd::to_shared());
 
     auto rc = (xc * xc + yc * yc).map(nd::map([] (mara::unit_area<double> r2) { return r2.pow<1, 2>(); }));
     auto rhat_x =  xc / rc;

@@ -14,7 +14,8 @@ struct h5::hdf5_type_info<binary::time_series_sample_t>
     {
         return h5::Datatype::compound<native_type>({
             h5_compound_type_member(native_type, time),
-            h5_compound_type_member(native_type, total_disk_mass),
+            h5_compound_type_member(native_type, disk_mass),
+            h5_compound_type_member(native_type, disk_angular_momentum),
             h5_compound_type_member(native_type, mass_accreted_on),
             h5_compound_type_member(native_type, integrated_torque_on),
             h5_compound_type_member(native_type, work_done_on),
