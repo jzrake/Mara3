@@ -37,7 +37,7 @@ OBJ         := $(SRC:%.cpp=%.o)
 DEP         := $(SRC:%.cpp=%.d)
 EXE         := mara
 
-EXAMPLE_SRC := $(wildcard examples/*.cpp)
+EXAMPLE_SRC := $(wildcard examples/*.cpp) $(wildcard examples/advect_1d/*.cpp)
 EXAMPLE_DEP := $(EXAMPLE_SRC:%.cpp=%.d)
 EXAMPLE_EXE := $(EXAMPLE_SRC:%.cpp=%)
 
