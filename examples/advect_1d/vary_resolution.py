@@ -1,0 +1,25 @@
+suite = {
+    'subprog': '',
+    'comment': 'Variation of resolution',
+    'exe': 'examples/advect_1d/advect_1d',
+    'job_params': dict(hours=12, nodes=1),
+    'mara_opts': dict(
+        tfinal=2.0,
+        pulse_width=0.2,
+        cfl_number=0.5,
+        wavespeed=1.0,
+        delta_t_diagnostic=0.2),
+     'runs': {
+        'res_00050': dict(resolution=50),
+        'res_00100': dict(resolution=100),
+        'res_00200': dict(resolution=200),
+        'res_00400': dict(resolution=400),
+        'res_00800': dict(resolution=800),
+        'res_01600': dict(resolution=1600),
+        'res_03200': dict(resolution=3200),
+        'res_06400': dict(resolution=6400),
+        'res_12800': dict(resolution=12800),
+        'res_25600': dict(resolution=25600),
+        'res_51200': dict(resolution=51200),
+    },
+}
