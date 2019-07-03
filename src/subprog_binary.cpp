@@ -45,7 +45,7 @@ namespace binary
     auto next_solution(const solution_t& solution, const solver_data_t& solver_data);
     auto next_schedule(const state_t& state);
     auto next_state(const state_t& state, const solver_data_t& solver_data);
-    auto run_tasks(const state_t& state);
+    auto run_tasks(const state_t& state, const solver_data_t& solver_data);
     auto simulation_should_continue(const state_t& state);
 }
 
@@ -102,7 +102,7 @@ binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_
         auto rc             = 2.5;
         auto r2             = x * x + y * y;
         auto r              = std::sqrt(r2);
-        auto sigma          = std::exp(-std::min(5.0, std::pow(r - rc, 2) / rc / 2));
+        auto sigma          = std::max(1e-12, std::exp(-std::pow(r - rc, 2) / rc / 2));
         auto ag             = -GM * std::pow(r2 + rs * rs, -1.5) * r;
         auto omega2         = -ag / r;
         auto vp             = (counter_rotate ? -1 : 1) * r * std::sqrt(omega2);
@@ -246,14 +246,14 @@ auto binary::next_state(const state_t& state, const solver_data_t& solver_data)
 //=============================================================================
 auto binary::simulation_should_continue(const state_t& state)
 {
-    return state.solution.time / (2 * M_PI) < state.run_config.get<double>("tfinal");
+    return state.solution.time / (2 * M_PI) < state.run_config.get_double("tfinal");
 }
 
 
 
 
 //=============================================================================
-auto binary::run_tasks(const state_t& state)
+auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
 {
 
 
@@ -285,14 +285,15 @@ auto binary::run_tasks(const state_t& state)
 
 
     //=========================================================================
-    auto record_time_series = [] (state_t state)
+    auto record_time_series = [&solver_data] (state_t state)
     {
         auto sample = time_series_sample_t();
-        sample.time                 = state.solution.time;
-        sample.total_disk_mass      = 0.0; // TODO
-        sample.mass_accreted_on     = state.solution.mass_accreted_on;
-        sample.integrated_torque_on = state.solution.integrated_torque_on;
-        sample.work_done_on         = state.solution.work_done_on;
+        sample.time                  = state.solution.time;
+        sample.mass_accreted_on      = state.solution.mass_accreted_on;
+        sample.integrated_torque_on  = state.solution.integrated_torque_on;
+        sample.work_done_on          = state.solution.work_done_on;
+        sample.disk_mass             = disk_mass            (state.solution, solver_data);
+        sample.disk_angular_momentum = disk_angular_momentum(state.solution, solver_data);
         state.time_series = state.time_series.prepend(sample);
         return mara::complete_task_in(state, "record_time_series");
     };
@@ -337,20 +338,21 @@ public:
         auto solver_data = binary::create_solver_data(run_config);
         auto state       = binary::create_state(run_config);
         auto next        = std::bind(binary::next_state, std::placeholders::_1, solver_data);
+        auto tasks       = std::bind(binary::run_tasks, std::placeholders::_1, solver_data);
         auto perf        = mara::perf_diagnostics_t();
 
         binary::prepare_filesystem(run_config);
         binary::set_scheme_globals(run_config);
         mara::pretty_print(std::cout, "config", run_config);
-        state = binary::run_tasks(state);
+        state = tasks(state);
 
         while (binary::simulation_should_continue(state))
         {
-            std::tie(state, perf) = mara::time_execution(mara::compose(binary::run_tasks, next), state);
+            std::tie(state, perf) = mara::time_execution(mara::compose(tasks, next), state);
             binary::print_run_loop_message(state, perf);
         }
 
-        run_tasks(next(state));
+        tasks(next(state));
         return 0;
     }
 

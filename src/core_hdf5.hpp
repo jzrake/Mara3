@@ -823,6 +823,10 @@ public:
 
     GroupType require_group(const std::string& name)
     {
+        if (name == "/")
+        {
+            return open_group(name);
+        }
         if (link.contains(name, Object::group))
         {
             return open_group(name);

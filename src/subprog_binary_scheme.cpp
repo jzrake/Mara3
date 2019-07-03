@@ -213,10 +213,10 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     // Gravitational force, sink fields, and buffer zone source term
     //=========================================================================
-    auto fg1 =       grav_vdot_field(solver_data, body1_pos, binary.body1.mass) * m0;
-    auto fg2 =       grav_vdot_field(solver_data, body2_pos, binary.body2.mass) * m0;
-    auto ss1 = -u0 * sink_rate_field(solver_data, body1_pos) * dA;
-    auto ss2 = -u0 * sink_rate_field(solver_data, body2_pos) * dA;
+    auto fg1 =        grav_vdot_field(solver_data, body1_pos, binary.body1.mass) * m0;
+    auto fg2 =        grav_vdot_field(solver_data, body2_pos, binary.body2.mass) * m0;
+    auto ss1 =  -u0 * sink_rate_field(solver_data, body1_pos) * dA;
+    auto ss2 =  -u0 * sink_rate_field(solver_data, body2_pos) * dA;
     auto sg  =  (fg1 + fg2).map(nd::map(force_to_source_terms));
     auto ss  =  (ss1 + ss2);
     auto bz  =  (solver_data.initial_conserved - u0) * solver_data.buffer_rate_field * dA;
