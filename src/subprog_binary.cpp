@@ -75,11 +75,13 @@ mara::config_template_t binary::create_config_template()
     .item("softening_radius",    0.05)          // gravitational softening radius
     .item("sink_radius",         0.05)          // radius of mass (and momentum) subtraction region
     .item("sink_rate",            1e2)          // sink rate at the point masses (orbital angular frequency)
+    .item("buffer_damping_rate", 10.0)          // maximum rate of buffer zone, where solution is driven to initial state
     .item("domain_radius",       12.0)          // half-size of square domain
+    .item("disk_radius",          2.0)          // characteristic disk radius (in units of binary separation)
+    .item("ambient_density",     1e-3)          // surface density beyond torus
     .item("separation",           1.0)          // binary separation: 0.0 or 1.0 (zero emulates a single body)
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
-    .item("buffer_damping_rate", 10.0)          // maximum rate of buffer zone, where solution is driven to initial state
     .item("counter_rotate",         0)          // retrograde disk option: 0 or 1
     .item("mach_number",         10.0);
 }
@@ -91,26 +93,44 @@ mara::config_template_t binary::create_config_template()
 binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_config)
 {
     auto softening_radius  = run_config.get_double("softening_radius");
+    auto disk_radius       = run_config.get_double("disk_radius");
+    auto mach_number       = run_config.get_double("mach_number");
+    auto ambient_density   = run_config.get_double("ambient_density");
     auto counter_rotate    = run_config.get_int("counter_rotate");
+
+
+    auto sigma = [=] (double r)
+    {
+        auto rc = disk_radius;
+        auto s1 = ambient_density;
+        return std::exp(-0.5 * (r / rc - 1) * (r / rc - 1)) + s1;
+    };
+    auto dlogsigma_dlogr = [=] (double r)
+    {
+        auto rc = disk_radius;
+        auto s1 = ambient_density;
+        return -r * (r - rc) / rc / rc * (1.0 - s1 / sigma(r));
+    };
 
     return [=] (location_2d_t point)
     {
         auto GM             = 1.0;
+        auto cs2            = 1.0 / mach_number / mach_number; // constant sound-speed
         auto x              = point[0].value;
         auto y              = point[1].value;
         auto rs             = softening_radius;
-        auto rc             = 2.5;
         auto r2             = x * x + y * y;
         auto r              = std::sqrt(r2);
-        auto sigma          = std::max(1e-12, std::exp(-std::pow(r - rc, 2) / rc / 2));
-        auto ag             = -GM * std::pow(r2 + rs * rs, -1.5) * r;
-        auto omega2         = -ag / r;
-        auto vp             = (counter_rotate ? -1 : 1) * r * std::sqrt(omega2);
+        auto gradp_term     = cs2 * dlogsigma_dlogr(r);
+        auto vp             = std::sqrt(GM / (r + rs) + gradp_term) * (counter_rotate ? -1 : 1);
         auto vx             = vp * (-y / r);
         auto vy             = vp * ( x / r);
 
+        if (GM / (r + rs) + gradp_term < 0.0)
+            throw std::invalid_argument("no disk solution: increase mach_number or ambient_density");
+
         return mara::iso2d::primitive_t()
-            .with_sigma(sigma)
+            .with_sigma(sigma(r))
             .with_velocity_x(vx)
             .with_velocity_y(vy);
     };
