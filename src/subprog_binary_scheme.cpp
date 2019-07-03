@@ -112,22 +112,6 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
 
     /*
-     * @brief      Return an array of areas dx * dy from the given vertex
-     *             locations.
-     *
-     * @param[in]  vertices  An array of vertices
-     *
-     * @return     A new array
-     */
-    auto area_from_vertices = [component] (auto vertices)
-    {
-        auto dx = vertices | component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
-        auto dy = vertices | component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
-        return dx * dy;
-    };
-
-
-    /*
      * @brief      Apply a piecewise linear extrapolation, along the given axis,
      *             to the cells in each array of a tree.
      *
@@ -199,9 +183,9 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     // Intermediate scheme data
     //=========================================================================
     auto v0  =  solver_data.vertices;
+    auto dA  =  solver_data.cell_areas;
     auto u0  =  solution.conserved;
     auto p0  =  u0.map(nd::map(recover_primitive)).map(evaluate, tree_launch);
-    auto dA  =  v0.map(area_from_vertices).map(evaluate, tree_launch);
     auto dx  =  v0.map([component] (auto v) { return v | component(0) | nd::difference_on_axis(0); });
     auto dy  =  v0.map([component] (auto v) { return v | component(1) | nd::difference_on_axis(1); });
     auto fx  =  extend(p0, 0).map(extrapolate(0), tree_launch).map(intercell_flux(mara::iso2d::riemann_hlle, 0)) * dy;
@@ -229,11 +213,25 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     // The total force on each component, Mdot's, Ldot's, and Edot's.
     //=========================================================================
+    auto xc = solver_data.cell_centers.map(component(0));
+    auto yc = solver_data.cell_centers.map(component(1));
     auto fg1_tot = -fg1.map(nd::sum(), tree_launch).sum();
     auto fg2_tot = -fg2.map(nd::sum(), tree_launch).sum();
     auto ss1_tot = -ss1.map(component(0)).map(nd::sum(), tree_launch).sum();
     auto ss2_tot = -ss2.map(component(0)).map(nd::sum(), tree_launch).sum();
+    auto px_accrete1_rate = -ss1.map(component(1)) * mara::make_velocity(1.0);
+    auto py_accrete1_rate = -ss1.map(component(2)) * mara::make_velocity(1.0);
+    auto px_accrete2_rate = -ss2.map(component(1)) * mara::make_velocity(1.0);
+    auto py_accrete2_rate = -ss2.map(component(2)) * mara::make_velocity(1.0);
+    auto px_ejection_rate =  -bz.map(component(1)) * mara::make_velocity(1.0);
+    auto py_ejection_rate =  -bz.map(component(2)) * mara::make_velocity(1.0);
+    auto m0_ejection_rate =  -bz.map(component(0)).map(nd::sum(), tree_launch).sum();
+    auto lz_ejection_rate = (xc * py_ejection_rate - yc * px_ejection_rate).map(nd::sum(), tree_launch).sum();
+    auto lz_accrete1_rate = (xc * py_accrete1_rate - yc * px_accrete1_rate).map(nd::sum(), tree_launch).sum();
+    auto lz_accrete2_rate = (xc * py_accrete2_rate - yc * px_accrete2_rate).map(nd::sum(), tree_launch).sum();
+
     auto Mdot = mara::make_sequence(ss1_tot, ss2_tot);
+    auto Kdot = mara::make_sequence(lz_accrete1_rate, lz_accrete2_rate);
     auto Ldot = mara::make_sequence(cross_prod_z(body1_pos, fg1_tot), cross_prod_z(body2_pos, fg2_tot));
     auto Edot = mara::make_sequence((fg1_tot * body1_vel).sum(), (fg2_tot * body2_vel).sum());
 
@@ -244,9 +242,13 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         solution.time + dt,
         solution.iteration + 1,
         u1.map(evaluate, tree_launch),
-        solution.mass_accreted_on     + Mdot * dt,
-        solution.integrated_torque_on + Ldot * dt,
-        solution.work_done_on         + Edot * dt,
+
+        solution.mass_accreted_on             + Mdot * dt,
+        solution.angular_momentum_accreted_on + Kdot * dt,
+        solution.integrated_torque_on         + Ldot * dt,
+        solution.work_done_on                 + Edot * dt,
+        solution.mass_ejected                 + m0_ejection_rate * dt,
+        solution.angular_momentum_ejected     + lz_ejection_rate * dt,
     };
 }
 
@@ -260,9 +262,13 @@ binary::solution_t binary::solution_t::operator+(const solution_t& other) const
         time       + other.time,
         iteration  + other.iteration,
         (conserved + other.conserved).map(nd::to_shared(), tree_launch),
-        mass_accreted_on     + other.mass_accreted_on,
-        integrated_torque_on + other.integrated_torque_on,
-        work_done_on         + other.work_done_on,
+
+        mass_accreted_on               + other.mass_accreted_on,
+        angular_momentum_accreted_on   + other.angular_momentum_accreted_on,
+        integrated_torque_on           + other.integrated_torque_on,
+        work_done_on                   + other.work_done_on,
+        mass_ejected                   + other.mass_ejected,
+        angular_momentum_ejected       + other.angular_momentum_ejected,
     };
 }
 
@@ -272,9 +278,13 @@ binary::solution_t binary::solution_t::operator*(mara::rational_number_t scale) 
         time       * scale.as_double(),
         iteration  * scale,
         (conserved * scale.as_double()).map(nd::to_shared(), tree_launch),
-        mass_accreted_on     * scale.as_double(),
-        integrated_torque_on * scale.as_double(),
-        work_done_on         * scale.as_double(),
+
+        mass_accreted_on               * scale.as_double(),
+        angular_momentum_accreted_on   * scale.as_double(),
+        integrated_torque_on           * scale.as_double(),
+        work_done_on                   * scale.as_double(),
+        mass_ejected                   * scale.as_double(),
+        angular_momentum_ejected       * scale.as_double(),
     };
 }
 

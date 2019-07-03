@@ -6,16 +6,35 @@
 
 
 //=============================================================================
+static auto component(std::size_t component)
+{
+    return nd::map([component] (auto p) { return p[component]; });
+};
+
+
+
+
+//=============================================================================
 binary::solver_data_t binary::create_solver_data(const mara::config_t& run_config)
 {
     auto vertices = create_vertices(run_config);
-
-    auto primitive = vertices.map([&run_config] (auto block)
+    auto cell_centers = vertices.map([] (auto block)
     {
         return block
         | nd::midpoint_on_axis(0)
-        | nd::midpoint_on_axis(1)
-        | nd::map(create_disk_profile(run_config));
+        | nd::midpoint_on_axis(1);
+    });
+
+    auto cell_areas = vertices.map([] (auto block)
+    {
+        auto dx = block | component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
+        auto dy = block | component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
+        return dx * dy;
+    });
+
+    auto primitive = cell_centers.map([&run_config] (auto block)
+    {
+        return block | nd::map(create_disk_profile(run_config));
     });
 
     auto min_dx = vertices.map([] (auto block)
@@ -54,9 +73,12 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
             auto rc = (p[0] * p[0] + p[1] * p[1]).pow<1, 2>();
             auto y = (tightness * (rc - r1)).scalar();
             return buffer_rate * (1.0 + std::tanh(y));
-        })
-        | nd::to_shared();
+        });
     });
+
+    auto initial_conserved = primitive
+    .map(nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area)))
+    .map(nd::to_shared());
 
 
     //=========================================================================
@@ -69,11 +91,11 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     result.rk_order              = run_config.get_int("rk_order");
     result.recommended_time_step = std::min(min_dx, min_dy) / max_velocity * run_config.get_double("cfl_number");
     result.binary_params         = create_binary_params(run_config);
-    result.buffer_rate_field     = buffer_rate_field;
+    result.buffer_rate_field     = buffer_rate_field.map(nd::to_shared());
+    result.cell_centers          = cell_centers.map(nd::to_shared());
+    result.cell_areas            = cell_areas.map(nd::to_shared());
     result.vertices              = vertices;
-    result.initial_conserved     = primitive
-    .map(nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area)))
-    .map(nd::to_shared());
+    result.initial_conserved     = initial_conserved;
 
     if      (run_config.get_string("riemann") == "hlle") result.riemann_solver = riemann_solver_t::hlle;
     // else if (run_config.get_string("riemann") == "hllc") result.riemann_solver = riemann_solver_t::hllc;

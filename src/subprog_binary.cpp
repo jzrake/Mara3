@@ -168,7 +168,7 @@ binary::solution_t binary::create_solution(const mara::config_t& run_config)
         | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
         | nd::to_shared();
     });
-    return solution_t{0, 0.0, conserved, {}, {}, {}};
+    return solution_t{0, 0.0, conserved, {}, {}, {}, {}, {}, {}};
 }
 
 mara::schedule_t binary::create_schedule(const mara::config_t& run_config)
@@ -288,12 +288,16 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
     auto record_time_series = [&solver_data] (state_t state)
     {
         auto sample = time_series_sample_t();
-        sample.time                  = state.solution.time;
-        sample.mass_accreted_on      = state.solution.mass_accreted_on;
-        sample.integrated_torque_on  = state.solution.integrated_torque_on;
-        sample.work_done_on          = state.solution.work_done_on;
-        sample.disk_mass             = disk_mass            (state.solution, solver_data);
-        sample.disk_angular_momentum = disk_angular_momentum(state.solution, solver_data);
+        sample.time                         = state.solution.time;
+        sample.mass_accreted_on             = state.solution.mass_accreted_on;
+        sample.angular_momentum_accreted_on = state.solution.angular_momentum_accreted_on;
+        sample.integrated_torque_on         = state.solution.integrated_torque_on;
+        sample.work_done_on                 = state.solution.work_done_on;
+        sample.mass_ejected                 = state.solution.mass_ejected;
+        sample.angular_momentum_ejected     = state.solution.angular_momentum_ejected;
+        sample.disk_mass                    = disk_mass            (state.solution, solver_data);
+        sample.disk_angular_momentum        = disk_angular_momentum(state.solution, solver_data);
+
         state.time_series = state.time_series.prepend(sample);
         return mara::complete_task_in(state, "record_time_series");
     };
