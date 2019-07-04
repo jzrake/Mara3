@@ -1,3 +1,4 @@
+#include <iostream>
 #include "core_ndarray_ops.hpp"
 #include "math_interpolation.hpp"
 #include "mesh_prolong_restrict.hpp"
@@ -72,7 +73,7 @@ auto binary::sink_rate_field(const solver_data_t& solver_data, location_2d_t sin
 
 
 //=============================================================================
-binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt)
+binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
 {
 
 
@@ -119,7 +120,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
      *
      * @return     A function that operates on trees
      */
-    auto extrapolate = [plm_theta=solver_data.plm_theta] (std::size_t axis)
+    auto extrapolate = [plm_theta=safe_mode ? 0.0 : solver_data.plm_theta] (std::size_t axis)
     {
         return [plm_theta, axis] (auto P)
         {
@@ -208,7 +209,14 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     // The updated conserved densities
     //=========================================================================
-    auto u1  = u0 + (lx + ly + ss + sg + bz) * dt / dA;
+    auto u1 = u0 + (lx + ly + ss + sg + bz) * dt / dA;
+    auto next_conserved = u1.map(evaluate, tree_launch);
+
+    if (! safe_mode && (next_conserved.map(component(0)) < 0.0).map(nd::any()).any())
+    {
+        std::cout << "binary::advance (negative density; re-trying in safe mode)" << std::endl;
+        return advance(solution, solver_data, dt, true);
+    }
 
 
     // The total force on each component, Mdot's, Ldot's, and Edot's.
@@ -241,7 +249,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     return solution_t{
         solution.time + dt,
         solution.iteration + 1,
-        u1.map(evaluate, tree_launch),
+        next_conserved,
 
         solution.mass_accreted_on             + Mdot * dt,
         solution.angular_momentum_accreted_on + Kdot * dt,

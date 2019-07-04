@@ -60,11 +60,11 @@ mara::config_template_t binary::create_config_template()
     .item("outdir",              "data")        // directory where data products are written to
     .item("cpi",                 10.0)          // checkpoint interval (orbits; chkpt.????.h5 - snapshot of app_state)
     .item("dfi",                  1.0)          // diagnostic field interval (orbits; diagnostics.????.h5)
-    .item("tsi",                  0.1)          // time series interval (orbits)
+    .item("tsi",                 2e-3)          // time series interval (orbits)
     .item("tfinal",               1.0)          // simulation stop time (orbits)
     .item("cfl_number",           0.4)          // the Courant number to use
     .item("depth",                  4)
-    .item("block_size",            32)
+    .item("block_size",            24)
     .item("focus_factor",        2.00)
     .item("focus_index",         2.00)
     .item("threaded",               1)          // set to 0 to disable multi-threaded tree updates
@@ -72,18 +72,18 @@ mara::config_template_t binary::create_config_template()
     .item("reconstruct_method", "plm")          // zone extrapolation method: pcm or plm
     .item("plm_theta",            1.8)          // plm theta parameter: [1.0, 2.0]
     .item("riemann",           "hlle")          // riemann solver to use: hlle only (hllc disabled until further testing)
-    .item("softening_radius",    0.05)          // gravitational softening radius
-    .item("sink_radius",         0.05)          // radius of mass (and momentum) subtraction region
+    .item("softening_radius",    0.02)          // gravitational softening radius
+    .item("sink_radius",         0.02)          // radius of mass (and momentum) subtraction region
     .item("sink_rate",            1e2)          // sink rate at the point masses (orbital angular frequency)
-    .item("buffer_damping_rate", 10.0)          // maximum rate of buffer zone, where solution is driven to initial state
-    .item("domain_radius",       12.0)          // half-size of square domain
+    .item("buffer_damping_rate",  1.0)          // maximum rate of buffer zone, where solution is driven to initial state
+    .item("domain_radius",       24.0)          // half-size of square domain
     .item("disk_radius",          2.0)          // characteristic disk radius (in units of binary separation)
-    .item("ambient_density",     1e-3)          // surface density beyond torus
+    .item("ambient_density",     1e-4)          // surface density beyond torus
     .item("separation",           1.0)          // binary separation: 0.0 or 1.0 (zero emulates a single body)
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
     .item("counter_rotate",         0)          // retrograde disk option: 0 or 1
-    .item("mach_number",         10.0);
+    .item("mach_number",         40.0);
 }
 
 
@@ -97,19 +97,18 @@ binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_
     auto mach_number       = run_config.get_double("mach_number");
     auto ambient_density   = run_config.get_double("ambient_density");
     auto counter_rotate    = run_config.get_int("counter_rotate");
-
+    auto rc = disk_radius;
+    auto s1 = ambient_density;
 
     auto sigma = [=] (double r)
     {
-        auto rc = disk_radius;
-        auto s1 = ambient_density;
         return std::exp(-0.5 * (r / rc - 1) * (r / rc - 1)) + s1;
     };
+
     auto dlogsigma_dlogr = [=] (double r)
     {
-        auto rc = disk_radius;
-        auto s1 = ambient_density;
-        return -r * (r - rc) / rc / rc * (1.0 - s1 / sigma(r));
+        auto x = r / rc;
+        return x * (1 - x) * (1 - s1 / sigma(r));
     };
 
     return [=] (location_2d_t point)
