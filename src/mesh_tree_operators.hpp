@@ -55,6 +55,9 @@ namespace mara
         std::size_t zones_per_block,
         std::size_t depth);
 
+    template<typename ValueType, std::size_t Rank, typename PostFunction>
+    auto get_cell_block(const arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_t<Rank> index, PostFunction&& post);
+
     template<typename ValueType, std::size_t Rank>
     auto get_cell_block(const arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_t<Rank> index);
 
@@ -185,23 +188,28 @@ mara::amr_types::vertex_2d_tree_t mara::create_vertex_quadtree(
  *             cell-like density (not mass) data. Throws an exception if the
  *             tree has over-refined neighbors.
  *
- * @param[in]  tree       The tree of blocks
- * @param[in]  index      The target index
+ * @param[in]  tree          The tree of blocks
+ * @param[in]  index         The target index
+ * @param      post          An operator that is applied to the (unevaluated)
+ *                           block. This would commonly be a selection (since
+ *                           the whole block may not be required) followed by
+ *                           nd::to_shared.
  *
- * @tparam     ValueType  The value type of the array in the tree (must be a
- *                        shared array of some type)
- * @tparam     Rank       The rank of the tree
+ * @tparam     ValueType     The value type of the array in the tree (must be a
+ *                           shared array of some type)
+ * @tparam     Rank          The rank of the tree
+ * @tparam     PostFunction  The type of the post operator
  *
  * @return     The retrieved or manufactured block of cells
  */
-template<typename ValueType, std::size_t Rank>
-auto mara::get_cell_block(const arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_t<Rank> index)
+template<typename ValueType, std::size_t Rank, typename PostFunction>
+auto mara::get_cell_block(const arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_t<Rank> index, PostFunction&& post)
 {
     try {
         // If the tree has a value at the target index, then return that value.
         if (tree.contains(index))
         {
-            return tree.at(index);
+            return tree.at(index) | post;
         }
 
         // If the tree has a value at the node above the target index, then refine
@@ -210,19 +218,25 @@ auto mara::get_cell_block(const arithmetic_binary_tree_t<ValueType, Rank>& tree,
         if (tree.contains(index.parent_index()))
         {
             auto ib = mara::to_integral(index.relative_to_parent().orthant());
-            return (tree.at(index.parent_index()) | mara::refine_cells<Rank>())[ib].shared();
+            return (tree.at(index.parent_index()) | mara::refine_cells<Rank>())[ib] | post;
         }
 
         // If the target index is not a leaf, then combine the data from its
         // children, and then coarsen it.
-        return mara::combine_cells(index.child_indexes().map([tree] (auto i) { return get_cell_block(tree, i); }))
+        return mara::combine_cells(index.child_indexes().map([tree] (auto i) { return get_cell_block(tree, i, nd::to_shared()); }))
              | mara::coarsen_cells<Rank>()
-             | nd::to_shared();
+             | post;
     }
     catch (const std::exception& e)
     {
         throw std::invalid_argument("mara::get_cell_block (tree has over-refined neighbors?) " + std::string(e.what()));
     }
+}
+
+template<typename ValueType, std::size_t Rank>
+auto mara::get_cell_block(const arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_t<Rank> index)
+{
+    return get_cell_block(tree, index, nd::to_shared());
 }
 
 
