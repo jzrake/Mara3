@@ -174,7 +174,7 @@ def make_movie_impl(args, plot_fn, figsize=[16, 6]):
     with writer.saving(fig, args.output, dpi):
         for filename in args.filenames:
             print(filename)
-            plot_fn(fig, filename, edges=args.edges, depth=args.depth, **get_ranges(args))
+            fig = plot_fn(fig, filename, edges=args.edges, depth=args.depth, **get_ranges(args))
             writer.grab_frame()
             fig.clf()
 
@@ -186,6 +186,7 @@ def raise_figure_windows_impl(args, plot_fn, figsize=[16, 6]):
         print(filename)
         fig = plt.figure(figsize=figsize)
         plot_fn(fig, filename, edges=args.edges, depth=args.depth, **get_ranges(args))
+        fig.suptitle(filename)
     plt.show()
 
 
@@ -251,25 +252,28 @@ def time_series(args):
 
         ax1.plot(t, M1, c='g', lw=1, ls='-',  label=r'$M_1$')
         ax1.plot(t, M2, c='r', lw=2, ls='--', label=r'$M_2$')
-        ax1.plot(t, Md, c='g', label=r'$\Delta M_{\rm disk}$')
+        ax1.plot(t, Md, c='g', label=r'$M_{\rm disk}$')
         ax1.plot(t, Me, c='b', label=r'$M_{\rm ejected}$')
         ax1.plot(t, M1 + M2 + Md + Me, c='orange', lw=3, label=r'$M_{\rm tot}$')
 
-        plot_moving_average(ax2, t[:-1], Mdot,        window_size=10000, avg_only=args.avg_only, c=c, lw=2, label=fname)
-        plot_moving_average(ax3, t[:-1], Ldot / Mdot, window_size=10000, avg_only=args.avg_only, c=c, lw=2, label=fname)
+        plot_moving_average(ax2, t[:-1], Mdot / Md[:-1], window_size=args.window_size, avg_only=args.avg_only, c=c, lw=2, label=fname)
+        plot_moving_average(ax3, t[:-1], Ldot / Mdot,    window_size=args.window_size, avg_only=args.avg_only, c=c, lw=2, label=fname)
 
-        ax2.axhline(np.mean(Mdot[steady]),                         lw=1.0, c=c, ls='--')
-        ax3.axhline(np.mean(Ldot[steady]) / np.mean(Mdot[steady]), lw=1.0, c=c, ls='--')
+        # ax2.axhline(np.mean((Mdot / Md[:-1])[steady]), lw=1.0, c=c, ls='--')
+        # ax3.axhline(np.mean((Ldot / Mdot)   [steady]), lw=1.0, c=c, ls='--')
+        ax2.axhline(np.mean(Mdot[steady]) / np.mean(Md[:-1][steady]), lw=1.0, c=c, ls='--')
+        ax3.axhline(np.mean(Ldot[steady]) / np.mean(Mdot   [steady]), lw=1.0, c=c, ls='--')
+
         try:
             ax2.axvline(t[steady][0], c='k', ls='--', lw=0.5)
             ax3.axvline(t[steady][0], c='k', ls='--', lw=0.5)
         except:
             print("Warning: no data points are available after the saturation time (try with e.g. --saturation-time=50)")
 
-    ax1.set_yscale('log')
+    # ax1.set_yscale('log')
     ax1.legend()
     ax2.legend()
-    ax2.set_ylabel(r'$\dot M$')
+    ax2.set_ylabel(r'$\dot M / M_{\rm disk}$')
     ax2.set_yscale('log')
     ax3.set_xlabel("Orbits")
     ax3.set_ylabel(r'$\dot L / \dot M$')
@@ -285,6 +289,7 @@ if __name__ == "__main__":
     parser.add_argument("--time-series", '-t', action='store_true')
     parser.add_argument("--avg-only", action='store_true')
     parser.add_argument("--saturation-time", type=float, default=150.0)
+    parser.add_argument("--window-size", type=int, default=1000)
     parser.add_argument("--with-vel", action='store_true')
     parser.add_argument("--output", "-o", default="output.mp4")
     parser.add_argument("--sigma", default="default", type=str)
