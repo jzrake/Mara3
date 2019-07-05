@@ -310,10 +310,10 @@ mara::iso2d::primitive_t mara::iso2d::roe_average(
  *
  * @param[in]  Pl                     The state to the left of the interface
  * @param[in]  Pr                     The state to the right
- * @param[in]  sound_speed_squared_l  The sound speed squared to the left of the interface
+ * @param[in]  sound_speed_squared_l  The sound speed squared to the left of the
+ *                                    interface
  * @param[in]  sound_speed_squared_r  The sound speed squared to the right
  * @param[in]  nhat                   The normal vector to the interface
- * @param[in]  gamma_law_index  The gamma law index
  *
  * @return     A vector of fluxes
  */
