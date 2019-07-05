@@ -45,7 +45,7 @@ namespace binary
     auto next_solution(const solution_t& solution, const solver_data_t& solver_data);
     auto next_schedule(const state_t& state);
     auto next_state(const state_t& state, const solver_data_t& solver_data);
-    auto run_tasks(const state_t& state);
+    auto run_tasks(const state_t& state, const solver_data_t& solver_data);
     auto simulation_should_continue(const state_t& state);
 }
 
@@ -60,11 +60,11 @@ mara::config_template_t binary::create_config_template()
     .item("outdir",              "data")        // directory where data products are written to
     .item("cpi",                 10.0)          // checkpoint interval (orbits; chkpt.????.h5 - snapshot of app_state)
     .item("dfi",                  1.0)          // diagnostic field interval (orbits; diagnostics.????.h5)
-    .item("tsi",                  0.1)          // time series interval (orbits)
+    .item("tsi",                 2e-3)          // time series interval (orbits)
     .item("tfinal",               1.0)          // simulation stop time (orbits)
     .item("cfl_number",           0.4)          // the Courant number to use
     .item("depth",                  4)
-    .item("block_size",            32)
+    .item("block_size",            24)
     .item("focus_factor",        2.00)
     .item("focus_index",         2.00)
     .item("threaded",               1)          // set to 0 to disable multi-threaded tree updates
@@ -72,16 +72,18 @@ mara::config_template_t binary::create_config_template()
     .item("reconstruct_method", "plm")          // zone extrapolation method: pcm or plm
     .item("plm_theta",            1.8)          // plm theta parameter: [1.0, 2.0]
     .item("riemann",           "hlle")          // riemann solver to use: hlle only (hllc disabled until further testing)
-    .item("softening_radius",    0.05)          // gravitational softening radius
-    .item("sink_radius",         0.05)          // radius of mass (and momentum) subtraction region
+    .item("softening_radius",    0.02)          // gravitational softening radius
+    .item("sink_radius",         0.02)          // radius of mass (and momentum) subtraction region
     .item("sink_rate",            1e2)          // sink rate at the point masses (orbital angular frequency)
-    .item("domain_radius",       12.0)          // half-size of square domain
+    .item("buffer_damping_rate",  1.0)          // maximum rate of buffer zone, where solution is driven to initial state
+    .item("domain_radius",       24.0)          // half-size of square domain
+    .item("disk_radius",          2.0)          // characteristic disk radius (in units of binary separation)
+    .item("ambient_density",     1e-4)          // surface density beyond torus
     .item("separation",           1.0)          // binary separation: 0.0 or 1.0 (zero emulates a single body)
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
-    .item("buffer_damping_rate", 10.0)          // maximum rate of buffer zone, where solution is driven to initial state
     .item("counter_rotate",         0)          // retrograde disk option: 0 or 1
-    .item("mach_number",         10.0);
+    .item("mach_number",         40.0);
 }
 
 
@@ -91,26 +93,43 @@ mara::config_template_t binary::create_config_template()
 binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_config)
 {
     auto softening_radius  = run_config.get_double("softening_radius");
+    auto disk_radius       = run_config.get_double("disk_radius");
+    auto mach_number       = run_config.get_double("mach_number");
+    auto ambient_density   = run_config.get_double("ambient_density");
     auto counter_rotate    = run_config.get_int("counter_rotate");
+    auto rc = disk_radius;
+    auto s1 = ambient_density;
+
+    auto sigma = [=] (double r)
+    {
+        return std::exp(-0.5 * (r / rc - 1) * (r / rc - 1)) + s1;
+    };
+
+    auto dlogsigma_dlogr = [=] (double r)
+    {
+        auto x = r / rc;
+        return x * (1 - x) * (1 - s1 / sigma(r));
+    };
 
     return [=] (location_2d_t point)
     {
         auto GM             = 1.0;
+        auto cs2            = 1.0 / mach_number / mach_number; // constant sound-speed
         auto x              = point[0].value;
         auto y              = point[1].value;
         auto rs             = softening_radius;
-        auto rc             = 2.5;
         auto r2             = x * x + y * y;
         auto r              = std::sqrt(r2);
-        auto sigma          = std::exp(-std::min(5.0, std::pow(r - rc, 2) / rc / 2));
-        auto ag             = -GM * std::pow(r2 + rs * rs, -1.5) * r;
-        auto omega2         = -ag / r;
-        auto vp             = (counter_rotate ? -1 : 1) * r * std::sqrt(omega2);
+        auto gradp_term     = cs2 * dlogsigma_dlogr(r);
+        auto vp             = std::sqrt(GM / (r + rs) + gradp_term) * (counter_rotate ? -1 : 1);
         auto vx             = vp * (-y / r);
         auto vy             = vp * ( x / r);
 
+        if (GM / (r + rs) + gradp_term < 0.0)
+            throw std::invalid_argument("no disk solution: increase mach_number or ambient_density");
+
         return mara::iso2d::primitive_t()
-            .with_sigma(sigma)
+            .with_sigma(sigma(r))
             .with_velocity_x(vx)
             .with_velocity_y(vy);
     };
@@ -168,7 +187,7 @@ binary::solution_t binary::create_solution(const mara::config_t& run_config)
         | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
         | nd::to_shared();
     });
-    return solution_t{0, 0.0, conserved, {}, {}, {}};
+    return solution_t{0, 0.0, conserved, {}, {}, {}, {}, {}, {}};
 }
 
 mara::schedule_t binary::create_schedule(const mara::config_t& run_config)
@@ -246,14 +265,14 @@ auto binary::next_state(const state_t& state, const solver_data_t& solver_data)
 //=============================================================================
 auto binary::simulation_should_continue(const state_t& state)
 {
-    return state.solution.time / (2 * M_PI) < state.run_config.get<double>("tfinal");
+    return state.solution.time / (2 * M_PI) < state.run_config.get_double("tfinal");
 }
 
 
 
 
 //=============================================================================
-auto binary::run_tasks(const state_t& state)
+auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
 {
 
 
@@ -285,14 +304,19 @@ auto binary::run_tasks(const state_t& state)
 
 
     //=========================================================================
-    auto record_time_series = [] (state_t state)
+    auto record_time_series = [&solver_data] (state_t state)
     {
         auto sample = time_series_sample_t();
-        sample.time                 = state.solution.time;
-        sample.total_disk_mass      = 0.0; // TODO
-        sample.mass_accreted_on     = state.solution.mass_accreted_on;
-        sample.integrated_torque_on = state.solution.integrated_torque_on;
-        sample.work_done_on         = state.solution.work_done_on;
+        sample.time                         = state.solution.time;
+        sample.mass_accreted_on             = state.solution.mass_accreted_on;
+        sample.angular_momentum_accreted_on = state.solution.angular_momentum_accreted_on;
+        sample.integrated_torque_on         = state.solution.integrated_torque_on;
+        sample.work_done_on                 = state.solution.work_done_on;
+        sample.mass_ejected                 = state.solution.mass_ejected;
+        sample.angular_momentum_ejected     = state.solution.angular_momentum_ejected;
+        sample.disk_mass                    = disk_mass            (state.solution, solver_data);
+        sample.disk_angular_momentum        = disk_angular_momentum(state.solution, solver_data);
+
         state.time_series = state.time_series.prepend(sample);
         return mara::complete_task_in(state, "record_time_series");
     };
@@ -337,20 +361,21 @@ public:
         auto solver_data = binary::create_solver_data(run_config);
         auto state       = binary::create_state(run_config);
         auto next        = std::bind(binary::next_state, std::placeholders::_1, solver_data);
+        auto tasks       = std::bind(binary::run_tasks, std::placeholders::_1, solver_data);
         auto perf        = mara::perf_diagnostics_t();
 
         binary::prepare_filesystem(run_config);
         binary::set_scheme_globals(run_config);
         mara::pretty_print(std::cout, "config", run_config);
-        state = binary::run_tasks(state);
+        state = tasks(state);
 
         while (binary::simulation_should_continue(state))
         {
-            std::tie(state, perf) = mara::time_execution(mara::compose(binary::run_tasks, next), state);
+            std::tie(state, perf) = mara::time_execution(mara::compose(tasks, next), state);
             binary::print_run_loop_message(state, perf);
         }
 
-        run_tasks(next(state));
+        tasks(next(state));
         return 0;
     }
 

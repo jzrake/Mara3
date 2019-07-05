@@ -87,6 +87,8 @@ namespace binary
         riemann_solver_t                               riemann_solver;
         mara::two_body_parameters_t                    binary_params;
         quad_tree_t<location_2d_t>                     vertices;
+        quad_tree_t<location_2d_t>                     cell_centers;
+        quad_tree_t<mara::unit_area<double>>           cell_areas;
         quad_tree_t<mara::iso2d::conserved_per_area_t> initial_conserved;
         quad_tree_t<mara::unit_rate<double>>           buffer_rate_field;
     };
@@ -100,8 +102,11 @@ namespace binary
         quad_tree_t<mara::iso2d::conserved_per_area_t>            conserved;
 
         mara::arithmetic_sequence_t<mara::unit_mass  <double>, 2> mass_accreted_on = {};
+        mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> angular_momentum_accreted_on = {};
         mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> integrated_torque_on = {};
         mara::arithmetic_sequence_t<mara::unit_energy<double>, 2> work_done_on = {};
+        mara::unit_mass  <double>                                 mass_ejected = {};
+        mara::unit_angmom<double>                                 angular_momentum_ejected = {};
 
         solution_t operator+(const solution_t& other) const;
         solution_t operator*(mara::rational_number_t scale) const;
@@ -125,9 +130,14 @@ namespace binary
     //=========================================================================
     struct time_series_sample_t
     {
-        mara::unit_time<double> time = 0.0;
-        mara::unit_mass<double> total_disk_mass = 0.0;
+        mara::unit_time  <double>                                 time = 0.0;
+        mara::unit_mass  <double>                                 disk_mass = 0.0;
+        mara::unit_angmom<double>                                 disk_angular_momentum = 0.0;
+        mara::unit_mass  <double>                                 mass_ejected = {};
+        mara::unit_angmom<double>                                 angular_momentum_ejected = {};
+
         mara::arithmetic_sequence_t<mara::unit_mass  <double>, 2> mass_accreted_on = {};
+        mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> angular_momentum_accreted_on = {};
         mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> integrated_torque_on = {};
         mara::arithmetic_sequence_t<mara::unit_energy<double>, 2> work_done_on = {};
     };
@@ -159,8 +169,10 @@ namespace binary
     solver_data_t                create_solver_data  (const mara::config_t& run_config);
     primitive_field_t            create_disk_profile (const mara::config_t& run_config);
 
-    solution_t                   advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt);
-    diagnostic_fields_t          diagnostic_fields(const solution_t& solution, const mara::config_t& run_config);
+    diagnostic_fields_t          diagnostic_fields    (const solution_t& solution, const mara::config_t& run_config);
+    solution_t                   advance              (const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode=false);
+    mara::unit_mass  <double>    disk_mass            (const solution_t& solution, const solver_data_t& solver_data);
+    mara::unit_angmom<double>    disk_angular_momentum(const solution_t& solution, const solver_data_t& solver_data);
 
     void set_scheme_globals    (const mara::config_t& run_config);
     void prepare_filesystem    (const mara::config_t& run_config);

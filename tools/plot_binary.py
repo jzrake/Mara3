@@ -2,6 +2,7 @@
 
 
 
+
 import argparse
 import numpy as np
 import h5py
@@ -9,11 +10,61 @@ import matplotlib.pyplot as plt
 
 
 
+
+def moving_average(a, window_size=10):
+    """
+    @brief      Return the moving average of an array, with the given window
+                size.
+    
+    @param      a            The array
+    @param      window_size  The window size to use
+    
+    @return     The window-averaged array
+    """
+    n = window_size
+    ret = np.cumsum(a, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    return ret[n - 1:] / n
+
+
+
+
+def plot_moving_average(ax, x, y, window_size=100, avg_only=False, c=None, **kwargs):
+    """
+    @brief      Wrapper for ax.plot, where the exact values of x and y are
+                plotted with a lower alpha, and the moving averages are plotted
+    
+    @param      ax           The axis instance to plot on
+    @param      x            The x values
+    @param      y            The y values
+    @param      window_size  The window size to use in the moving average
+    @param      avg_only     Plot only the moving average if True
+    @param      c            The color
+    @param      kwargs       Keyword args passed to the plot of moving averages
+    
+    @return     The result of ax.plot
+    """
+
+    if not avg_only:
+        ax.plot(x, y, c=c, lw=1.0, alpha=0.5)
+    return ax.plot(moving_average(x, window_size), moving_average(y, window_size), **kwargs)
+
+
+
+
 def get_ranges(args):
+    """
+    @brief      Return the vmin and vmax keywords for fields.
+    
+    @param      args  The arguments (argparse result)
+    
+    @return     The vmin/vmax values
+    """
     return dict(
         sigma_range=eval(args.sigma, dict(default=[ -2.0, 0.0])),
         vr_range   =eval(args.vr,    dict(default=[ -0.5, 0.5])),
         vp_range   =eval(args.vp,    dict(default=[  0.0, 2.0])))
+
 
 
 
@@ -26,9 +77,10 @@ def plot_single_block(ax, h5_verts, h5_values, edges=False, **kwargs):
         Xb = X[::X.shape[0]//2, ::X.shape[1]//2]
         Yb = Y[::Y.shape[0]//2, ::Y.shape[1]//2]
         Zb = np.zeros_like(Xb + Yb)
-        ax.pcolormesh(Xb, Yb, Zb, edgecolor=(1.0, 1.0, 1.0, 0.3))
+        ax.pcolormesh(Xb, Yb, Zb, edgecolor=(1.0, 0.0, 1.0, 0.3))
 
     return ax.pcolormesh(X, Y, Z, **kwargs)
+
 
 
 
@@ -75,6 +127,7 @@ def plot_single_file_with_vel(
 
 
 
+
 def plot_single_file_sigma_only(
     fig,
     filename,
@@ -108,6 +161,7 @@ def plot_single_file_sigma_only(
 
 
 
+
 def make_movie_impl(args, plot_fn, figsize=[16, 6]):
     from matplotlib.animation import FFMpegWriter
 
@@ -126,12 +180,14 @@ def make_movie_impl(args, plot_fn, figsize=[16, 6]):
 
 
 
+
 def raise_figure_windows_impl(args, plot_fn, figsize=[16, 6]):
     for filename in args.filenames:
         print(filename)
         fig = plt.figure(figsize=figsize)
         plot_fn(fig, filename, edges=args.edges, depth=args.depth, **get_ranges(args))
     plt.show()
+
 
 
 
@@ -143,11 +199,13 @@ def make_movie(args):
 
 
 
+
 def raise_figure_windows(args):
     if args.with_vel:
         raise_figure_windows_impl(args, plot_single_file_with_vel, figsize=[16, 6])
     else:
         raise_figure_windows_impl(args, plot_single_file_sigma_only, figsize=[10, 10])
+
 
 
 
@@ -157,11 +215,13 @@ def unzip_time_series(h5_time_series):
 
 
 
+
 def time_series(args):
 
     fig = plt.figure(figsize=[15, 8])
-    ax1 = fig.add_subplot(2, 1, 1)
-    ax2 = fig.add_subplot(2, 1, 2)
+    ax1 = fig.add_subplot(3, 1, 1)
+    ax2 = fig.add_subplot(3, 1, 2)
+    ax3 = fig.add_subplot(3, 1, 3)
 
     colors = plt.cm.viridis(np.linspace(0.3, 0.7, len(args.filenames)))
 
@@ -170,8 +230,11 @@ def time_series(args):
         ts = unzip_time_series(h5f['time_series'])
 
         t  = np.array([s / 2 / np.pi for s in ts['time']])
+        Md = np.array([s for s in ts['disk_mass']])
+        Me = np.array([s for s in ts['mass_ejected']])
         M1 = np.array([s[0] for s in ts['mass_accreted_on']])
         M2 = np.array([s[1] for s in ts['mass_accreted_on']])
+
         L1 = np.array([s[0] for s in ts['integrated_torque_on']])
         L2 = np.array([s[1] for s in ts['integrated_torque_on']])
         E1 = np.array([s[0] for s in ts['work_done_on']])
@@ -184,20 +247,34 @@ def time_series(args):
 
         Mdot = Mdot1 + Mdot2
         Ldot = Ldot1 + Ldot2
+        steady = np.where(t[:-1] > args.saturation_time)
 
-        ax1.plot(t[:-1], Mdot, lw=1.0, c=c, label=fname)
-        ax2.plot(t[:-1], Ldot / Mdot, lw=1.0, c=c, label=fname)
+        ax1.plot(t, M1, c='g', lw=1, ls='-',  label=r'$M_1$')
+        ax1.plot(t, M2, c='r', lw=2, ls='--', label=r'$M_2$')
+        ax1.plot(t, Md, c='g', label=r'$\Delta M_{\rm disk}$')
+        ax1.plot(t, Me, c='b', label=r'$M_{\rm ejected}$')
+        ax1.plot(t, M1 + M2 + Md + Me, c='orange', lw=3, label=r'$M_{\rm tot}$')
 
-        steady = np.where(t[:-1] > 12.0)
-        ax1.axhline(np.mean(Mdot[steady]),                         lw=1.0, c=c, ls='--')
-        ax2.axhline(np.mean(Ldot[steady]) / np.mean(Mdot[steady]), lw=1.0, c=c, ls='--')
+        plot_moving_average(ax2, t[:-1], Mdot,        window_size=10000, avg_only=args.avg_only, c=c, lw=2, label=fname)
+        plot_moving_average(ax3, t[:-1], Ldot / Mdot, window_size=10000, avg_only=args.avg_only, c=c, lw=2, label=fname)
 
-    ax1.legend()
-    ax1.set_ylabel(r'$\dot M$')
+        ax2.axhline(np.mean(Mdot[steady]),                         lw=1.0, c=c, ls='--')
+        ax3.axhline(np.mean(Ldot[steady]) / np.mean(Mdot[steady]), lw=1.0, c=c, ls='--')
+        try:
+            ax2.axvline(t[steady][0], c='k', ls='--', lw=0.5)
+            ax3.axvline(t[steady][0], c='k', ls='--', lw=0.5)
+        except:
+            print("Warning: no data points are available after the saturation time (try with e.g. --saturation-time=50)")
+
     ax1.set_yscale('log')
-    ax2.set_xlabel("Orbits")
-    ax2.set_ylabel(r'$\dot L / \dot M$')
+    ax1.legend()
+    ax2.legend()
+    ax2.set_ylabel(r'$\dot M$')
+    ax2.set_yscale('log')
+    ax3.set_xlabel("Orbits")
+    ax3.set_ylabel(r'$\dot L / \dot M$')
     plt.show()
+
 
 
 
@@ -206,6 +283,8 @@ if __name__ == "__main__":
     parser.add_argument("filenames", nargs='+')
     parser.add_argument("--movie", action='store_true')
     parser.add_argument("--time-series", '-t', action='store_true')
+    parser.add_argument("--avg-only", action='store_true')
+    parser.add_argument("--saturation-time", type=float, default=150.0)
     parser.add_argument("--with-vel", action='store_true')
     parser.add_argument("--output", "-o", default="output.mp4")
     parser.add_argument("--sigma", default="default", type=str)
