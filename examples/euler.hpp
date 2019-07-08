@@ -70,7 +70,8 @@ namespace euler{
     {
     	mara::unit_time<double> 					           time=0.0;
     	mara::rational_number_t						           iteration=0;
-        location_2d_t                                          vertices;
+        //location_2d_t                                          vertices;
+        nd::shared_array<double, 2>                            vertices;
     	nd::shared_array<mara::iso2d::conserved_per_area_t, 2> conserved;
     	
         // Overload operators to manipulate solution_t types
@@ -83,13 +84,13 @@ namespace euler{
                     time       + other.time,
                     iteration  + other.iteration,
                     vertices,                                   //Added vertices to solution_t
-                    //conserved  + other.conserved | evaluate,
-                    conserved  + other.conserved
+                    conserved  + other.conserved | evaluate,
+                    //conserved  + other.conserved
                 };
             }
             solution_t operator*(mara::rational_number_t scale) const
             {
-                auto evaluate = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
+                //auto evaluate = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
 
                 return {
                     time      * scale.as_double(),

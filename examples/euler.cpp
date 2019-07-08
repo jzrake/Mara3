@@ -40,6 +40,8 @@
 #include "../src/physics_iso2d.hpp"
 
 #include "euler.hpp"
+#define cs2    1e-4
+
 
 // ============================================================================
 namespace euler
@@ -90,7 +92,7 @@ auto create_vertices( mara::config_t& run_config )
 	auto x_points = nd::linspace(-radius, radius, N+1);
 	auto y_points = nd::linspace(-radius, radius, N+1);
 
-	return nd::cartesian_product( x_points, y_points ) | nd::apply( /* fxn taking 2 variables returning type location_2d_t */ );
+	return nd::cartesian_product( x_points, y_points );
 }
 
 
@@ -125,27 +127,40 @@ auto create_vertices( mara::config_t& run_config )
  *
  * (euler::primitive_field_t)
  */
-euler::primitive_field_t  initial_condition( const mara::config_t& run_config)
+
+// euler::primitive_field_t  initial_condition( const mara::config_t& run_config)
+// {
+// 	return [] (double x, double y)
+// 	{
+// 		auto x 	  	 = point[0].value;
+// 		//auto y 	 	 = point[1].value;
+
+// 		// Shocktube centered on 0
+// 		//============================
+// 		//auto r2 	  = x*x + y*y;
+// 		//auto r  	  = std::sqrt(r);
+// 		auto density = x>0 ? 0.0 : 1.0;
+// 		auto vx      = 0.0;
+// 		auto vy 	 = 0.0;
+
+// 		return mara::iso2d::primitive_t()
+// 		 .with_sigma(density)
+// 		 .with_velocity_x(vx)
+// 		 .with_velocity_y(vy);
+// 	};
+
+// }
+
+auto initial_condition( double x, double y )
 {
-	return [] (euler::location_2d_t point)
-	{
-		auto x 	  	 = point[0].value;
-		//auto y 	 	 = point[1].value;
+	auto density = x > 0 ? 0.0 : 1.0;
+	auto vx 	 = 0.0;
+	auto vy 	 = 0.0;
 
-		// Shocktube centered on 0
-		//============================
-		//auto r2 	  = x*x + y*y;
-		//auto r  	  = std::sqrt(r);
-		auto density = x>0 ? 0.0 : 1.0;
-		auto vx      = 0.0;
-		auto vy 	 = 0.0;
-
-		return mara::iso2d::primitive_t()
-		 .with_sigma(density)
-		 .with_velocity_x(vx)
-		 .with_velocity_y(vy);
-	};
-
+	return mara::iso2d::primitive_t()
+	 .with_sigma(density)
+     .with_velocity_x(vx)
+	 .with_velocity_y(vy);
 }
 
 
@@ -164,7 +179,7 @@ euler::solution_t euler::create_solution( const mara::config_t& run_config )
 	auto conserved = vertices
 		 | nd::midpoint_on_axis(0)
 		 | nd::midpoint_on_axis(1)
-		 | nd::map(initial_condition(run_config))  
+		 | nd::apply(initial_condition)  
 		 | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area)) //prim2cons
          | nd::to_shared();
 
@@ -205,7 +220,7 @@ euler::solution_t euler::advance( const solution_t& solution, mara::unit_time<do
     auto component = [] (std::size_t cmpnt)
     {
     	//TODO: Fix this???
-        return nd::map([cmpnt] (auto p) { return p[cmpnt]; });
+        return nd::map([cmpnt] (auto p) { return std::get<cmpnt>(p); });
     };
 
     
@@ -233,12 +248,15 @@ euler::solution_t euler::advance( const solution_t& solution, mara::unit_time<do
      *
      * @return     An array operator that returns arrays of fluxes
      */
-    auto intercell_flux = [cs2=1.0] (auto riemann_solver, std::size_t axis)
+    auto intercell_flux = [] (auto riemann_solver, std::size_t axis)
     {
-        using namespace std::placeholders;				//For _1, _2, etc. in std::bind
-        auto nh = mara::unit_vector_t::on_axis(axis);
-        auto riemann = std::bind(riemann_solver, _1, _2, cs2, cs2, nh);
-        return left_and_right_states | nd::apply(riemann);
+        return [axis, riemann_solver] (auto left_and_right_states)
+        {
+            using namespace std::placeholders;
+            auto nh = mara::unit_vector_t::on_axis(axis);
+            auto riemann = std::bind(riemann_solver, _1, _2, cs2, cs2, nh);
+            return left_and_right_states | nd::apply(riemann);
+        };
     };
 
     auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
@@ -254,7 +272,7 @@ euler::solution_t euler::advance( const solution_t& solution, mara::unit_time<do
     auto w0  =  u0 | nd::map(recover_primitive);
     auto dx  =  v0 | component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
     auto dy  =  v0 | component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
-    auto dA  =  v0 | nd::map(area_from_vertices); //Need a map?
+    auto dA  =  v0 | area_from_vertices; //Need a map?
 
 
     // Extend for ghost-cells and get fluxes with specified riemann solver
