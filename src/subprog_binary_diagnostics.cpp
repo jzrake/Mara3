@@ -47,7 +47,7 @@ binary::diagnostic_fields_t binary::diagnostic_fields(const solution_t& solution
     auto solver_data = create_solver_data(run_config);
     auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
 
-    auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
+    auto recover_primitive = [] (auto&& u) { return mara::iso2d::recover_primitive(u); };
     auto v0 = solver_data.vertices;
     auto c0 = solver_data.cell_centers;
     auto xc = c0.map(component(0));

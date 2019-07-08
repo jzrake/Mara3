@@ -168,7 +168,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     //=========================================================================
     auto evaluate = nd::to_shared();
     auto force_to_source_terms = [] (force_2d_t f) { return mara::iso2d::flow_t{0.0, f[0].value, f[1].value}; };
-    auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
+    auto recover_primitive = [] (auto&& u) { return mara::iso2d::recover_primitive(u); };
     auto cross_prod_z = [] (auto r, auto f) { return r[0] * f[1] - r[1] * f[0]; };
 
 

@@ -30,6 +30,8 @@
 #include <cmath>
 #include "core_geometric.hpp"
 #include "core_matrix.hpp"
+#include "core_sequence.hpp"
+#include "core_tuple.hpp"
 
 
 
@@ -52,6 +54,25 @@ struct mara::iso2d
     using conserved_t             = arithmetic_sequence_t<unit_conserved, 3>;
     using flow_t                  = arithmetic_sequence_t<unit_flow, 3>;
     using flux_t                  = arithmetic_sequence_t<unit_flux, 3>;
+    using location_2d_t           = arithmetic_sequence_t<unit_length<double>, 2>;
+
+    using conserved_angmom_t = arithmetic_tuple_t<
+        dimensional_value_t<0, 1, 0, double>,
+        dimensional_value_t<2, 1,-1, double>,
+        dimensional_value_t<2, 1,-1, double>
+    >;
+
+    using conserved_angmom_per_area_t = arithmetic_tuple_t<
+        dimensional_value_t<-2, 1, 0, double>,
+        dimensional_value_t< 0, 1,-1, double>,
+        dimensional_value_t< 0, 1,-1, double>
+    >;
+
+    using flux_angmom_t = arithmetic_tuple_t<
+        dimensional_value_t<-1, 1,-1, double>,
+        dimensional_value_t< 1, 1,-2, double>,
+        dimensional_value_t< 1, 1,-2, double>
+    >;
 
     struct primitive_t;
     struct wavespeeds_t
@@ -62,8 +83,15 @@ struct mara::iso2d
     struct riemann_hllc_variables_t;
 
     static inline primitive_t recover_primitive(
-        const conserved_per_area_t& U,
-        double density_floor);
+        const conserved_per_area_t& U);
+
+    static inline primitive_t recover_primitive(
+        const conserved_angmom_per_area_t& Q,
+        const location_2d_t& x);
+
+    static inline flux_angmom_t to_conserved_angmom_flux(
+        const flux_t &F,
+        const location_2d_t& x);
 
     static inline primitive_t roe_average(
         const primitive_t& Pl,
@@ -190,11 +218,25 @@ struct mara::iso2d::primitive_t : public mara::derivable_sequence_t<double, 3, p
      */
     conserved_per_area_t to_conserved_per_area() const
     {
-        auto U = conserved_per_area_t();
-        U[0].value = sigma();
-        U[1].value = sigma() * velocity_x();
-        U[2].value = sigma() * velocity_y();
-        return U;
+        return conserved_per_area_t{
+            sigma(),
+            sigma() * velocity_x(),
+            sigma() * velocity_y(),
+        };
+    }
+
+
+
+
+    conserved_angmom_per_area_t to_conserved_angmom_per_area(location_2d_t x) const
+    {
+        auto v = make_sequence(make_velocity(velocity_x()), make_velocity(velocity_y()));
+        auto S = make_dimensional<-2, 1, 0>(sigma());
+        return {{
+            S,
+            S * (x[0] * v[0] + x[1] * v[1]),
+            S * (x[0] * v[1] - x[1] * v[0])
+        }};
     }
 
 
@@ -253,29 +295,71 @@ struct mara::iso2d::primitive_t : public mara::derivable_sequence_t<double, 3, p
  *
  * @return     A primitive variable state, if the recovery succeeds
  */
-mara::iso2d::primitive_t mara::iso2d::recover_primitive(const conserved_per_area_t& U, double density_floor)
+mara::iso2d::primitive_t mara::iso2d::recover_primitive(const conserved_per_area_t& U)
 {
     if (U[0] < 0.0)
     {
-        if (density_floor == 0.0)
-        {
-            throw std::invalid_argument("mara::iso2d::recover_primitive (negative density)");
-        }
-        else
-        {
-            // This is a pretty extreme measure. If it happens too often you
-            // should expect other things to go wrong.
-            return primitive_t()
-            .with_sigma(density_floor)
-            .with_velocity_x(0.0)
-            .with_velocity_y(0.0);
-        }
+        throw std::invalid_argument("mara::iso2d::recover_primitive (negative density)");
     }
-    auto P = primitive_t();
-    P[0] = U[0].value;
-    P[1] = U[1].value / P[0];
-    P[2] = U[2].value / P[0];
-    return P;
+
+    return {{
+        U[0].value,
+        U[1].value / U[0].value,
+        U[2].value / U[0].value,
+    }};
+}
+
+
+
+
+/**
+ * @brief      Attempt to recover a primitive variable state from the given
+ *             vector of angular momentum conserving (area) densities.
+ *
+ * @param[in]  Q     The angular momentum conserving variables (sigma, Sr, Lz)
+ * @param[in]  x     The 2d position
+ *
+ * @return     A primitive variable state, if the recovery succeeds
+ */
+mara::iso2d::primitive_t mara::iso2d::recover_primitive(const conserved_angmom_per_area_t& Q, const location_2d_t& x)
+{
+    if (mara::get<0>(Q) < 0.0)
+    {
+        throw std::invalid_argument("mara::iso2d::recover_primitive (negative density)");
+    }
+
+    auto sigma = mara::get<0>(Q);
+    auto sr = mara::get<1>(Q) / sigma;
+    auto lz = mara::get<2>(Q) / sigma;
+    auto r2 = (x * x).sum();
+    auto vx = (sr * x[0] - lz * x[1]) / r2;
+    auto vy = (sr * x[1] + lz * x[0]) / r2;
+
+    return {{sigma.value, vx.value, vy.value}};
+}
+
+
+
+
+/**
+ * @brief      Convert a flux of conserved quantities to a flux of
+ *             angumar-momentum conserving quantities:
+ *
+ *             F(Sr) = x F(px) + y F(py)
+ *             F(Lz) = x F(py) - y F(px)
+ *
+ * @param[in]  F     The fluxes of linear momentum conserving quantities
+ * @param[in]  x     The (two-dimensional) position
+ *
+ * @return     A fluxes of angular-momentum conserving quantities
+ */
+mara::iso2d::flux_angmom_t mara::iso2d::to_conserved_angmom_flux(const flux_t& F, const location_2d_t& x)
+{
+    // TODO: convert the U's to tuples.
+    auto sigma_flux = make_dimensional<-1, 1, -1>(F[0].value);
+    auto sr_flux = make_dimensional<1, 1, -2>((x[0] * F[1] + x[1] * F[2]).value);
+    auto lz_flux = make_dimensional<1, 1, -2>((x[0] * F[2] - x[1] * F[1]).value);
+    return {{sigma_flux, sr_flux, lz_flux}};
 }
 
 
