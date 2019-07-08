@@ -6,6 +6,69 @@
 
 
 //=============================================================================
+struct conserved_angmom_io_t
+{
+    double sigma, Sr, Lz;
+};
+
+
+
+
+//=============================================================================
+template<>
+struct h5::hdf5_type_info<conserved_angmom_io_t>
+{
+    using native_type = conserved_angmom_io_t;
+    static auto make_datatype_for(const native_type& value)
+    {
+        return h5::Datatype::compound<native_type>({
+            h5_compound_type_member(native_type, sigma),
+            h5_compound_type_member(native_type, Sr),
+            h5_compound_type_member(native_type, Lz),
+        });
+    }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+};
+
+
+
+
+//=============================================================================
+template<>
+struct h5::hdf5_type_info<mara::iso2d::conserved_angmom_per_area_t>
+{
+    using native_type = mara::iso2d::conserved_angmom_per_area_t;
+    static auto convert_to_writable(const native_type& value)
+    {
+        return conserved_angmom_io_t{
+            mara::get<0>(value).value,
+            mara::get<1>(value).value,
+            mara::get<2>(value).value,
+        };
+    }
+    static auto prepare(const Datatype&, const Dataspace& space)
+    {
+        return conserved_angmom_io_t();
+    }
+    static auto finalize(conserved_angmom_io_t&& value)
+    {
+        return native_type{{
+            mara::make_dimensional<-2, 1, 0>(value.sigma),
+            mara::make_dimensional< 0, 1,-1>(value.Sr),
+            mara::make_dimensional< 0, 1,-1>(value.Lz),
+        }};
+    }
+};
+
+
+
+
+//=============================================================================
 template<>
 struct h5::hdf5_type_info<binary::time_series_sample_t>
 {
