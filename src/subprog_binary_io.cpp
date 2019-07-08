@@ -6,9 +6,68 @@
 
 
 //=============================================================================
+struct conserved_io_t
+{
+    double sigma, px, py;
+};
+
 struct conserved_angmom_io_t
 {
     double sigma, Sr, Lz;
+};
+
+
+
+
+//=============================================================================
+template<>
+struct h5::hdf5_type_info<conserved_io_t>
+{
+    using native_type = conserved_io_t;
+    static auto make_datatype_for(const native_type& value)
+    {
+        return h5::Datatype::compound<native_type>({
+            h5_compound_type_member(native_type, sigma),
+            h5_compound_type_member(native_type, px),
+            h5_compound_type_member(native_type, py),
+        });
+    }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+};
+
+
+
+
+//=============================================================================
+template<>
+struct h5::hdf5_type_info<mara::iso2d::conserved_per_area_t>
+{
+    using native_type = mara::iso2d::conserved_per_area_t;
+    static auto convert_to_writable(const native_type& value)
+    {
+        return conserved_io_t{
+            mara::get<0>(value).value,
+            mara::get<1>(value).value,
+            mara::get<2>(value).value,
+        };
+    }
+    static auto prepare(const Datatype&, const Dataspace& space)
+    {
+        return conserved_io_t();
+    }
+    static auto finalize(conserved_io_t&& value)
+    {
+        return native_type{{
+            mara::make_dimensional<-2, 1, 0>(value.sigma),
+            mara::make_dimensional<-1, 1,-1>(value.px),
+            mara::make_dimensional<-1, 1,-1>(value.py),
+        }};
+    }
 };
 
 
@@ -105,13 +164,24 @@ void mara::write<binary::solution_t>(h5::Group& group, std::string name, const b
     auto location = group.require_group(name);
     mara::write(location, "time",                     solution.time);
     mara::write(location, "iteration",                solution.iteration);
-    mara::write(location, "conserved",                solution.conserved);
+    // mara::write(location, "conserved",                solution.conserved);
     mara::write(location, "mass_accreted_on",         solution.mass_accreted_on);
     mara::write(location, "angular_momentum_ejected", solution.angular_momentum_ejected);
     mara::write(location, "integrated_torque_on",     solution.integrated_torque_on);
     mara::write(location, "work_done_on",             solution.work_done_on);
     mara::write(location, "mass_ejected",             solution.mass_ejected);
     mara::write(location, "angular_momentum_ejected", solution.angular_momentum_ejected);
+
+    auto Q = mara::iso2d::conserved_angmom_per_area_t();
+    auto U = mara::iso2d::conserved_per_area_t();
+
+    auto Au = nd::zeros(10) | nd::map([U] (auto x) { return U; }) | nd::to_shared();
+    auto Aq = nd::zeros(10) | nd::map([Q] (auto x) { return Q; }) | nd::to_shared();
+
+    mara::write(location, "U", U);
+    mara::write(location, "Q", Q);
+    // mara::write(location, "AU", Au);
+    // mara::write(location, "AQ", Aq);
 }
 
 template<>
@@ -144,7 +214,7 @@ void mara::read<binary::solution_t>(h5::Group& group, std::string name, binary::
     auto location = group.open_group(name);
     mara::read(location, "time",                     solution.time);
     mara::read(location, "iteration",                solution.iteration);
-    mara::read(location, "conserved",                solution.conserved);
+    // mara::read(location, "conserved",                solution.conserved);
     mara::read(location, "mass_accreted_on",         solution.mass_accreted_on);
     mara::read(location, "angular_momentum_ejected", solution.angular_momentum_ejected);
     mara::read(location, "integrated_torque_on",     solution.integrated_torque_on);
