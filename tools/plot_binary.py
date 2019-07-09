@@ -219,10 +219,11 @@ def unzip_time_series(h5_time_series):
 
 def time_series(args):
 
-    fig = plt.figure(figsize=[15, 8])
-    ax1 = fig.add_subplot(3, 1, 1)
-    ax2 = fig.add_subplot(3, 1, 2)
-    ax3 = fig.add_subplot(3, 1, 3)
+    fig = plt.figure(figsize=[15, 9])
+    ax1 = fig.add_subplot(4, 1, 1)
+    ax2 = fig.add_subplot(4, 1, 2)
+    ax3 = fig.add_subplot(4, 1, 3)
+    ax4 = fig.add_subplot(4, 1, 4)
 
     colors = plt.cm.viridis(np.linspace(0.3, 0.7, len(args.filenames)))
 
@@ -236,8 +237,13 @@ def time_series(args):
         M1 = np.array([s[0] for s in ts['mass_accreted_on']])
         M2 = np.array([s[1] for s in ts['mass_accreted_on']])
 
+        Ld = np.array([s for s in ts['disk_angular_momentum']])
+        Le = np.array([s for s in ts['angular_momentum_ejected']])
         L1 = np.array([s[0] for s in ts['integrated_torque_on']])
         L2 = np.array([s[1] for s in ts['integrated_torque_on']])
+        K1 = np.array([s[0] for s in ts['angular_momentum_accreted_on']])
+        K2 = np.array([s[1] for s in ts['angular_momentum_accreted_on']])
+
         E1 = np.array([s[0] for s in ts['work_done_on']])
         E2 = np.array([s[1] for s in ts['work_done_on']])
 
@@ -253,30 +259,38 @@ def time_series(args):
         ax1.plot(t, M1, c='g', lw=1, ls='-',  label=r'$M_1$')
         ax1.plot(t, M2, c='r', lw=2, ls='--', label=r'$M_2$')
         ax1.plot(t, Md, c='g', label=r'$M_{\rm disk}$')
-        ax1.plot(t, Me, c='b', label=r'$M_{\rm ejected}$')
+        ax1.plot(t, Me, c='b', label=r'$\Delta M_{\rm buffer}$')
         ax1.plot(t, M1 + M2 + Md + Me, c='orange', lw=3, label=r'$M_{\rm tot}$')
 
-        plot_moving_average(ax2, t[:-1], Mdot / Md[:-1], window_size=args.window_size, avg_only=args.avg_only, c=c, lw=2, label=fname)
-        plot_moving_average(ax3, t[:-1], Ldot / Mdot,    window_size=args.window_size, avg_only=args.avg_only, c=c, lw=2, label=fname)
+        ax2.plot(t, L1, c='g', lw=2, ls='-',  label=r'$L_{\rm grav, 1}$')
+        ax2.plot(t, L2, c='r', lw=2, ls='-',  label=r'$L_{\rm grav, 2}$')
+        ax2.plot(t, K1, c='g', lw=1, ls='--', label=r'$L_{\rm acc, 1}$')
+        ax2.plot(t, K2, c='r', lw=1, ls='--', label=r'$L_{\rm acc, 2}$')
+        ax2.plot(t, Ld, c='g', label=r'$L_{\rm disk}$')
+        ax2.plot(t, Le, c='b', label=r'$\Delta L_{\rm buffer}$')
+        ax2.plot(t, L1 + L2 + K1 + K2 + Ld + Le, c='orange', lw=3, label=r'$L_{\rm tot}$')
+
+        plot_moving_average(ax3, t[:-1], Mdot / Md[:-1], window_size=args.window_size, avg_only=args.avg_only, c=c, lw=2, label=fname)
+        plot_moving_average(ax4, t[:-1], Ldot / Mdot,    window_size=args.window_size, avg_only=args.avg_only, c=c, lw=2, label=fname)
 
         # ax2.axhline(np.mean((Mdot / Md[:-1])[steady]), lw=1.0, c=c, ls='--')
         # ax3.axhline(np.mean((Ldot / Mdot)   [steady]), lw=1.0, c=c, ls='--')
-        ax2.axhline(np.mean(Mdot[steady]) / np.mean(Md[:-1][steady]), lw=1.0, c=c, ls='--')
-        ax3.axhline(np.mean(Ldot[steady]) / np.mean(Mdot   [steady]), lw=1.0, c=c, ls='--')
+        ax3.axhline(np.mean(Mdot[steady]) / np.mean(Md[:-1][steady]), lw=1.0, c=c, ls='--')
+        ax4.axhline(np.mean(Ldot[steady]) / np.mean(Mdot   [steady]), lw=1.0, c=c, ls='--')
 
         try:
-            ax2.axvline(t[steady][0], c='k', ls='--', lw=0.5)
             ax3.axvline(t[steady][0], c='k', ls='--', lw=0.5)
+            ax4.axvline(t[steady][0], c='k', ls='--', lw=0.5)
         except:
             print("Warning: no data points are available after the saturation time (try with e.g. --saturation-time=50)")
 
     # ax1.set_yscale('log')
     ax1.legend()
     ax2.legend()
-    ax2.set_ylabel(r'$\dot M / M_{\rm disk}$')
-    ax2.set_yscale('log')
-    ax3.set_xlabel("Orbits")
-    ax3.set_ylabel(r'$\dot L / \dot M$')
+    ax3.set_ylabel(r'$\dot M / M_{\rm disk}$')
+    ax3.set_yscale('log')
+    ax4.set_xlabel("Orbits")
+    ax4.set_ylabel(r'$\dot L / \dot M$')
     plt.show()
 
 
