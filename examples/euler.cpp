@@ -66,11 +66,17 @@ namespace euler
  */
 auto component(std::size_t cmpnt)
 {
+	//WHEN PULL NEW VERSION:
+	//   going to need to become a template that instead of std::size_t will need something else...
     return nd::map([cmpnt] (auto p) { return p[cmpnt]; });
 };
 
 
-
+auto recover_primitive(const mara::iso2d::conserved_per_area_t& conserved)
+{
+	double density_floor = 0.0;
+    return mara::iso2d::recover_primitive(conserved, density_floor);
+}
 
 /**
  * @brief      Create the config template
@@ -81,8 +87,9 @@ mara::config_template_t euler::create_config_template()
     return mara::make_config_template()
      .item("outdir", "hydro_run")       // directory where data products are written
      .item("cpi",           10.0)       // checkpoint interval
+     .item("rk_order",         1)		// timestepping order
      .item("tfinal",         1.0)       
-     .item("clf",            0.4)       // courant number 
+     .item("cfl",            0.4)       // courant number 
      .item("domain_radius",  1.0)       // half-size of square domain
      .item("N",              100);      // number of cells in each direction
 }
@@ -127,9 +134,9 @@ nd::shared_array<euler::location_2d_t, 2> euler::create_vertices( const mara::co
  * @return              A function giving primitive variables at some point of location_2d_t
  *
  */
-auto initial_condition(euler::location_2d_t position)
+auto initial_condition_shocktube(euler::location_2d_t position)
 {
-    auto density = position[0] > 0.0 ? 0.0 : 1.0; // TODO: zero density?
+    auto density = position[0] > 0.0 ? 0.1 : 1.0; 
     auto vx      = 0.0;
     auto vy      = 0.0;
 
@@ -137,6 +144,23 @@ auto initial_condition(euler::location_2d_t position)
      .with_sigma(density)
      .with_velocity_x(vx)
      .with_velocity_y(vy);
+}
+
+auto initial_condition_cylinder(euler::location_2d_t position)
+{
+	auto x = position[0];
+	auto y = position[1];
+
+	auto r  = x*x + y*y;
+	auto vx = /* g(r) */;
+	auto vy = /* h(r) */;
+
+	auto density = /* f(r) */;
+
+	return mara::iso2d::primitive_t()
+	 .with_sigma(density)
+	 .with_velocity_x(vx)
+	 .with_velocity_y(vy)
 }
 
 
@@ -156,7 +180,7 @@ euler::solution_t euler::create_solution( const mara::config_t& run_config )
     auto conserved = vertices
          | nd::midpoint_on_axis(0)
          | nd::midpoint_on_axis(1)
-         | nd::map(initial_condition)
+         | nd::map(initial_condition_shocktube)
          | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area)) // prim2cons
          | nd::to_shared();
     return solution_t{ 0.0, 0, vertices, conserved };
@@ -221,21 +245,20 @@ euler::solution_t euler::advance( const solution_t& solution, mara::unit_time<do
         };
     };
 
-    auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
+    //auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
     auto v0  =  solution.vertices;
     auto u0  =  solution.conserved;
     auto w0  =  u0 | nd::map(recover_primitive);
-    auto dx  =  v0 | component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
-    auto dy  =  v0 | component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
+    auto dx  =  v0 | component(0) | nd::difference_on_axis(0);
+    auto dy  =  v0 | component(1) | nd::difference_on_axis(1);
     auto dA  =  v0 | area_from_vertices;
-
 
     // Extend for ghost-cells and get fluxes with specified riemann solver
     // ========================================================================
-    auto fx  =  w0 | nd::extend_zero_gradient(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0) | nd::multiply(dy);
-    auto fy  =  w0 | nd::extend_zero_gradient(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1) | nd::multiply(dx);
-    auto lx  =  fx | nd::difference_on_axis(0);
-    auto ly  =  fy | nd::difference_on_axis(1);
+    auto fx  =  w0 | nd::extend_zero_gradient(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0);
+    auto fy  =  w0 | nd::extend_zero_gradient(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1);
+    auto lx  =  fx | nd::multiply(dy) | nd::difference_on_axis(0);
+    auto ly  =  fy | nd::multiply(dx) | nd::difference_on_axis(1);
 
 
     // Updated conserved densities
@@ -264,8 +287,9 @@ auto euler::simulation_should_continue( const state_t& state )
 
 mara::unit_time<double> get_timestep( const euler::solution_t& s, double cfl )
 {
-    return 0.01;
-    auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
+    //return 0.01;
+
+    //auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
 
     auto min_dx   = s.vertices | component(0) | nd::difference_on_axis(0) | nd::min();
     auto min_dy   = s.vertices | component(1) | nd::difference_on_axis(1) | nd::min();
@@ -281,7 +305,7 @@ mara::unit_time<double> get_timestep( const euler::solution_t& s, double cfl )
 euler::solution_t euler::next_solution( const state_t& state )
 {
     auto s0 = state.solution;
-    auto dt = get_timestep( s0, state.run_config.get_double("cfl_number") );
+    auto dt = get_timestep( s0, state.run_config.get_double("cfl") );
 
     switch( state.run_config.get_int("rk_order") )
     {
@@ -309,6 +333,20 @@ euler::state_t euler::next_state( const euler::state_t& state )
 }
 
 
+void output_solution_h5( const euler::solution_t& s, std::string fname )
+{	
+	std::cout << "   Outputting: " << fname << std::endl;
+	auto h5f = h5::File( fname, "w" );
+
+    //auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
+
+	h5f.write( "time"      , s.time      );
+	h5f.write( "vertices"  , s.vertices  );
+	h5f.write( "conserved" , s.conserved );
+	//h5f.write( "primitive" , s.conserved | nd::map(recover_primitive) | nd::to_shared() );
+
+	h5f.close();
+}
 
 
 // ============================================================================
@@ -318,10 +356,18 @@ int main(int argc, const char* argv[])
     auto state       = euler::create_state(run_config);
 
     mara::pretty_print( std::cout, "config", run_config );
+    output_solution_h5( state.solution, "initial.h5" );
 
     while( euler::simulation_should_continue(state) )
     {
         state = euler::next_state(state);
+
+        //if( (state.solution.iteration)%10  == 0)
+		//	printf( " %d : t = %0.2f \n", nd::to_int(state.solution.iteration), nd::to_double(state.solution.time) );
+
     }
+
+    output_solution_h5( state.solution, "output.h5" );
+
     return 0;
 }
