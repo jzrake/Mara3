@@ -6,9 +6,10 @@
 
 
 //=============================================================================
-static auto component(std::size_t component)
+template<std::size_t I>
+static auto component()
 {
-    return nd::map([component] (auto p) { return p[component]; });
+    return nd::map([] (auto p) { return mara::get<I>(p); });
 };
 
 
@@ -20,7 +21,7 @@ mara::unit_mass<double> binary::disk_mass(const solution_t& solution, const solv
     auto v0 = solver_data.vertices;
     auto dA = solver_data.cell_areas;
     auto u0 = solution.conserved;
-    auto sigma = u0.map(component(0));
+    auto sigma = u0.map(component<0>());
     return (sigma * dA).map(nd::sum()).sum();
 }
 
@@ -30,10 +31,10 @@ mara::unit_angmom<double> binary::disk_angular_momentum(const solution_t& soluti
     auto dA = solver_data.cell_areas;
     auto u0 = solution.conserved;
     auto c0 = v0.map(nd::midpoint_on_axis(0)).map(nd::midpoint_on_axis(1));
-    auto xc = c0.map(component(0));
-    auto yc = c0.map(component(1));
-    auto px = u0.map(component(1)) * mara::make_velocity(1.0); // iso2d::conserved_t are all 'mass' ;(
-    auto py = u0.map(component(2)) * mara::make_velocity(1.0);
+    auto xc = c0.map(component<0>());
+    auto yc = c0.map(component<1>());
+    auto px = u0.map(component<1>());
+    auto py = u0.map(component<2>());
     auto Lz = xc * py - yc * px;
     return (Lz * dA).map(nd::sum()).sum();
 }
@@ -47,11 +48,11 @@ binary::diagnostic_fields_t binary::diagnostic_fields(const solution_t& solution
     auto solver_data = create_solver_data(run_config);
     auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
 
-    auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
+    auto recover_primitive = [] (auto&& u) { return mara::iso2d::recover_primitive(u); };
     auto v0 = solver_data.vertices;
     auto c0 = solver_data.cell_centers;
-    auto xc = c0.map(component(0));
-    auto yc = c0.map(component(1));
+    auto xc = c0.map(component<0>());
+    auto yc = c0.map(component<1>());
     auto u0 = solution.conserved;
     auto p0 = u0.map(nd::map(recover_primitive)).map(nd::to_shared());
     auto dA = solver_data.cell_areas;

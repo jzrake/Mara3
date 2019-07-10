@@ -7,6 +7,40 @@
 
 //=============================================================================
 template<>
+struct h5::hdf5_type_info<mara::iso2d::conserved_per_area_t>
+{
+    using native_type = mara::iso2d::conserved_per_area_t;
+    static auto make_datatype_for(const native_type& value) { return h5::Datatype::native_double().as_array(3); }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+};
+
+
+
+
+//=============================================================================
+template<>
+struct h5::hdf5_type_info<mara::iso2d::conserved_angmom_per_area_t>
+{
+    using native_type = mara::iso2d::conserved_angmom_per_area_t;
+    static auto make_datatype_for(const native_type& value) { return h5::Datatype::native_double().as_array(3); }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+};
+
+
+
+
+//=============================================================================
+template<>
 struct h5::hdf5_type_info<binary::time_series_sample_t>
 {
     using native_type = binary::time_series_sample_t;

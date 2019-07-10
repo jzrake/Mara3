@@ -323,9 +323,9 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
 
 
     return mara::run_scheduled_tasks(state, {
-        {"write_checkpoint",  write_checkpoint},
         {"write_diagnostics", write_diagnostics},
-        {"record_time_series", record_time_series}});
+        {"record_time_series", record_time_series},
+        {"write_checkpoint",  write_checkpoint}});
 }
 
 void binary::prepare_filesystem(const mara::config_t& run_config)

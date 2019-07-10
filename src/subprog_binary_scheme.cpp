@@ -30,6 +30,12 @@ void binary::set_scheme_globals(const mara::config_t& run_config)
 
 
 //=============================================================================
+template<std::size_t I>
+static auto component()
+{
+    return nd::map([] (auto p) { return mara::get<I>(p); });
+};
+
 auto binary::grav_vdot_field(const solver_data_t& solver_data, location_2d_t body_location, mara::unit_mass<double> body_mass)
 {
     auto accel = [body_location, body_mass, softening_radius=solver_data.softening_radius](location_2d_t field_point)
@@ -75,22 +81,6 @@ auto binary::sink_rate_field(const solver_data_t& solver_data, location_2d_t sin
 //=============================================================================
 binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
 {
-
-
-    /*
-     * @brief      An operator on arrays of sequences: takes a single component
-     *             of a sequence and returns an array.
-     *
-     * @param[in]  component  The component to take
-     *
-     * @return     An array whose value type is the sequence value type
-     */
-    auto component = [] (std::size_t component)
-    {
-        return nd::map([component] (auto p) { return p[component]; });
-    };
-
-
     /*
      * @brief      Extend each block in a given tree of cell-wise values, with
      *             two guard zones on the given axis.
@@ -167,8 +157,13 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     // Minor helper functions
     //=========================================================================
     auto evaluate = nd::to_shared();
-    auto force_to_source_terms = [] (force_2d_t f) { return mara::iso2d::flow_t{0.0, f[0].value, f[1].value}; };
-    auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
+    auto force_to_source_terms = [] (force_2d_t f)
+    {
+        return mara::iso2d::conserved_t() / mara::make_time(1.0);
+        // return mara::iso2d::flow_t{0.0, f[0].value, f[1].value};
+        // TODO
+    };
+    auto recover_primitive = [] (auto&& u) { return mara::iso2d::recover_primitive(u); };
     auto cross_prod_z = [] (auto r, auto f) { return r[0] * f[1] - r[1] * f[0]; };
 
 
@@ -187,13 +182,13 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto dA  =  solver_data.cell_areas;
     auto u0  =  solution.conserved;
     auto p0  =  u0.map(nd::map(recover_primitive)).map(evaluate, tree_launch);
-    auto dx  =  v0.map([component] (auto v) { return v | component(0) | nd::difference_on_axis(0); });
-    auto dy  =  v0.map([component] (auto v) { return v | component(1) | nd::difference_on_axis(1); });
+    auto dx  =  v0.map([] (auto v) { return v | component<0>() | nd::difference_on_axis(0); });
+    auto dy  =  v0.map([] (auto v) { return v | component<1>() | nd::difference_on_axis(1); });
     auto fx  =  extend(p0, 0).map(extrapolate(0), tree_launch).map(intercell_flux(mara::iso2d::riemann_hlle, 0)) * dy;
     auto fy  =  extend(p0, 1).map(extrapolate(1), tree_launch).map(intercell_flux(mara::iso2d::riemann_hlle, 1)) * dx;
     auto lx  = -fx.map(nd::difference_on_axis(0));
     auto ly  = -fy.map(nd::difference_on_axis(1));
-    auto m0  =  u0.map(component(0)) * dA; // cell masses
+    auto m0  =  u0.map(component<0>()) * dA; // cell masses
 
 
     // Gravitational force, sink fields, and buffer zone source term
@@ -212,7 +207,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto u1 = u0 + (lx + ly + ss + sg + bz) * dt / dA;
     auto next_conserved = u1.map(evaluate, tree_launch);
 
-    if (! safe_mode && (next_conserved.map(component(0)) < 0.0).map(nd::any()).any())
+    if (! safe_mode && (next_conserved.map(component<0>()) < 0.0).map(nd::any()).any())
     {
         std::cout << "binary::advance (negative density; re-trying in safe mode)" << std::endl;
         return advance(solution, solver_data, dt, true);
@@ -221,19 +216,19 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     // The total force on each component, Mdot's, Ldot's, and Edot's.
     //=========================================================================
-    auto xc = solver_data.cell_centers.map(component(0));
-    auto yc = solver_data.cell_centers.map(component(1));
+    auto xc = solver_data.cell_centers.map(component<0>());
+    auto yc = solver_data.cell_centers.map(component<1>());
     auto fg1_tot = -fg1.map(nd::sum(), tree_launch).sum();
     auto fg2_tot = -fg2.map(nd::sum(), tree_launch).sum();
-    auto ss1_tot = -ss1.map(component(0)).map(nd::sum(), tree_launch).sum();
-    auto ss2_tot = -ss2.map(component(0)).map(nd::sum(), tree_launch).sum();
-    auto px_accrete1_rate = -ss1.map(component(1)) * mara::make_velocity(1.0);
-    auto py_accrete1_rate = -ss1.map(component(2)) * mara::make_velocity(1.0);
-    auto px_accrete2_rate = -ss2.map(component(1)) * mara::make_velocity(1.0);
-    auto py_accrete2_rate = -ss2.map(component(2)) * mara::make_velocity(1.0);
-    auto px_ejection_rate =  -bz.map(component(1)) * mara::make_velocity(1.0);
-    auto py_ejection_rate =  -bz.map(component(2)) * mara::make_velocity(1.0);
-    auto m0_ejection_rate =  -bz.map(component(0)).map(nd::sum(), tree_launch).sum();
+    auto ss1_tot = -ss1.map(component<0>()).map(nd::sum(), tree_launch).sum();
+    auto ss2_tot = -ss2.map(component<0>()).map(nd::sum(), tree_launch).sum();
+    auto px_accrete1_rate = -ss1.map(component<1>());
+    auto py_accrete1_rate = -ss1.map(component<2>());
+    auto px_accrete2_rate = -ss2.map(component<1>());
+    auto py_accrete2_rate = -ss2.map(component<2>());
+    auto px_ejection_rate =  -bz.map(component<1>());
+    auto py_ejection_rate =  -bz.map(component<2>());
+    auto m0_ejection_rate =  -bz.map(component<0>()).map(nd::sum(), tree_launch).sum();
     auto lz_ejection_rate = (xc * py_ejection_rate - yc * px_ejection_rate).map(nd::sum(), tree_launch).sum();
     auto lz_accrete1_rate = (xc * py_accrete1_rate - yc * px_accrete1_rate).map(nd::sum(), tree_launch).sum();
     auto lz_accrete2_rate = (xc * py_accrete2_rate - yc * px_accrete2_rate).map(nd::sum(), tree_launch).sum();

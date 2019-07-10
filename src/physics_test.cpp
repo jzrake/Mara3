@@ -105,9 +105,9 @@ TEST_CASE("Isothermal 2d system", "[mara::iso2d::primitive_t]")
 
     auto U = P.to_conserved_per_area();
     REQUIRE(P.velocity_x() == 0.5);
-    REQUIRE(U[0].value == P.sigma());
-    REQUIRE(U[1].value == P.sigma() * P.velocity_x());
-    REQUIRE(U[2].value == P.sigma() * P.velocity_y());
+    REQUIRE(mara::get<0>(U).value == P.sigma());
+    REQUIRE(mara::get<1>(U).value == P.sigma() * P.velocity_x());
+    REQUIRE(mara::get<2>(U).value == P.sigma() * P.velocity_y());
 
     SECTION("HLLC gets zero contact speed for zero-velocity, equal pressure states")
     {
