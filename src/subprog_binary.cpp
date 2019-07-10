@@ -180,11 +180,10 @@ binary::solution_t binary::create_solution(const mara::config_t& run_config)
 {
     auto conserved = create_vertices(run_config).map([&run_config] (auto block)
     {
-        return block
-        | nd::midpoint_on_axis(0)
-        | nd::midpoint_on_axis(1)
-        | nd::map(create_disk_profile(run_config))
-        | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
+        auto cell_centers = block | nd::midpoint_on_axis(0) | nd::midpoint_on_axis(1);
+        auto primitive = cell_centers | nd::map(create_disk_profile(run_config));
+        return nd::zip(cell_centers, primitive)
+        | nd::apply([] (auto x, auto p) { return p.to_conserved_angmom_per_area(x); })
         | nd::to_shared();
     });
     return solution_t{0, 0.0, conserved, {}, {}, {}, {}, {}, {}};

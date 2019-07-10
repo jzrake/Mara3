@@ -49,16 +49,12 @@ struct mara::iso2d
     using unit_conserved          = dimensional_value_t< 0, 1, 0, double>;
     using unit_flow               = dimensional_value_t< 0, 1,-1, double>;
     using unit_flux               = dimensional_value_t<-1, 1,-1, double>;
-
-    // using conserved_per_area_t    = arithmetic_sequence_t<unit_conserved_per_area, 3>;
-    // using conserved_t             = arithmetic_sequence_t<unit_conserved, 3>;
-    // using flow_t                  = arithmetic_sequence_t<unit_flow, 3>;
-    // using flux_t                  = arithmetic_sequence_t<unit_flux, 3>;
     using location_2d_t           = arithmetic_sequence_t<unit_length<double>, 2>;
 
 
 
-
+    // Linear momentum conserving data structures
+    // ========================================================================
     using conserved_t = arithmetic_tuple_t<
         dimensional_value_t<0, 1, 0, double>,
         dimensional_value_t<1, 1,-1, double>,
@@ -79,7 +75,8 @@ struct mara::iso2d
 
 
 
-
+    // Angular momentum conserving data structures
+    // ========================================================================
     using conserved_angmom_t = arithmetic_tuple_t<
         dimensional_value_t<0, 1, 0, double>,
         dimensional_value_t<2, 1,-1, double>,
@@ -98,6 +95,8 @@ struct mara::iso2d
         dimensional_value_t< 1, 1,-2, double>
     >;
 
+
+    // ========================================================================
     struct primitive_t;
     struct wavespeeds_t
     {
@@ -285,11 +284,6 @@ struct mara::iso2d::primitive_t : public mara::derivable_sequence_t<double, 3, p
         .set<0>(v * sigma())
         .set<1>(v * sigma() * velocity_x() + p * nhat.get_n1())
         .set<2>(v * sigma() * velocity_y() + p * nhat.get_n2());
-
-        // F[0] = v * sigma();
-        // F[1] = v * sigma() * velocity_x() + p * nhat.get_n1();
-        // F[2] = v * sigma() * velocity_y() + p * nhat.get_n2();
-        // return F;
     }
 
 

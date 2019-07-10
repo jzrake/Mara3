@@ -27,16 +27,9 @@ mara::unit_mass<double> binary::disk_mass(const solution_t& solution, const solv
 
 mara::unit_angmom<double> binary::disk_angular_momentum(const solution_t& solution, const solver_data_t& solver_data)
 {
-    auto v0 = solver_data.vertices;
     auto dA = solver_data.cell_areas;
     auto u0 = solution.conserved;
-    auto c0 = v0.map(nd::midpoint_on_axis(0)).map(nd::midpoint_on_axis(1));
-    auto xc = c0.map(component<0>());
-    auto yc = c0.map(component<1>());
-    auto px = u0.map(component<1>());
-    auto py = u0.map(component<2>());
-    auto Lz = xc * py - yc * px;
-    return (Lz * dA).map(nd::sum()).sum();
+    return (u0 * dA).map(component<2>()).map(nd::sum()).sum();
 }
 
 
@@ -48,14 +41,21 @@ binary::diagnostic_fields_t binary::diagnostic_fields(const solution_t& solution
     auto solver_data = create_solver_data(run_config);
     auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
 
-    auto recover_primitive = [] (auto&& u) { return mara::iso2d::recover_primitive(u); };
     auto v0 = solver_data.vertices;
     auto c0 = solver_data.cell_centers;
+    auto dA = solver_data.cell_areas;
     auto xc = c0.map(component<0>());
     auto yc = c0.map(component<1>());
-    auto u0 = solution.conserved;
-    auto p0 = u0.map(nd::map(recover_primitive)).map(nd::to_shared());
-    auto dA = solver_data.cell_areas;
+    auto q0 = solution.conserved;
+    auto p0 = q0
+    .pair(c0)
+    .apply([] (auto Q, auto X)
+    {
+        return nd::zip(Q, X) | nd::apply([] (auto q, auto x)
+        {
+            return mara::iso2d::recover_primitive(q, x);
+        });
+    });
 
     auto rc = (xc * xc + yc * yc).map(nd::map([] (mara::unit_area<double> r2) { return r2.pow<1, 2>(); }));
     auto rhat_x =  xc / rc;

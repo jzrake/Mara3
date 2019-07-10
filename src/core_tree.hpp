@@ -629,6 +629,12 @@ struct mara::arithmetic_binary_tree_t
         return map([fn] (auto&& t) { return std::apply(fn, t); });
     }
 
+    template<typename Function>
+    auto apply(Function&& fn, std::launch launch_mode)
+    {
+        return map([fn] (auto&& t) { return std::apply(fn, t); }, launch_mode);
+    }
+
 
 
 
