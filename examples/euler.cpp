@@ -40,7 +40,8 @@
 #include "core_hdf5.hpp"
 #include "physics_iso2d.hpp"
 #include "euler.hpp"
-#define cs2    1e-4
+
+#define cs2    1e-1
 
 
 
@@ -152,15 +153,15 @@ auto initial_condition_cylinder(euler::location_2d_t position)
 	auto y = position[1];
 
 	auto r  = x*x + y*y;
-	auto vx = /* g(r) */;
-	auto vy = /* h(r) */;
+	auto vx = 0.0;
+	auto vy = 0.0;
 
-	auto density = /* f(r) */;
+	auto density = r<0.2 ? 1.0 : 0.1;
 
 	return mara::iso2d::primitive_t()
 	 .with_sigma(density)
 	 .with_velocity_x(vx)
-	 .with_velocity_y(vy)
+	 .with_velocity_y(vy);
 }
 
 
@@ -180,7 +181,7 @@ euler::solution_t euler::create_solution( const mara::config_t& run_config )
     auto conserved = vertices
          | nd::midpoint_on_axis(0)
          | nd::midpoint_on_axis(1)
-         | nd::map(initial_condition_shocktube)
+         | nd::map(initial_condition_cylinder)
          | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area)) // prim2cons
          | nd::to_shared();
     return solution_t{ 0.0, 0, vertices, conserved };
@@ -362,8 +363,8 @@ int main(int argc, const char* argv[])
     {
         state = euler::next_state(state);
 
-        //if( (state.solution.iteration)%10  == 0)
-		//	printf( " %d : t = %0.2f \n", nd::to_int(state.solution.iteration), nd::to_double(state.solution.time) );
+        //if( (state.solution.iteration)%1  == 0)
+		printf( " %d : t = %0.2f \n", state.solution.iteration.as_integral(), state.solution.time.value );
 
     }
 
