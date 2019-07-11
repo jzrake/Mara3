@@ -39,7 +39,6 @@
 #include "core_ndarray_ops.hpp"
 #include "core_hdf5.hpp"
 #include "physics_iso2d.hpp"
-#include "euler.hpp"
 
 #define cs2    1e-1
 
