@@ -7,6 +7,40 @@
 
 //=============================================================================
 template<>
+struct h5::hdf5_type_info<mara::iso2d::conserved_per_area_t>
+{
+    using native_type = mara::iso2d::conserved_per_area_t;
+    static auto make_datatype_for(const native_type& value) { return h5::Datatype::native_double().as_array(3); }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+};
+
+
+
+
+//=============================================================================
+template<>
+struct h5::hdf5_type_info<mara::iso2d::conserved_angmom_per_area_t>
+{
+    using native_type = mara::iso2d::conserved_angmom_per_area_t;
+    static auto make_datatype_for(const native_type& value) { return h5::Datatype::native_double().as_array(3); }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+};
+
+
+
+
+//=============================================================================
+template<>
 struct h5::hdf5_type_info<binary::time_series_sample_t>
 {
     using native_type = binary::time_series_sample_t;
@@ -14,10 +48,14 @@ struct h5::hdf5_type_info<binary::time_series_sample_t>
     {
         return h5::Datatype::compound<native_type>({
             h5_compound_type_member(native_type, time),
-            h5_compound_type_member(native_type, total_disk_mass),
+            h5_compound_type_member(native_type, disk_mass),
+            h5_compound_type_member(native_type, disk_angular_momentum),
             h5_compound_type_member(native_type, mass_accreted_on),
+            h5_compound_type_member(native_type, angular_momentum_accreted_on),
             h5_compound_type_member(native_type, integrated_torque_on),
             h5_compound_type_member(native_type, work_done_on),
+            h5_compound_type_member(native_type, mass_ejected),
+            h5_compound_type_member(native_type, angular_momentum_ejected),
         });
     }
     static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
@@ -36,12 +74,15 @@ template<>
 void mara::write<binary::solution_t>(h5::Group& group, std::string name, const binary::solution_t& solution)
 {
     auto location = group.require_group(name);
-    mara::write(location, "time",       solution.time);
-    mara::write(location, "iteration",  solution.iteration);
-    mara::write(location, "conserved",  solution.conserved);
-    mara::write(location, "mass_accreted_on",     solution.mass_accreted_on);
-    mara::write(location, "integrated_torque_on", solution.integrated_torque_on);
-    mara::write(location, "work_done_on",         solution.work_done_on);
+    mara::write(location, "time",                     solution.time);
+    mara::write(location, "iteration",                solution.iteration);
+    mara::write(location, "conserved",                solution.conserved);
+    mara::write(location, "mass_accreted_on",         solution.mass_accreted_on);
+    mara::write(location, "angular_momentum_ejected", solution.angular_momentum_ejected);
+    mara::write(location, "integrated_torque_on",     solution.integrated_torque_on);
+    mara::write(location, "work_done_on",             solution.work_done_on);
+    mara::write(location, "mass_ejected",             solution.mass_ejected);
+    mara::write(location, "angular_momentum_ejected", solution.angular_momentum_ejected);
 }
 
 template<>
@@ -72,12 +113,15 @@ template<>
 void mara::read<binary::solution_t>(h5::Group& group, std::string name, binary::solution_t& solution)
 {
     auto location = group.open_group(name);
-    mara::read(location, "time",       solution.time);
-    mara::read(location, "iteration",  solution.iteration);
-    mara::read(location, "conserved",  solution.conserved);
-    mara::read(location, "mass_accreted_on",     solution.mass_accreted_on);
-    mara::read(location, "integrated_torque_on", solution.integrated_torque_on);
-    mara::read(location, "work_done_on",         solution.work_done_on);
+    mara::read(location, "time",                     solution.time);
+    mara::read(location, "iteration",                solution.iteration);
+    mara::read(location, "conserved",                solution.conserved);
+    mara::read(location, "mass_accreted_on",         solution.mass_accreted_on);
+    mara::read(location, "angular_momentum_ejected", solution.angular_momentum_ejected);
+    mara::read(location, "integrated_torque_on",     solution.integrated_torque_on);
+    mara::read(location, "work_done_on",             solution.work_done_on);
+    mara::read(location, "mass_ejected",             solution.mass_ejected);
+    mara::read(location, "angular_momentum_ejected", solution.angular_momentum_ejected);
 }
 
 template<>

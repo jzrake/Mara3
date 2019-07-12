@@ -90,7 +90,7 @@ namespace mara
  *             identity of the value type.
  */
 template<typename ValueType, std::size_t Rank>
-struct mara::arithmetic_sequence_t
+struct mara::arithmetic_sequence_t final
 {
 
 
@@ -435,22 +435,19 @@ struct mara::arithmetic_sequence_t
     template<typename Function, std::size_t... Is>
     auto unary_op_impl(Function&& fn, std::index_sequence<Is...>) const
     {
-        using result_type = arithmetic_sequence_t<std::invoke_result_t<Function, ValueType>, Rank>;
-        return result_type{fn(mara::get<Is>(*this))...};
+        return make_sequence(fn(mara::get<Is>(*this))...);
     }
 
     template<typename Function, typename T, std::size_t... Is>
     auto binary_op_impl(Function&& fn, const T& a, std::index_sequence<Is...>) const
     {
-        using result_type = arithmetic_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>;
-        return result_type{fn(mara::get<Is>(*this), a)...};
+        return make_sequence(fn(mara::get<Is>(*this), a)...);
     }
 
     template<typename Function, typename T, std::size_t... Is>
     auto binary_op_impl(Function&& fn, const arithmetic_sequence_t<T, Rank>& v, std::index_sequence<Is...>) const
     {
-        using result_type = arithmetic_sequence_t<std::invoke_result_t<Function, ValueType, T>, Rank>;
-        return result_type{fn(mara::get<Is>(*this), mara::get<Is>(v))...};
+        return make_sequence(fn(mara::get<Is>(*this), mara::get<Is>(v))...);
     }
 
     template<typename Function>

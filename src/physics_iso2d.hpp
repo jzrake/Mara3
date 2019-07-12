@@ -30,6 +30,8 @@
 #include <cmath>
 #include "core_geometric.hpp"
 #include "core_matrix.hpp"
+#include "core_sequence.hpp"
+#include "core_tuple.hpp"
 
 
 
@@ -48,10 +50,53 @@ struct mara::iso2d
     using unit_flow               = dimensional_value_t< 0, 1,-1, double>;
     using unit_flux               = dimensional_value_t<-1, 1,-1, double>;
 
-    using conserved_per_area_t    = arithmetic_sequence_t<unit_conserved_per_area, 3>;
-    using conserved_t             = arithmetic_sequence_t<unit_conserved, 3>;
-    using flow_t                  = arithmetic_sequence_t<unit_flow, 3>;
-    using flux_t                  = arithmetic_sequence_t<unit_flux, 3>;
+    // using conserved_per_area_t    = arithmetic_sequence_t<unit_conserved_per_area, 3>;
+    // using conserved_t             = arithmetic_sequence_t<unit_conserved, 3>;
+    // using flow_t                  = arithmetic_sequence_t<unit_flow, 3>;
+    // using flux_t                  = arithmetic_sequence_t<unit_flux, 3>;
+    using location_2d_t           = arithmetic_sequence_t<unit_length<double>, 2>;
+
+
+
+
+    using conserved_t = arithmetic_tuple_t<
+        dimensional_value_t<0, 1, 0, double>,
+        dimensional_value_t<1, 1,-1, double>,
+        dimensional_value_t<1, 1,-1, double>
+    >;
+
+    using conserved_per_area_t = arithmetic_tuple_t<
+        dimensional_value_t<-2, 1, 0, double>,
+        dimensional_value_t<-1, 1,-1, double>,
+        dimensional_value_t<-1, 1,-1, double>
+    >;
+
+    using flux_t = arithmetic_tuple_t<
+        dimensional_value_t<-1, 1,-1, double>,
+        dimensional_value_t< 0, 1,-2, double>,
+        dimensional_value_t< 0, 1,-2, double>
+    >;
+
+
+
+
+    using conserved_angmom_t = arithmetic_tuple_t<
+        dimensional_value_t<0, 1, 0, double>,
+        dimensional_value_t<2, 1,-1, double>,
+        dimensional_value_t<2, 1,-1, double>
+    >;
+
+    using conserved_angmom_per_area_t = arithmetic_tuple_t<
+        dimensional_value_t<-2, 1, 0, double>,
+        dimensional_value_t< 0, 1,-1, double>,
+        dimensional_value_t< 0, 1,-1, double>
+    >;
+
+    using flux_angmom_t = arithmetic_tuple_t<
+        dimensional_value_t<-1, 1,-1, double>,
+        dimensional_value_t< 1, 1,-2, double>,
+        dimensional_value_t< 1, 1,-2, double>
+    >;
 
     struct primitive_t;
     struct wavespeeds_t
@@ -62,8 +107,15 @@ struct mara::iso2d
     struct riemann_hllc_variables_t;
 
     static inline primitive_t recover_primitive(
-        const conserved_per_area_t& U,
-        double density_floor);
+        const conserved_per_area_t& U);
+
+    static inline primitive_t recover_primitive(
+        const conserved_angmom_per_area_t& Q,
+        const location_2d_t& x);
+
+    static inline flux_angmom_t to_conserved_angmom_flux(
+        const flux_t &F,
+        const location_2d_t& x);
 
     static inline primitive_t roe_average(
         const primitive_t& Pl,
@@ -118,7 +170,7 @@ struct mara::iso2d::primitive_t : public mara::derivable_sequence_t<double, 3, p
      *
      * @return     A new primitive variable state
      */
-    primitive_t with_sigma(double v) const { auto res = *this; res[0] = v; return res; }
+    primitive_t with_sigma(double v)      const { auto res = *this; res[0] = v; return res; }
     primitive_t with_velocity_x(double v) const { auto res = *this; res[1] = v; return res; }
     primitive_t with_velocity_y(double v) const { auto res = *this; res[2] = v; return res; }
 
@@ -190,11 +242,27 @@ struct mara::iso2d::primitive_t : public mara::derivable_sequence_t<double, 3, p
      */
     conserved_per_area_t to_conserved_per_area() const
     {
-        auto U = conserved_per_area_t();
-        U[0].value = sigma();
-        U[1].value = sigma() * velocity_x();
-        U[2].value = sigma() * velocity_y();
-        return U;
+        auto v = make_sequence(make_velocity(velocity_x()), make_velocity(velocity_y()));
+        auto S = make_dimensional<-2, 1, 0>(sigma());
+        return {{
+            S,
+            S * v[0],
+            S * v[1],
+        }};
+    }
+
+
+
+
+    conserved_angmom_per_area_t to_conserved_angmom_per_area(location_2d_t x) const
+    {
+        auto v = make_sequence(make_velocity(velocity_x()), make_velocity(velocity_y()));
+        auto S = make_dimensional<-2, 1, 0>(sigma());
+        return {{
+            S,
+            S * (x[0] * v[0] + x[1] * v[1]),
+            S * (x[0] * v[1] - x[1] * v[0])
+        }};
     }
 
 
@@ -213,11 +281,15 @@ struct mara::iso2d::primitive_t : public mara::derivable_sequence_t<double, 3, p
     {
         auto v = velocity_along(nhat);
         auto p = gas_pressure(sound_speed_squared);
-        auto F = flux_t();
-        F[0] = v * sigma();
-        F[1] = v * sigma() * velocity_x() + p * nhat.get_n1();
-        F[2] = v * sigma() * velocity_y() + p * nhat.get_n2();
-        return F;
+        return flux_t()
+        .set<0>(v * sigma())
+        .set<1>(v * sigma() * velocity_x() + p * nhat.get_n1())
+        .set<2>(v * sigma() * velocity_y() + p * nhat.get_n2());
+
+        // F[0] = v * sigma();
+        // F[1] = v * sigma() * velocity_x() + p * nhat.get_n1();
+        // F[2] = v * sigma() * velocity_y() + p * nhat.get_n2();
+        // return F;
     }
 
 
@@ -253,29 +325,68 @@ struct mara::iso2d::primitive_t : public mara::derivable_sequence_t<double, 3, p
  *
  * @return     A primitive variable state, if the recovery succeeds
  */
-mara::iso2d::primitive_t mara::iso2d::recover_primitive(const conserved_per_area_t& U, double density_floor)
+mara::iso2d::primitive_t mara::iso2d::recover_primitive(const conserved_per_area_t& U)
 {
-    if (U[0] < 0.0)
+    auto sigma = mara::get<0>(U);
+    auto vx = mara::get<1>(U) / sigma;
+    auto vy = mara::get<2>(U) / sigma;
+
+    if (sigma < 0.0)
     {
-        if (density_floor == 0.0)
-        {
-            throw std::invalid_argument("mara::iso2d::recover_primitive (negative density)");
-        }
-        else
-        {
-            // This is a pretty extreme measure. If it happens too often you
-            // should expect other things to go wrong.
-            return primitive_t()
-            .with_sigma(density_floor)
-            .with_velocity_x(0.0)
-            .with_velocity_y(0.0);
-        }
+        throw std::invalid_argument("mara::iso2d::recover_primitive (negative density)");
     }
-    auto P = primitive_t();
-    P[0] = U[0].value;
-    P[1] = U[1].value / P[0];
-    P[2] = U[2].value / P[0];
-    return P;
+    return {{sigma.value, vx.value, vy.value}};
+}
+
+
+
+
+/**
+ * @brief      Attempt to recover a primitive variable state from the given
+ *             vector of angular momentum conserving (area) densities.
+ *
+ * @param[in]  Q     The angular momentum conserving variables (sigma, Sr, Lz)
+ * @param[in]  x     The 2d position
+ *
+ * @return     A primitive variable state, if the recovery succeeds
+ */
+mara::iso2d::primitive_t mara::iso2d::recover_primitive(const conserved_angmom_per_area_t& Q, const location_2d_t& x)
+{
+    auto sigma = mara::get<0>(Q);
+    auto sr = mara::get<1>(Q) / sigma;
+    auto lz = mara::get<2>(Q) / sigma;
+    auto r2 = (x * x).sum();
+    auto vx = (sr * x[0] - lz * x[1]) / r2;
+    auto vy = (sr * x[1] + lz * x[0]) / r2;
+
+    if (sigma < 0.0)
+    {
+        throw std::invalid_argument("mara::iso2d::recover_primitive (negative density)");
+    }
+    return {{sigma.value, vx.value, vy.value}};
+}
+
+
+
+
+/**
+ * @brief      Convert a flux of conserved quantities to a flux of
+ *             angumar-momentum conserving quantities:
+ *
+ *             F(Sr) = x F(px) + y F(py)
+ *             F(Lz) = x F(py) - y F(px)
+ *
+ * @param[in]  F     The fluxes of linear momentum conserving quantities
+ * @param[in]  x     The (two-dimensional) position
+ *
+ * @return     A fluxes of angular-momentum conserving quantities
+ */
+mara::iso2d::flux_angmom_t mara::iso2d::to_conserved_angmom_flux(const flux_t& F, const location_2d_t& x)
+{
+    auto sigma_flux = mara::get<0>(F);
+    auto sr_flux = x[0] * mara::get<1>(F) + x[1] * mara::get<2>(F);
+    auto lz_flux = x[0] * mara::get<2>(F) - x[1] * mara::get<1>(F);
+    return {{sigma_flux, sr_flux, lz_flux}};
 }
 
 
@@ -310,10 +421,10 @@ mara::iso2d::primitive_t mara::iso2d::roe_average(
  *
  * @param[in]  Pl                     The state to the left of the interface
  * @param[in]  Pr                     The state to the right
- * @param[in]  sound_speed_squared_l  The sound speed squared to the left of the interface
+ * @param[in]  sound_speed_squared_l  The sound speed squared to the left of the
+ *                                    interface
  * @param[in]  sound_speed_squared_r  The sound speed squared to the right
  * @param[in]  nhat                   The normal vector to the interface
- * @param[in]  gamma_law_index  The gamma law index
  *
  * @return     A vector of fluxes
  */
