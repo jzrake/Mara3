@@ -192,8 +192,8 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
             auto flux_sigma = mara::get<0>(f);
             auto flux_px    = mara::get<1>(f);
             auto flux_py    = mara::get<2>(f);
-            auto flux_sr    = x[0] * flux_px + x[1] * flux_px;
-            auto flux_lz    = x[0] * flux_py - x[1] * flux_py;
+            auto flux_sr    = x[0] * flux_px + x[1] * flux_py;
+            auto flux_lz    = x[0] * flux_py - x[1] * flux_px;
             return mara::make_arithmetic_tuple(flux_sigma, flux_sr, flux_lz);
         });
     };
@@ -206,12 +206,13 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     {
         auto sigma_dot = mara::make_dimensional<0, 1, -1>(0.0);
         auto sr_dot    = x[0] * f[0] + x[1] * f[1];
-        auto lz_dot    = x[0] * f[1] - x[0] * f[0];
+        auto lz_dot    = x[0] * f[1] - x[1] * f[0];
         return mara::make_arithmetic_tuple(sigma_dot, sr_dot, lz_dot);
     };
-
-
-    // auto cross_prod_z = [] (auto r, auto f) { return r[0] * f[1] - r[1] * f[0]; };
+    auto force_to_source_terms_tree = [force_to_source_terms] (auto F, auto X)
+    {
+        return nd::zip(F, X) | nd::apply(force_to_source_terms);
+    };
 
 
     // Binary parameters
@@ -219,8 +220,8 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
     auto body1_pos = location_2d_t{binary.body1.position_x, binary.body1.position_y};
     auto body2_pos = location_2d_t{binary.body2.position_x, binary.body2.position_y};
-    auto body1_vel = velocity_2d_t{binary.body1.velocity_x, binary.body1.velocity_y};
-    auto body2_vel = velocity_2d_t{binary.body2.velocity_x, binary.body2.velocity_y};
+    // auto body1_vel = velocity_2d_t{binary.body1.velocity_x, binary.body1.velocity_y};
+    // auto body2_vel = velocity_2d_t{binary.body2.velocity_x, binary.body2.velocity_y};
 
 
     // Intermediate scheme data
@@ -246,61 +247,53 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     //=========================================================================
     auto fg1 =        grav_vdot_field(solver_data, body1_pos, binary.body1.mass) * m0;
     auto fg2 =        grav_vdot_field(solver_data, body2_pos, binary.body2.mass) * m0;
+    auto sg1 =   fg1.pair(solver_data.cell_centers).apply(force_to_source_terms_tree);
+    auto sg2 =   fg2.pair(solver_data.cell_centers).apply(force_to_source_terms_tree);
     auto ss1 =  -q0 * sink_rate_field(solver_data, body1_pos) * dA;
     auto ss2 =  -q0 * sink_rate_field(solver_data, body2_pos) * dA;
     auto st  =   p0.map(nd::map([cs2] (auto p) { return p.source_terms_conserved_angmom(cs2); })) * dA;
     auto bz  =  (solver_data.initial_conserved - q0) * solver_data.buffer_rate_field * dA;
-    auto ss  =  (ss1 + ss2);
-    auto sg  =  (fg1 + fg2).pair(solver_data.cell_centers).apply([force_to_source_terms] (auto F, auto X)
-    {
-        return nd::zip(F, X) | nd::apply(force_to_source_terms);
-    });
-
-
-    // // Gravitational force, sink fields, and buffer zone source term
-    // //=========================================================================
-    // auto fg1 =        grav_vdot_field(solver_data, body1_pos, binary.body1.mass) * m0;
-    // auto fg2 =        grav_vdot_field(solver_data, body2_pos, binary.body2.mass) * m0;
-    // auto sg  =  (fg1 + fg2).map(nd::map(force_to_source_terms));
-    // auto ss  =  (ss1 + ss2);
-    // auto bz  =  (solver_data.initial_conserved - u0) * solver_data.buffer_rate_field * dA;
 
 
     // The updated conserved densities
     //=========================================================================
-    auto q1 = q0 + (lx + ly + ss + sg + bz + st) * dt / dA;
+    auto q1 = q0 + (lx + ly + ss1 + ss2 + sg1 + sg2 + bz + st) * dt / dA;
     auto next_conserved = q1.map(evaluate, tree_launch);
 
     if (! safe_mode && (next_conserved.map(component<0>()) < 0.0).map(nd::any()).any())
     {
+        next_conserved
+        .pair(solver_data.cell_centers)
+        .sink([] (auto ux)
+        {
+            for (auto [u, x] : nd::zip(std::get<0>(ux), std::get<1>(ux)))
+            {
+                if (mara::get<0>(u) < 0.0)
+                {
+                    std::cout << "negative density " << mara::get<0>(u).value << " at " << mara::to_string(x) << std::endl;
+                }
+            }
+        });
+
         std::cout << "binary::advance (negative density; re-trying in safe mode)" << std::endl;
         return advance(solution, solver_data, dt, true);
     }
 
 
-    // // The total force on each component, Mdot's, Ldot's, and Edot's.
-    // //=========================================================================
-    // auto xc = solver_data.cell_centers.map(component<0>());
-    // auto yc = solver_data.cell_centers.map(component<1>());
-    // auto fg1_tot = -fg1.map(nd::sum(), tree_launch).sum();
-    // auto fg2_tot = -fg2.map(nd::sum(), tree_launch).sum();
-    // auto ss1_tot = -ss1.map(component<0>()).map(nd::sum(), tree_launch).sum();
-    // auto ss2_tot = -ss2.map(component<0>()).map(nd::sum(), tree_launch).sum();
-    // auto px_accrete1_rate = -ss1.map(component<1>());
-    // auto py_accrete1_rate = -ss1.map(component<2>());
-    // auto px_accrete2_rate = -ss2.map(component<1>());
-    // auto py_accrete2_rate = -ss2.map(component<2>());
-    // auto px_ejection_rate =  -bz.map(component<1>());
-    // auto py_ejection_rate =  -bz.map(component<2>());
-    // auto m0_ejection_rate =  -bz.map(component<0>()).map(nd::sum(), tree_launch).sum();
-    // auto lz_ejection_rate = (xc * py_ejection_rate - yc * px_ejection_rate).map(nd::sum(), tree_launch).sum();
-    // auto lz_accrete1_rate = (xc * py_accrete1_rate - yc * px_accrete1_rate).map(nd::sum(), tree_launch).sum();
-    // auto lz_accrete2_rate = (xc * py_accrete2_rate - yc * px_accrete2_rate).map(nd::sum(), tree_launch).sum();
+    // The total force on each component, Mdot's, Ldot's, and Edot's.
+    //=========================================================================
+    auto mdot1 = -ss1.map(component<0>()).map(nd::sum(), tree_launch).sum();
+    auto mdot2 = -ss2.map(component<0>()).map(nd::sum(), tree_launch).sum();
+    auto kdot1 = -ss1.map(component<2>()).map(nd::sum(), tree_launch).sum();
+    auto kdot2 = -ss2.map(component<2>()).map(nd::sum(), tree_launch).sum();
+    auto ldot1 = -sg1.map(component<2>()).map(nd::sum(), tree_launch).sum();
+    auto ldot2 = -sg2.map(component<2>()).map(nd::sum(), tree_launch).sum();
+    auto m0_ejection_rate = -bz.map(component<0>()).map(nd::sum(), tree_launch).sum();
+    auto lz_ejection_rate = -bz.map(component<2>()).map(nd::sum(), tree_launch).sum();
 
-    // auto Mdot = mara::make_sequence(ss1_tot, ss2_tot);
-    // auto Kdot = mara::make_sequence(lz_accrete1_rate, lz_accrete2_rate);
-    // auto Ldot = mara::make_sequence(cross_prod_z(body1_pos, fg1_tot), cross_prod_z(body2_pos, fg2_tot));
-    // auto Edot = mara::make_sequence((fg1_tot * body1_vel).sum(), (fg2_tot * body2_vel).sum());
+    auto Mdot = mara::make_sequence(mdot1, mdot2);
+    auto Kdot = mara::make_sequence(kdot1, kdot2);
+    auto Ldot = mara::make_sequence(ldot1, ldot2);
 
 
     // The full updated solution state
@@ -310,15 +303,14 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         solution.iteration + 1,
         next_conserved,
 
-        solution.mass_accreted_on             , // + Mdot * dt,
-        solution.angular_momentum_accreted_on , // + Kdot * dt,
-        solution.integrated_torque_on         , // + Ldot * dt,
+        solution.mass_accreted_on             + Mdot * dt,
+        solution.angular_momentum_accreted_on + Kdot * dt,
+        solution.integrated_torque_on         + Ldot * dt,
         solution.work_done_on                 , // + Edot * dt,
-        solution.mass_ejected                 , // + m0_ejection_rate * dt,
-        solution.angular_momentum_ejected     , // + lz_ejection_rate * dt,
+        solution.mass_ejected                 + m0_ejection_rate * dt,
+        solution.angular_momentum_ejected     + lz_ejection_rate * dt,
     };
 }
-
 
 
 
