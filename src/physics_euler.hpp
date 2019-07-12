@@ -208,15 +208,14 @@ struct mara::euler::primitive_t : public mara::derivable_sequence_t<double, 5, p
      */
     conserved_density_t to_conserved_density(double gamma_law_index) const
     {
-        const auto& _ = *this;
         auto d = mass_density();
         auto p = gas_pressure();
         auto U = conserved_density_t();
-        U[0].value = d;
-        U[1].value = d * _[1];
-        U[2].value = d * _[2];
-        U[3].value = d * _[3];
-        U[4].value = 0.5 * d * velocity_squared() + p / (gamma_law_index - 1);
+        U[0] = d;
+        U[1] = d * velocity_1();
+        U[2] = d * velocity_2();
+        U[3] = d * velocity_3();
+        U[4] = 0.5 * d * velocity_squared() + p / (gamma_law_index - 1);
         return U;
     }
 
@@ -318,14 +317,14 @@ struct mara::euler::primitive_t : public mara::derivable_sequence_t<double, 5, p
 
 
 
-    /**
+    *
      * @brief      Special case of the above for 1d radial flow
      *
      * @param[in]  spherical_radius  The spherical radius
      * @param[in]  gamma_law_index   The gamma law index
      *
      * @return     Source terms in units of mass / volume / time
-     */
+     
     auto spherical_geometry_source_terms_radial(double spherical_radius, double gamma_law_index)
     {
         auto vq = velocity_2();
