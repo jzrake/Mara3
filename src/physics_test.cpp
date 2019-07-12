@@ -98,16 +98,47 @@ TEST_CASE("Roe average states have the correct mathematical properties")
 
 TEST_CASE("Isothermal 2d system", "[mara::iso2d::primitive_t]")
 {
-    auto P = mara::iso2d::primitive_t()
-    .with_sigma(2.0)
-    .with_velocity_x(0.5)
-    .with_velocity_y(1.5);
+    SECTION("U -> P and P -> U work correctly")
+    {
+        auto P = mara::iso2d::primitive_t()
+        .with_sigma(2.0)
+        .with_velocity_x(0.5)
+        .with_velocity_y(1.5);
 
-    auto U = P.to_conserved_per_area();
-    REQUIRE(P.velocity_x() == 0.5);
-    REQUIRE(mara::get<0>(U).value == P.sigma());
-    REQUIRE(mara::get<1>(U).value == P.sigma() * P.velocity_x());
-    REQUIRE(mara::get<2>(U).value == P.sigma() * P.velocity_y());
+        auto U = P.to_conserved_per_area();
+        REQUIRE(P.velocity_x() == 0.5);
+        REQUIRE(mara::get<0>(U).value == P.sigma());
+        REQUIRE(mara::get<1>(U).value == P.sigma() * P.velocity_x());
+        REQUIRE(mara::get<2>(U).value == P.sigma() * P.velocity_y());
+    }
+
+    SECTION("Q -> P and P -> Q work correctly away from the origin")
+    {
+        auto x = mara::iso2d::location_2d_t{1.0, 2.0};
+        auto P = mara::iso2d::primitive_t()
+        .with_sigma(2.0)
+        .with_velocity_x(0.5)
+        .with_velocity_y(1.5);
+
+        auto U = P.to_conserved_angmom_per_area(x);
+        REQUIRE(mara::iso2d::recover_primitive(U, x).sigma() == P.sigma());
+        REQUIRE(mara::iso2d::recover_primitive(U, x).velocity_x() == P.velocity_x());
+        REQUIRE(mara::iso2d::recover_primitive(U, x).velocity_y() == P.velocity_y());
+    }
+
+    SECTION("Q -> P and P -> Q work correctly away from the origin")
+    {
+        auto x = mara::iso2d::location_2d_t{1e-8, 1e-8};
+        auto P = mara::iso2d::primitive_t()
+        .with_sigma(2.0)
+        .with_velocity_x(0.5)
+        .with_velocity_y(1.5);
+
+        auto U = P.to_conserved_angmom_per_area(x);
+        REQUIRE(mara::iso2d::recover_primitive(U, x).sigma() == P.sigma());
+        REQUIRE(mara::iso2d::recover_primitive(U, x).velocity_x() == Approx(P.velocity_x()).epsilon(1e-14));
+        REQUIRE(mara::iso2d::recover_primitive(U, x).velocity_y() == Approx(P.velocity_y()).epsilon(1e-14));
+    }
 
     SECTION("HLLC gets zero contact speed for zero-velocity, equal pressure states")
     {

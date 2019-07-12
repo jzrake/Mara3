@@ -47,12 +47,9 @@ auto binary::grav_vdot_field(const solver_data_t& solver_data, location_2d_t bod
         return -dr / (dr2 + rs2).pow<3, 2>() * G * body_mass;
     };
 
-    return solver_data.vertices.map([accel] (auto block)
+    return solver_data.cell_centers.map([accel] (auto block)
     {
-        return block
-        | nd::midpoint_on_axis(0)
-        | nd::midpoint_on_axis(1)
-        | nd::map(accel);
+        return block | nd::map(accel);
     });
 }
 
@@ -66,12 +63,9 @@ auto binary::sink_rate_field(const solver_data_t& solver_data, location_2d_t sin
         return sink_rate * 0.5 * std::exp(-a2);
     };
 
-    return solver_data.vertices.map([sink] (auto block)
+    return solver_data.cell_centers.map([sink] (auto block)
     {
-        return block
-        | nd::midpoint_on_axis(0)
-        | nd::midpoint_on_axis(1)
-        | nd::map(sink);
+        return block | nd::map(sink);
     });
 }
 
@@ -81,6 +75,11 @@ auto binary::sink_rate_field(const solver_data_t& solver_data, location_2d_t sin
 //=============================================================================
 binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
 {
+
+    // Note: this scheme still uses globally constant sound speed!
+    auto cs2 = std::pow(solver_data.mach_number, -2.0);
+
+
     /*
      * @brief      Extend each block in a given tree of cell-wise values, with
      *             two guard zones on the given axis.
@@ -137,46 +136,82 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
      * @brief      Return an array of intercell fluxes by calling the specified
      *             riemann solver
      *
-     * @param[in]  riemann_solver  The riemann solver to use
-     * @param[in]  axis            The axis to get the fluxes on
+     * @param[in]  axis  The axis to get the fluxes on
      *
      * @return     An array operator that returns arrays of fluxes
      */
-    auto intercell_flux = [cs2=std::pow(solver_data.mach_number, -2.0)] (auto riemann_solver, std::size_t axis)
+    auto intercell_flux = [cs2] (std::size_t axis)
     {
-        return [axis, riemann_solver, cs2] (auto left_and_right_states)
+        return [axis, cs2] (auto left_and_right_states)
         {
             using namespace std::placeholders;
             auto nh = mara::unit_vector_t::on_axis(axis);
-            auto riemann = std::bind(riemann_solver, _1, _2, cs2, cs2, nh);
+            auto riemann = std::bind(mara::iso2d::riemann_hlle, _1, _2, cs2, cs2, nh);
             return left_and_right_states | nd::apply(riemann);
         };
     };
 
+
+    /*
+     * @brief      Return a tree of primitive variables given a tree of
+     *             angular-momentum conserving variables and a tree of the
+     *             cell-center coordinates.
+     *
+     * @param[in]  q0    The tree of angular-momentum conserving variables
+     * @param[in]  xc    The tree of cell-center coordinates
+     *
+     * @return     A tree of primitives
+     */
     auto recover_primitive = [] (const auto& q0, const auto& xc)
     {
+        auto q_to_p = [] (auto q, auto x) { return mara::iso2d::recover_primitive(q, x); };
+
         return q0
         .pair(xc)
-        .apply([] (auto Q, auto X)
+        .apply([q_to_p] (auto Q, auto X)
         {
-            return nd::zip(Q, X) | nd::apply([] (auto q, auto x)
-            {
-                return mara::iso2d::recover_primitive(q, x);
-            });
+            return nd::zip(Q, X) | nd::apply(q_to_p) | nd::to_shared();
         }, tree_launch);
+    };
+
+
+    /*
+     * @brief      Return a tree of fluxes of angular-momentum conserving
+     *             variables (Q), given a tree of linear-momentum conserving
+     *             variables (U) and the associated coordinates.
+     *
+     * @param[in]  F     The tree of U-fluxes
+     * @param[in]  X     The tree of coordinates
+     *
+     * @return     The tree of Q-fluxes
+     */
+    auto to_angmom_fluxes = [] (const auto& F, const auto& X)
+    {
+        return nd::zip(F, X) | nd::apply([] (auto f, auto x)
+        {
+            auto flux_sigma = mara::get<0>(f);
+            auto flux_px    = mara::get<1>(f);
+            auto flux_py    = mara::get<2>(f);
+            auto flux_sr    = x[0] * flux_px + x[1] * flux_px;
+            auto flux_lz    = x[0] * flux_py - x[1] * flux_py;
+            return mara::make_arithmetic_tuple(flux_sigma, flux_sr, flux_lz);
+        });
     };
 
 
     // Minor helper functions
     //=========================================================================
     auto evaluate = nd::to_shared();
-    auto force_to_source_terms = [] (force_2d_t f)
+    auto force_to_source_terms = [] (force_2d_t f, location_2d_t x)
     {
-        return mara::iso2d::conserved_t() / mara::make_time(1.0);
-        // return mara::iso2d::flow_t{0.0, f[0].value, f[1].value};
-        // TODO
+        auto sigma_dot = mara::make_dimensional<0, 1, -1>(0.0);
+        auto sr_dot    = x[0] * f[0] + x[1] * f[1];
+        auto lz_dot    = x[0] * f[1] - x[0] * f[0];
+        return mara::make_arithmetic_tuple(sigma_dot, sr_dot, lz_dot);
     };
-    auto cross_prod_z = [] (auto r, auto f) { return r[0] * f[1] - r[1] * f[0]; };
+
+
+    // auto cross_prod_z = [] (auto r, auto f) { return r[0] * f[1] - r[1] * f[0]; };
 
 
     // Binary parameters
@@ -196,34 +231,51 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto p0  =  recover_primitive(solution.conserved, solver_data.cell_centers);
     auto dx  =  v0.map([] (auto v) { return v | component<0>() | nd::difference_on_axis(0); });
     auto dy  =  v0.map([] (auto v) { return v | component<1>() | nd::difference_on_axis(1); });
-    auto fx  =  extend(p0, 0).map(extrapolate(0), tree_launch).map(intercell_flux(mara::iso2d::riemann_hlle, 0)) * dy;
-    auto fy  =  extend(p0, 1).map(extrapolate(1), tree_launch).map(intercell_flux(mara::iso2d::riemann_hlle, 1)) * dx;
-    // auto lx  = -fx.map(nd::difference_on_axis(0));
-    // auto ly  = -fy.map(nd::difference_on_axis(1));
-    // auto m0  =  u0.map(component<0>()) * dA; // cell masses
+    auto xf  =  v0.map([] (auto v) { return v | nd::midpoint_on_axis(1); });
+    auto yf  =  v0.map([] (auto v) { return v | nd::midpoint_on_axis(0); });
+    auto fx  =  extend(p0, 0).map(extrapolate(0), tree_launch).map(intercell_flux(0));
+    auto fy  =  extend(p0, 1).map(extrapolate(1), tree_launch).map(intercell_flux(1));
+    auto gx  =  fx.pair(xf).apply(to_angmom_fluxes) * dy;
+    auto gy  =  fy.pair(yf).apply(to_angmom_fluxes) * dx;
+    auto lx  = -gx.map(nd::difference_on_axis(0));
+    auto ly  = -gy.map(nd::difference_on_axis(1));
+    auto m0  =  q0.map(component<0>()) * dA; // cell masses
+
+
+    // Gravitational force, sink fields, and buffer zone source term
+    //=========================================================================
+    auto fg1 =        grav_vdot_field(solver_data, body1_pos, binary.body1.mass) * m0;
+    auto fg2 =        grav_vdot_field(solver_data, body2_pos, binary.body2.mass) * m0;
+    auto ss1 =  -q0 * sink_rate_field(solver_data, body1_pos) * dA;
+    auto ss2 =  -q0 * sink_rate_field(solver_data, body2_pos) * dA;
+    auto st  =   p0.map(nd::map([cs2] (auto p) { return p.source_terms_conserved_angmom(cs2); })) * dA;
+    auto bz  =  (solver_data.initial_conserved - q0) * solver_data.buffer_rate_field * dA;
+    auto ss  =  (ss1 + ss2);
+    auto sg  =  (fg1 + fg2).pair(solver_data.cell_centers).apply([force_to_source_terms] (auto F, auto X)
+    {
+        return nd::zip(F, X) | nd::apply(force_to_source_terms);
+    });
 
 
     // // Gravitational force, sink fields, and buffer zone source term
     // //=========================================================================
     // auto fg1 =        grav_vdot_field(solver_data, body1_pos, binary.body1.mass) * m0;
     // auto fg2 =        grav_vdot_field(solver_data, body2_pos, binary.body2.mass) * m0;
-    // auto ss1 =  -u0 * sink_rate_field(solver_data, body1_pos) * dA;
-    // auto ss2 =  -u0 * sink_rate_field(solver_data, body2_pos) * dA;
     // auto sg  =  (fg1 + fg2).map(nd::map(force_to_source_terms));
     // auto ss  =  (ss1 + ss2);
     // auto bz  =  (solver_data.initial_conserved - u0) * solver_data.buffer_rate_field * dA;
 
 
-    // // The updated conserved densities
-    // //=========================================================================
-    // auto u1 = u0 + (lx + ly + ss + sg + bz) * dt / dA;
-    // auto next_conserved = u1.map(evaluate, tree_launch);
+    // The updated conserved densities
+    //=========================================================================
+    auto q1 = q0 + (lx + ly + ss + sg + bz + st) * dt / dA;
+    auto next_conserved = q1.map(evaluate, tree_launch);
 
-    // if (! safe_mode && (next_conserved.map(component<0>()) < 0.0).map(nd::any()).any())
-    // {
-    //     std::cout << "binary::advance (negative density; re-trying in safe mode)" << std::endl;
-    //     return advance(solution, solver_data, dt, true);
-    // }
+    if (! safe_mode && (next_conserved.map(component<0>()) < 0.0).map(nd::any()).any())
+    {
+        std::cout << "binary::advance (negative density; re-trying in safe mode)" << std::endl;
+        return advance(solution, solver_data, dt, true);
+    }
 
 
     // // The total force on each component, Mdot's, Ldot's, and Edot's.
@@ -251,23 +303,22 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     // auto Edot = mara::make_sequence((fg1_tot * body1_vel).sum(), (fg2_tot * body2_vel).sum());
 
 
-    // // The full updated solution state
-    // //=========================================================================
-    // return solution_t{
-    //     solution.time + dt,
-    //     solution.iteration + 1,
-    //     next_conserved,
+    // The full updated solution state
+    //=========================================================================
+    return solution_t{
+        solution.time + dt,
+        solution.iteration + 1,
+        next_conserved,
 
-    //     solution.mass_accreted_on             + Mdot * dt,
-    //     solution.angular_momentum_accreted_on + Kdot * dt,
-    //     solution.integrated_torque_on         + Ldot * dt,
-    //     solution.work_done_on                 + Edot * dt,
-    //     solution.mass_ejected                 + m0_ejection_rate * dt,
-    //     solution.angular_momentum_ejected     + lz_ejection_rate * dt,
-    // };
-    
-    return solution;
+        solution.mass_accreted_on             , // + Mdot * dt,
+        solution.angular_momentum_accreted_on , // + Kdot * dt,
+        solution.integrated_torque_on         , // + Ldot * dt,
+        solution.work_done_on                 , // + Edot * dt,
+        solution.mass_ejected                 , // + m0_ejection_rate * dt,
+        solution.angular_momentum_ejected     , // + lz_ejection_rate * dt,
+    };
 }
+
 
 
 

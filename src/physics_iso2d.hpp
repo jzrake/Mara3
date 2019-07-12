@@ -267,6 +267,19 @@ struct mara::iso2d::primitive_t : public mara::derivable_sequence_t<double, 3, p
 
 
 
+    auto source_terms_conserved_angmom(double sound_speed_squared) const
+    {
+        auto Ek = 0.5 * sigma() * velocity_squared();
+        auto pg = gas_pressure(sound_speed_squared);
+        auto sigma_dot = make_dimensional<-2, 1, -1>(0.0);
+        auto sr_dot    = make_dimensional< 0, 1, -2>((Ek + pg) * 2.0);
+        auto lz_dot    = make_dimensional< 0, 1, -2>(0.0);
+        return make_arithmetic_tuple(sigma_dot, sr_dot, lz_dot);
+    }
+
+
+
+
     /**
      * @brief      Return the flux of conserved quantities in the given
      *             direction.
