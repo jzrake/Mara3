@@ -178,6 +178,16 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     }
 
     /**
+     * @brief      Return the magnitude of the velocity.
+     *
+     * @return     |u|
+     */
+    double velocity_magnitude() const
+    {
+        return std::sqrt( velocity_squared() );
+    }
+
+    /**
      * @brief      Return the kinematic three-velocity along the given unit
      *             vector.
      *
@@ -225,7 +235,7 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
      */
     double bfield_dot_velocity() const
     {
-        //Vector correspondence between 1 and 5; 2 and 6; 3 and 7 (e.g. vx and Bx)
+        //Coordinate correspondence between 1 and 5; 2 and 6; 3 and 7 (e.g. vx and Bx)
         const auto &_ = *this;
         return _[1] * _[5] + _[2] * _[6] + _[3] * _[7];
     }
@@ -268,33 +278,41 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     }
 
    /**
-     * @brief      Return the fast/slow magnetosonic wavespeed squared along nhat
+     * @brief      Return the fast magnetosonic wavespeed squared along nhat
      *
-     * @param[in]  fast_slow  The delimiter for the desired wave
+     * @param[in]  nhat             The unit vector
+     * 
+     * @param[in]  gamma_law_index  The gamma law index
      *
-     * @param[in]  nhat       The unit vector
-     *
-     * @return     0.5 * ( c_s^2 + c_a^2 ) \pm 0.5*\sqrt{ (c_s^2+c_a^2)^2 - 4*c_s^2*c_{a,i}^2 }
+     * @return     0.5 * ( c_s^2 + c_a^2 ) + 0.5*\sqrt{ (c_s^2+c_a^2)^2 - 4*c_s^2*c_{a,i}^2 }
      */
-    // **** Not sure I need this. And the fast_slow thing might be a bad idea.... lol
-    double magnetosonic_speed_squared(std::string fast_slow, unit_vector_t& nhat) const
+    double magnetosonic_speed_squared_fast(const unit_vector_t& nhat, double gamma_law_index) const
     {
-        const auto cs2 = sound_speed_squared();
+        const auto cs2 = sound_speed_squared(gamma_law_index);
         const auto one = cs2 + alfven_speed_squared();
         const auto two = 0.5 * std::sqrt(one * one - 4 * cs2 * alfven_speed_squared_along(nhat));
 
-        double result = 0.0;
-        switch(fast_slow)
-        {
-            case "fast": result = 0.5 * one + two; break;
-            case "slow": result = 0.5 * one - two; break;
-            default: 
-                throw std::invalid_argument("invalid call to magneto_sonic_speed_square; must specify with strings 'fast' or 'slow' ");
-        }
-        return result;
+        return 0.5 * one + two;
     }
 
 
+   /**
+     * @brief      Return the slow magnetosonic wavespeed squared along nhat
+     *
+     * @param[in]  nhat             The unit vector
+     * 
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     0.5 * ( c_s^2 + c_a^2 ) - 0.5*\sqrt{ (c_s^2+c_a^2)^2 - 4*c_s^2*c_{a,i}^2 }
+     */
+    double magnetosonic_speed_squared_slow(const unit_vector_t& nhat, double gamma_law_index) const
+    {
+        const auto cs2 = sound_speed_squared(gamma_law_index);
+        const auto one = cs2 + alfven_speed_squared();
+        const auto two = 0.5 * std::sqrt(one * one - 4 * cs2 * alfven_speed_squared_along(nhat));
+
+        return 0.5 * one - two;
+    }
 
 
     /**
@@ -356,11 +374,12 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
      */
     flux_vector_t flux(const unit_vector_t& nhat, const conserved_density_t& U) const
     {
+        auto d  = mass_density();
         auto v  = velocity_along(nhat);
         auto b  = bfield_along(nhat);
         auto p  = gas_pressure();
         auto bv = bfield_dot_velocity();
-        auto F = flux_vector_t();
+        auto F  = flux_vector_t();
         F[0].value = v * U[0].value;
         F[1].value = v * U[1].value + p * nhat.get_n1() /*mhd*/ - U[5].value * b;
         F[2].value = v * U[2].value + p * nhat.get_n2() /*mhd*/ - U[6].value * b;
@@ -368,11 +387,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         F[4].value = v * U[4].value + p * v             /*mhd*/ - bv         * b;
 
         // mhd: B \cross v
-        // when flux is in direction of nhat it should become zero...
-        //      should work if no error associated with _along() functions...
-        F[5].value = v * U[5].value - U[1].value * b;
-        F[6].value = v * U[6].value - U[2].value * b;
-        F[7].value = v * U[7].value - U[3].value * b;
+        F[5].value = v * U[5].value / d - U[1].value * b;
+        F[6].value = v * U[6].value / d - U[2].value * b;  
+        F[7].value = v * U[7].value / d - U[3].value * b;
 
         return F;
     }
@@ -410,7 +427,7 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
 
     wavespeeds_t fast_wave_speeds(const unit_vector_t& nhat, double gamma_law_index) const
     {
-        auto cf = std::sqrt( magneto_sonic_speed_square("fast", nhat) );
+        auto cf = std::sqrt( magnetosonic_speed_squared_fast(nhat, gamma_law_index) );
         auto vn = velocity_along(nhat);
         return{
             make_velocity(vn - cf),
@@ -420,7 +437,7 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
 
     wavespeeds_t slow_wave_speeds(const unit_vector_t& nhat, double gamma_law_index) const
     {
-        auto cs = std::sqrt( magneto_sonic_speed_square("slow", nhat) );
+        auto cs = std::sqrt( magnetosonic_speed_squared_slow(nhat, gamma_law_index) );
         auto vn = velocity_along(nhat);
         return{
             make_velocity(vn - cs),
@@ -445,9 +462,10 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
             make_velocity(vn + c0)
         };
     }
-    
+
 
 };
+
 
 
 
@@ -476,7 +494,7 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
     P[1] =  U[1].value / d;
     P[2] =  U[2].value / d;
     P[3] =  U[3].value / d;
-    P[4] = (U[4].value - 0.5 * p_squared / d - b_squared / 2.0) * (gamma_law_index - 1.0);
+    P[4] = (U[4].value - 0.5 * p_squared / d - 0.5 * b_squared) * (gamma_law_index - 1.0);
     P[5] =  U[5].value;
     P[6] =  U[6].value;
     P[7] =  U[7].value;
@@ -489,28 +507,6 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
 }
 
 
-
-
-/**
- * @brief      Compute a sensible Roe-average state Q = Roe(Pr, Pl), defined
- *             here as the primitives weighted by square root of the mass
- *             density. This averaged state is symmetric in (Pr, Pl), and has
- *             the property that A(Q) * (Ur - Ul) = F(Ur) - F(Ul), where A is
- *             the flux Jacobian.
- *
- * @param[in]  Pr    The other state
- * @param[in]  Pl    The first state
- *
- * @return     The Roe-averaged primitive state
- */
-mara::mhd::primitive_t mara::mhd::roe_average(
-    const primitive_t& Pr,
-    const primitive_t& Pl)
-{
-    auto kr = std::sqrt(Pr.mass_density());
-    auto kl = std::sqrt(Pl.mass_density());
-    return (Pr * kr + Pl * kl) / (kr + kl);
-}
 
 
 
@@ -533,7 +529,7 @@ mara::mhd::flux_vector_t mara::mhd::riemann_hlle(
 {
     auto Ul = Pl.to_conserved_density(gamma_law_index);
     auto Ur = Pr.to_conserved_density(gamma_law_index);
-    auto Al = Pl.fast_wave_speeds(nhat, gamma_law_index ); //This sends just a double as sound speed
+    auto Al = Pl.fast_wave_speeds(nhat, gamma_law_index ); 
     auto Ar = Pr.fast_wave_speeds(nhat, gamma_law_index );
     auto Fl = Pl.flux(nhat, Ul);
     auto Fr = Pr.flux(nhat, Ur);
