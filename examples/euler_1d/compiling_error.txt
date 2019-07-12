@@ -1,0 +1,4 @@
+/Users/magda/gradschool/CCA_summer_school/Mara3/examples/euler_1d/euler_1d.cpp:34:10: fatal error: core_ndarray.hpp: No such file or directory
+ #include "core_ndarray.hpp"
+          ^~~~~~~~~~~~~~~~~~
+compilation terminated.
