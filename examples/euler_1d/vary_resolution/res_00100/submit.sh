@@ -1,1 +1,0 @@
-./examples/euler_1d/euler_1d  tfinal=0.5 delta_t_diagnostic=0.01 cfl_number=0.1 cd=0 rhoL=1.0 rhoR=0.1 pL=1.0 pR=0.125 outdir=examples/euler_1d/vary_resolution/res_00100 resolution=100
