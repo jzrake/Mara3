@@ -1,6 +1,6 @@
 # 1-D EULER CODE
 
-Simulate a shock traveling wave on a 1-D grid. After creating the output files for a range of resolutions, the diffusion of the shock is quantified.
+Simulate a shock traveling on a 1-D grid. After creating the output files for a range of resolutions, the diffusion of the shock is quantified.
 
 ## Getting Started
 
