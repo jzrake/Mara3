@@ -73,6 +73,7 @@ mara::config_template_t binary::create_config_template()
     .item("plm_theta",            1.8)          // plm theta parameter: [1.0, 2.0]
     .item("riemann",           "hlle")          // riemann solver to use: hlle only (hllc disabled until further testing)
     .item("softening_radius",    0.02)          // gravitational softening radius
+    .item("source_term_softening", 1.)          // number of cells within which the Sr source term is suppressed
     .item("sink_radius",         0.02)          // radius of mass (and momentum) subtraction region
     .item("sink_rate",            1e2)          // sink rate at the point masses (orbital angular frequency)
     .item("buffer_damping_rate",  1.0)          // maximum rate of buffer zone, where solution is driven to initial state
@@ -220,24 +221,35 @@ binary::state_t binary::create_state(const mara::config_t& run_config)
 //=============================================================================
 auto binary::next_solution(const solution_t& state, const solver_data_t& solver_data)
 {
-    auto dt = solver_data.recommended_time_step;
-    auto s0 = state;
-
-    switch (solver_data.rk_order)
+    auto can_fail = [] (const solution_t& state, const solver_data_t& solver_data, auto dt)
     {
-        case 1:
+        auto s0 = state;
+
+        switch (solver_data.rk_order)
         {
-            return advance(s0, solver_data, dt);
+            case 1:
+            {
+                return advance(s0, solver_data, dt);
+            }
+            case 2:
+            {
+                auto b0 = mara::make_rational(1, 2);
+                auto s1 = advance(s0, solver_data, dt);
+                auto s2 = advance(s1, solver_data, dt);
+                return s0 * b0 + s2 * (1 - b0);
+            }
         }
-        case 2:
-        {
-            auto b0 = mara::make_rational(1, 2);
-            auto s1 = advance(s0, solver_data, dt);
-            auto s2 = advance(s1, solver_data, dt);
-            return s0 * b0 + s2 * (1 - b0);
-        }
+        throw std::invalid_argument("binary::next_solution");
+    };
+
+    try {
+        return can_fail(state, solver_data, solver_data.recommended_time_step);
     }
-    throw std::invalid_argument("binary::next_solution");
+    catch (const std::exception& e)
+    {
+        std::cout << e.what() << std::endl;
+        return can_fail(state, solver_data, solver_data.recommended_time_step * 0.01);
+    }
 }
 
 auto binary::next_schedule(const state_t& state)

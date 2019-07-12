@@ -84,6 +84,7 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     result.sink_rate             = run_config.get_double("sink_rate");
     result.sink_radius           = run_config.get_double("sink_radius");
     result.softening_radius      = run_config.get_double("softening_radius");
+    result.gst_suppr_radius      = run_config.get_double("source_term_softening") * std::min(min_dx, min_dy).value;
     result.plm_theta             = run_config.get_double("plm_theta");
     result.rk_order              = run_config.get_int("rk_order");
     result.recommended_time_step = std::min(min_dx, min_dy) / max_velocity * run_config.get_double("cfl_number");
@@ -95,7 +96,6 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     result.initial_conserved     = create_solution(run_config).conserved;
 
     if      (run_config.get_string("riemann") == "hlle") result.riemann_solver = riemann_solver_t::hlle;
-    // else if (run_config.get_string("riemann") == "hllc") result.riemann_solver = riemann_solver_t::hllc;
     else throw std::invalid_argument("invalid riemann solver '" + run_config.get_string("riemann") + "', must be hlle");
 
     if      (run_config.get_string("reconstruct_method") == "pcm") result.reconstruct_method = reconstruct_method_t::pcm;

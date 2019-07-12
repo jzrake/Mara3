@@ -78,6 +78,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     // Note: this scheme still uses globally constant sound speed!
     auto cs2 = std::pow(solver_data.mach_number, -2.0);
+    auto sr2 = solver_data.gst_suppr_radius.pow<2>();
 
 
     /*
@@ -213,6 +214,17 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     {
         return nd::zip(F, X) | nd::apply(force_to_source_terms);
     };
+    auto geometrical_source_terms_tree = [cs2, sr2] (auto P, auto X)
+    {
+        auto ramp = X | nd::map([sr2] (auto x)
+        {
+            return 1.0 - std::exp(-(x * x).sum() / sr2);
+        });
+
+        return P
+        | nd::map([cs2] (auto p) { return p.source_terms_conserved_angmom(cs2); })
+        | nd::multiply(ramp);
+    };
 
 
     // Binary parameters
@@ -251,7 +263,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto sg2 =   fg2.pair(solver_data.cell_centers).apply(force_to_source_terms_tree);
     auto ss1 =  -q0 * sink_rate_field(solver_data, body1_pos) * dA;
     auto ss2 =  -q0 * sink_rate_field(solver_data, body2_pos) * dA;
-    auto st  =   p0.map(nd::map([cs2] (auto p) { return p.source_terms_conserved_angmom(cs2); })) * dA;
+    auto st  =   p0.pair(solver_data.cell_centers).apply(geometrical_source_terms_tree) * dA;
     auto bz  =  (solver_data.initial_conserved - q0) * solver_data.buffer_rate_field * dA;
 
 
