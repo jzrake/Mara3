@@ -74,15 +74,15 @@ template<>
 void mara::write<binary::solution_t>(h5::Group& group, std::string name, const binary::solution_t& solution)
 {
     auto location = group.require_group(name);
-    mara::write(location, "time",                     solution.time);
-    mara::write(location, "iteration",                solution.iteration);
-    mara::write(location, "conserved",                solution.conserved);
-    mara::write(location, "mass_accreted_on",         solution.mass_accreted_on);
-    mara::write(location, "angular_momentum_ejected", solution.angular_momentum_ejected);
-    mara::write(location, "integrated_torque_on",     solution.integrated_torque_on);
-    mara::write(location, "work_done_on",             solution.work_done_on);
-    mara::write(location, "mass_ejected",             solution.mass_ejected);
-    mara::write(location, "angular_momentum_ejected", solution.angular_momentum_ejected);
+    mara::write(location, "time",                         solution.time);
+    mara::write(location, "iteration",                    solution.iteration);
+    mara::write(location, "conserved",                    solution.conserved);
+    mara::write(location, "mass_accreted_on",             solution.mass_accreted_on);
+    mara::write(location, "angular_momentum_ejected",     solution.angular_momentum_ejected);
+    mara::write(location, "integrated_torque_on",         solution.integrated_torque_on);
+    mara::write(location, "work_done_on",                 solution.work_done_on);
+    mara::write(location, "mass_ejected",                 solution.mass_ejected);
+    mara::write(location, "angular_momentum_accreted_on", solution.angular_momentum_accreted_on);
 }
 
 template<>
@@ -112,16 +112,16 @@ void mara::write<binary::diagnostic_fields_t>(h5::Group& group, std::string name
 template<>
 void mara::read<binary::solution_t>(h5::Group& group, std::string name, binary::solution_t& solution)
 {
-    auto location = group.open_group(name);
-    mara::read(location, "time",                     solution.time);
-    mara::read(location, "iteration",                solution.iteration);
-    mara::read(location, "conserved",                solution.conserved);
-    mara::read(location, "mass_accreted_on",         solution.mass_accreted_on);
-    mara::read(location, "angular_momentum_ejected", solution.angular_momentum_ejected);
-    mara::read(location, "integrated_torque_on",     solution.integrated_torque_on);
-    mara::read(location, "work_done_on",             solution.work_done_on);
-    mara::read(location, "mass_ejected",             solution.mass_ejected);
-    mara::read(location, "angular_momentum_ejected", solution.angular_momentum_ejected);
+    auto location = group.require_group(name);
+    mara::read(location, "time",                         solution.time);
+    mara::read(location, "iteration",                    solution.iteration);
+    mara::read(location, "conserved",                    solution.conserved);
+    mara::read(location, "mass_accreted_on",             solution.mass_accreted_on);
+    mara::read(location, "angular_momentum_ejected",     solution.angular_momentum_ejected);
+    mara::read(location, "integrated_torque_on",         solution.integrated_torque_on);
+    mara::read(location, "work_done_on",                 solution.work_done_on);
+    mara::read(location, "mass_ejected",                 solution.mass_ejected);
+    mara::read(location, "angular_momentum_accreted_on", solution.angular_momentum_accreted_on);
 }
 
 template<>
