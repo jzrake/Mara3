@@ -32,6 +32,7 @@
 #include "core_geometric.hpp"
 #include "physics_euler.hpp"
 #include "physics_iso2d.hpp"
+#include "physics_ideal_mhd.hpp"
 #include "model_two_body.hpp"
 #define gamma_law_index (5. / 3)
 
@@ -120,6 +121,39 @@ TEST_CASE("Isothermal 2d system", "[mara::iso2d::primitive_t]")
         REQUIRE(Pl.gas_pressure(al2) == Approx(Pr.gas_pressure(ar2)));
         REQUIRE(vars.contact_speed() == 0.0);
     }
+}
+
+TEST_CASE("MHD system", "[mara::mhd::primitive_t]")
+{
+    SECTION("Cons2Prim and Prim2Cons consistent")
+    {
+        auto P1 = mara::mhd::primitive_t()
+        .with_mass_density(2.0)
+        .with_velocity_1(0.5)
+        .with_velocity_2(1.5)
+        .with_velocity_3(1.0)
+        .with_bfield_1(1.5)
+        .with_bfield_2(1.0)
+        .with_bfield_3(2.3);
+
+        auto P2 = mara::mhd::recover_primitive( P1.to_conserved_density(1.4), 1.4, 0.0 );
+
+        REQUIRE( P1==P2 );
+    }
+    SECTION("Wavespeeds are correct")
+    {
+        auto P = mara::mhd::primitive_t()
+        .with_mass_density(2.0)
+        .with_velocity_1(0.0)
+        .with_velocity_2(0.0)
+        .with_velocity_3(0.0)
+        .with_bfield_1(1.5)
+        .with_bfield_2(1.0)
+        .with_bfield_3(2.3);        
+
+        auto B2 = P.bfield_squared();
+    }
+
 }
 
 TEST_CASE("Two body gravity model works as expected", "[model_two_body]")

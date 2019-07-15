@@ -378,18 +378,19 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         auto v  = velocity_along(nhat);
         auto b  = bfield_along(nhat);
         auto p  = gas_pressure();
+        auto p_tot = p + bfield_squared() / 2.0;
         auto bv = bfield_dot_velocity();
         auto F  = flux_vector_t();
         F[0].value = v * U[0].value;
-        F[1].value = v * U[1].value + p * nhat.get_n1() /*mhd*/ - U[5].value * b;
-        F[2].value = v * U[2].value + p * nhat.get_n2() /*mhd*/ - U[6].value * b;
-        F[3].value = v * U[3].value + p * nhat.get_n3() /*mhd*/ - U[7].value * b; 
-        F[4].value = v * U[4].value + p * v             /*mhd*/ - bv         * b;
+        F[1].value = v * U[1].value + p_tot * nhat.get_n1() /*mhd*/ - U[5].value * b;
+        F[2].value = v * U[2].value + p_tot * nhat.get_n2() /*mhd*/ - U[6].value * b;
+        F[3].value = v * U[3].value + p_tot * nhat.get_n3() /*mhd*/ - U[7].value * b; 
+        F[4].value = v * U[4].value + p_tot * v             /*mhd*/ - bv         * b;
 
         // mhd: B \cross v
-        F[5].value = v * U[5].value / d - U[1].value * b;
-        F[6].value = v * U[6].value / d - U[2].value * b;  
-        F[7].value = v * U[7].value / d - U[3].value * b;
+        F[5].value = v * U[5].value - U[1].value / d * b;
+        F[6].value = v * U[6].value - U[2].value / d * b;  
+        F[7].value = v * U[7].value - U[3].value / d * b;
 
         return F;
     }

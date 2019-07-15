@@ -41,7 +41,7 @@
 #include "physics_ideal_mhd.hpp"
 
 
-#define gamma_law_index 1.4
+#define gamma_law_index 2.0
 
 // ============================================================================
 //                                  Header 
@@ -169,7 +169,38 @@ nd::shared_array<mhd_1d::location_1d_t, 1> mhd_1d::create_vertices( const mara::
 }
 
 
+/**
+ * @brief               Apply initial condition
+ * 
+ * @param  run_config   Config object
+ * 
+ * @return              A function giving primitive variables at some point of location_1d_t
+ *
+ */
+auto initial_condition_shocktube_(mhd_1d::location_1d_t position)
+{
+    auto nexus = position < 0.0;
 
+    auto density  = nexus ? 1.0 : 0.1; 
+    auto pressure = nexus ? 1.0 : 0.125;
+    auto vx       = nexus ? 0.0 : 0.0;
+    auto vy       = nexus ? 0.0 : 0.0;
+    auto vz       = nexus ? 0.0 : 0.0;
+    auto bx       = nexus ? 1.2 : 1.2;
+    auto by       = nexus ? 0.0 : 0.0;
+    auto bz       = nexus ? 0.0 : 0.0;
+
+
+    return mara::mhd::primitive_t()
+     .with_mass_density(density)
+     .with_gas_pressure(pressure)
+     .with_velocity_1(vx)
+     .with_velocity_2(vy)
+     .with_velocity_3(vz)
+     .with_bfield_1(bx)
+     .with_bfield_2(by)
+     .with_bfield_3(bz);
+}
 
 /**
  * @brief               Apply initial condition
@@ -179,7 +210,44 @@ nd::shared_array<mhd_1d::location_1d_t, 1> mhd_1d::create_vertices( const mara::
  * @return              A function giving primitive variables at some point of location_1d_t
  *
  */
-auto initial_condition_shocktube(mhd_1d::location_1d_t position)
+auto initial_condition_brio_wu(mhd_1d::location_1d_t position)
+{
+
+    if( gamma_law_index!= 1.4 )
+        throw std::invalid_argument("wrong gamma: for this problem gamma=2.0");
+
+    auto nexus = position < 0.0;
+
+    auto density  = nexus ? 1.0  :  0.125; 
+    auto pressure = nexus ? 1.0  :  0.1;
+    auto vx       = nexus ? 0.0  :  0.0;
+    auto vy       = nexus ? 0.0  :  0.0;
+    auto vz       = nexus ? 0.0  :  0.0;
+    auto bx       = nexus ? 0.75 :  0.75;
+    auto by       = nexus ? 1.00 : -1.0;
+    auto bz       = nexus ? 0.00 :  0.0;
+
+
+    return mara::mhd::primitive_t()
+     .with_mass_density(density)
+     .with_gas_pressure(pressure)
+     .with_velocity_1(vx)
+     .with_velocity_2(vy)
+     .with_velocity_3(vz)
+     .with_bfield_1(bx)
+     .with_bfield_2(by)
+     .with_bfield_3(bz);
+}
+
+/**
+ * @brief               Apply initial condition
+ * 
+ * @param  run_config   Config object
+ * 
+ * @return              A function giving primitive variables at some point of location_1d_t
+ *
+ */
+auto initial_condition_shocktube_mhd(mhd_1d::location_1d_t position)
 {
     auto nexus = position < 0.0;
 
@@ -191,7 +259,7 @@ auto initial_condition_shocktube(mhd_1d::location_1d_t position)
     auto bx       = nexus ? 1.13 : 1.13;
     auto by       = nexus ? 1.02 : 1.13;
     auto bz       = nexus ? 0.56 : 0.56;
-    
+
 
     return mara::mhd::primitive_t()
      .with_mass_density(density)
@@ -218,7 +286,7 @@ mhd_1d::solution_t mhd_1d::create_solution( const mara::config_t& run_config )
     auto vertices  = create_vertices(run_config);
     auto conserved = vertices
          | nd::midpoint_on_axis(0)
-         | nd::map(initial_condition_shocktube)
+         | nd::map(initial_condition_brio_wu)
          | nd::map([] (auto p) { return p.to_conserved_density(gamma_law_index); })
          | nd::to_shared();
     return solution_t{ 0.0, 0, vertices, conserved };
@@ -358,7 +426,8 @@ void output_solution_h5( const mhd_1d::solution_t& s, std::string fname )
 	h5f.write( "vertices"  , s.vertices  );
 	h5f.write( "conserved" , s.conserved );
 	//h5f.write( "primitive" , s.conserved | nd::map(recover_primitive) | nd::to_shared() );
-
+   
+    h5f.write( "gamma", gamma_law_index); 
 	h5f.close();
 }
 
@@ -379,7 +448,7 @@ int main(int argc, const char* argv[])
     auto state       = mhd_1d::create_state(run_config);
 
     mara::pretty_print( std::cout, "config", run_config );
-    output_solution_h5( state.solution, "initial.h5" );
+    output_solution_h5( state.solution, "checkpoint_000.h5" );
 
     int nout = 0;
     double delta = run_config.get_double("tfinal") / run_config.get_int("cpi");
