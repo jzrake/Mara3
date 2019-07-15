@@ -72,9 +72,9 @@ mara::config_template_t binary::create_config_template()
     .item("reconstruct_method", "plm")          // zone extrapolation method: pcm or plm
     .item("plm_theta",            1.8)          // plm theta parameter: [1.0, 2.0]
     .item("riemann",           "hlle")          // riemann solver to use: hlle only (hllc disabled until further testing)
-    .item("softening_radius",    0.02)          // gravitational softening radius
+    .item("softening_radius",    0.05)          // gravitational softening radius
     .item("source_term_softening", 1.)          // number of cells within which the Sr source term is suppressed
-    .item("sink_radius",         0.02)          // radius of mass (and momentum) subtraction region
+    .item("sink_radius",         0.05)          // radius of mass (and momentum) subtraction region
     .item("sink_rate",            1e2)          // sink rate at the point masses (orbital angular frequency)
     .item("buffer_damping_rate",  1.0)          // maximum rate of buffer zone, where solution is driven to initial state
     .item("domain_radius",       24.0)          // half-size of square domain

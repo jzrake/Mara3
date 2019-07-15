@@ -79,6 +79,7 @@ namespace binary
         mara::unit_time  <double>                             recommended_time_step;
         mara::unit_length<double>                             softening_radius;
         mara::unit_length<double>                             gst_suppr_radius;
+        mara::unit_length<double>                             domain_radius;
         mara::unit_length<double>                             sink_radius;
         double                                                mach_number;
         double                                                plm_theta;

@@ -14,7 +14,7 @@ static std::launch tree_launch = std::launch::deferred;
 namespace binary
 {
     auto grav_vdot_field(const solver_data_t& solver_data, location_2d_t body_location, mara::unit_mass<double> body_mass);
-    auto sink_rate_field(const solver_data_t& solver_data, location_2d_t sink_location);
+    auto sink_rate_field(const solver_data_t& solver_data, location_2d_t sink_location, mara::unit_time<double> dt);
 }
 
 
@@ -53,14 +53,16 @@ auto binary::grav_vdot_field(const solver_data_t& solver_data, location_2d_t bod
     });
 }
 
-auto binary::sink_rate_field(const solver_data_t& solver_data, location_2d_t sink_location)
+auto binary::sink_rate_field(const solver_data_t& solver_data, location_2d_t sink_location, mara::unit_time<double> dt)
 {
-    auto sink = [sink_location, sink_radius=solver_data.sink_radius, sink_rate=solver_data.sink_rate] (location_2d_t field_point)
+    auto sink = [dt, sink_location, sink_radius=solver_data.sink_radius, sink_rate=solver_data.sink_rate] (location_2d_t field_point)
     {
         auto dr = field_point - sink_location;
         auto s2 = sink_radius * sink_radius;
         auto a2 = (dr * dr).sum() / s2 / 2.0;
-        return sink_rate * 0.5 * std::exp(-a2);
+        auto tau_inverse = sink_rate * 0.5 * std::exp(-a2);
+        auto tau_inverse_exact = tau_inverse * (1.0 - std::exp(-(dt * tau_inverse).scalar()));
+        return tau_inverse_exact;
     };
 
     return solver_data.cell_centers.map([sink] (auto block)
@@ -186,17 +188,24 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
      *
      * @return     The tree of Q-fluxes
      */
-    auto to_angmom_fluxes = [] (const auto& F, const auto& X)
+    auto to_angmom_fluxes = [rd=solver_data.domain_radius] (std::size_t axis)
     {
-        return nd::zip(F, X) | nd::apply([] (auto f, auto x)
+        return [axis, rd] (const auto& F, const auto& X)
         {
-            auto flux_sigma = mara::get<0>(f);
-            auto flux_px    = mara::get<1>(f);
-            auto flux_py    = mara::get<2>(f);
-            auto flux_sr    = x[0] * flux_px + x[1] * flux_py;
-            auto flux_lz    = x[0] * flux_py - x[1] * flux_px;
-            return mara::make_arithmetic_tuple(flux_sigma, flux_sr, flux_lz);
-        });
+            return nd::zip(F, X) | nd::apply([axis, rd] (auto f, auto x)
+            {
+                auto flux_sigma = mara::get<0>(f);
+                auto flux_px    = mara::get<1>(f);
+                auto flux_py    = mara::get<2>(f);
+                auto flux_sr    = x[0] * flux_px + x[1] * flux_py;
+                auto flux_lz    = x[0] * flux_py - x[1] * flux_px;
+
+                if (axis == 0 && (x[0] == -rd || x[0] == rd)) flux_lz = 0.0;
+                if (axis == 1 && (x[1] == -rd || x[1] == rd)) flux_lz = 0.0;
+
+                return mara::make_arithmetic_tuple(flux_sigma, flux_sr, flux_lz);
+            });
+        };
     };
 
 
@@ -248,8 +257,8 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto yf  =  v0.map([] (auto v) { return v | nd::midpoint_on_axis(0); });
     auto fx  =  extend(p0, 0).map(extrapolate(0), tree_launch).map(intercell_flux(0));
     auto fy  =  extend(p0, 1).map(extrapolate(1), tree_launch).map(intercell_flux(1));
-    auto gx  =  fx.pair(xf).apply(to_angmom_fluxes) * dy;
-    auto gy  =  fy.pair(yf).apply(to_angmom_fluxes) * dx;
+    auto gx  =  fx.pair(xf).apply(to_angmom_fluxes(0)) * dy;
+    auto gy  =  fy.pair(yf).apply(to_angmom_fluxes(1)) * dx;
     auto lx  = -gx.map(nd::difference_on_axis(0));
     auto ly  = -gy.map(nd::difference_on_axis(1));
     auto m0  =  q0.map(component<0>()) * dA; // cell masses
@@ -261,8 +270,8 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto fg2 =        grav_vdot_field(solver_data, body2_pos, binary.body2.mass) * m0;
     auto sg1 =   fg1.pair(solver_data.cell_centers).apply(force_to_source_terms_tree);
     auto sg2 =   fg2.pair(solver_data.cell_centers).apply(force_to_source_terms_tree);
-    auto ss1 =  -q0 * sink_rate_field(solver_data, body1_pos) * dA;
-    auto ss2 =  -q0 * sink_rate_field(solver_data, body2_pos) * dA;
+    auto ss1 =  -q0 * sink_rate_field(solver_data, body1_pos, dt) * dA;
+    auto ss2 =  -q0 * sink_rate_field(solver_data, body2_pos, dt) * dA;
     auto st  =   p0.pair(solver_data.cell_centers).apply(geometrical_source_terms_tree) * dA;
     auto bz  =  (solver_data.initial_conserved - q0) * solver_data.buffer_rate_field * dA;
 
