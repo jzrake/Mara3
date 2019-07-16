@@ -258,17 +258,25 @@ def time_series(args):
 
         ax1.plot(t, M1, c='g', lw=1, ls='-',  label=r'$M_1$')
         ax1.plot(t, M2, c='r', lw=2, ls='--', label=r'$M_2$')
-        ax1.plot(t, Md, c='g', label=r'$M_{\rm disk}$')
         ax1.plot(t, Me, c='b', label=r'$\Delta M_{\rm buffer}$')
-        ax1.plot(t, M1 + M2 + Md + Me, c='orange', lw=3, label=r'$M_{\rm tot}$')
+    
+        if args.show_total:
+            ax1.plot(t, Md, c='g', label=r'$M_{\rm disk}$')
+            ax1.plot(t, M1 + M2 + Md + Me, c='orange', lw=3, label=r'$M_{\rm tot}$')
+        else:
+            ax1.plot(t, Md - Md[0], c='g', label=r'$\Delta M_{\rm disk}$')
 
         ax2.plot(t, L1, c='g', lw=2, ls='-',  label=r'$L_{\rm grav, 1}$')
         ax2.plot(t, L2, c='r', lw=2, ls='-',  label=r'$L_{\rm grav, 2}$')
         ax2.plot(t, K1, c='g', lw=1, ls='--', label=r'$L_{\rm acc, 1}$')
         ax2.plot(t, K2, c='r', lw=1, ls='--', label=r'$L_{\rm acc, 2}$')
-        ax2.plot(t, Ld, c='g', label=r'$L_{\rm disk}$')
         ax2.plot(t, Le, c='b', label=r'$\Delta L_{\rm buffer}$')
-        ax2.plot(t, L1 + L2 + K1 + K2 + Ld + Le, c='orange', lw=3, label=r'$L_{\rm tot}$')
+
+        if args.show_total:
+            ax2.plot(t, Ld, c='g', label=r'$L_{\rm disk}$')
+            ax2.plot(t, L1 + L2 + K1 + K2 + Ld + Le, c='orange', lw=3, label=r'$L_{\rm tot}$')
+        else:
+            ax2.plot(t, Ld - Ld[0], c='g', label=r'$\Delta L_{\rm disk}$')
 
         plot_moving_average(ax3, t[:-1], Mdot / Md[:-1], window_size=args.window_size, avg_only=args.avg_only, c=c, lw=2, label=fname)
         plot_moving_average(ax4, t[:-1], Ldot / Mdot,    window_size=args.window_size, avg_only=args.avg_only, c=c, lw=2, label=fname)
@@ -302,6 +310,7 @@ if __name__ == "__main__":
     parser.add_argument("--movie", action='store_true')
     parser.add_argument("--time-series", '-t', action='store_true')
     parser.add_argument("--avg-only", action='store_true')
+    parser.add_argument("--show-total", action='store_true')
     parser.add_argument("--saturation-time", type=float, default=150.0)
     parser.add_argument("--window-size", type=int, default=1000)
     parser.add_argument("--with-vel", action='store_true')
