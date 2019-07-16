@@ -28,6 +28,7 @@
 
 
 
+#include <iostream>
 #include "subprog_binary.hpp"
 #include "mesh_tree_operators.hpp"
 #include "core_ndarray_ops.hpp"
@@ -103,31 +104,42 @@ binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_
 
     auto sigma = [=] (double r)
     {
-        return std::exp(-0.5 * (r / rc - 1) * (r / rc - 1)) + s1;
+        auto x = r / rc;
+        return std::exp(-0.5 * (x - 1) * (x - 1)) + s1;
     };
 
-    auto dlogsigma_dlogr = [=] (double r)
+    // auto dlogsigma_dlogr = [=] (double r)
+    // {
+    //     auto x = r / rc;
+    //     return x * (1 - x) * (1 - s1 / sigma(r));
+    // };
+
+    auto dp_dr = [=] (double r)
     {
+        auto GM = 1.0;
+        auto Ma = mach_number;
+        auto rs = softening_radius;
         auto x = r / rc;
-        return x * (1 - x) * (1 - s1 / sigma(r));
+        return (GM / Ma / Ma / (r + rs)) * (x * (1 - x) * (1 - s1 / sigma(r)) - 1.0);
     };
 
     return [=] (location_2d_t point)
     {
-        auto GM             = 1.0;
-        auto cs2            = 1.0 / mach_number / mach_number; // constant sound-speed
         auto x              = point[0].value;
         auto y              = point[1].value;
-        auto rs             = softening_radius;
         auto r2             = x * x + y * y;
         auto r              = std::sqrt(r2);
-        auto gradp_term     = cs2 * dlogsigma_dlogr(r);
-        auto vp             = std::sqrt(GM / (r + rs) + gradp_term) * (counter_rotate ? -1 : 1);
+        auto rs             = softening_radius;
+        auto GM             = 1.0;
+        // auto cs2            = 1.0 / mach_number / mach_number; // constant sound-speed
+        // auto gradp_term     = dp_dr(r) * r / sigma(r);
+        // auto vp             = std::sqrt(GM / (r + rs) + cs2 * dlogsigma_dlogr(r)) * (counter_rotate ? -1 : 1);
+        auto vp             = std::sqrt(GM / (r + rs) + dp_dr(r)) * (counter_rotate ? -1 : 1);
         auto vx             = vp * (-y / r);
         auto vy             = vp * ( x / r);
 
-        if (GM / (r + rs) + gradp_term < 0.0)
-            throw std::invalid_argument("no disk solution: increase mach_number or ambient_density");
+        // if (GM / (r + rs) + gradp_term < 0.0)
+        //     throw std::invalid_argument("no disk solution: increase mach_number or ambient_density");
 
         return mara::iso2d::primitive_t()
             .with_sigma(sigma(r))

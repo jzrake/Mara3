@@ -61,7 +61,7 @@ auto binary::sink_rate_field(const solver_data_t& solver_data, location_2d_t sin
         auto s2 = sink_radius * sink_radius;
         auto a2 = (dr * dr).sum() / s2 / 2.0;
         auto tau_inverse = sink_rate * 0.5 * std::exp(-a2);
-        auto tau_inverse_exact = tau_inverse * (1.0 - std::exp(-(dt * tau_inverse).scalar()));
+        auto tau_inverse_exact = mara::make_dimensional<0,0,0>(1.0 - std::exp(-(dt * tau_inverse).scalar())) / dt;
         return tau_inverse_exact;
     };
 
@@ -77,10 +77,8 @@ auto binary::sink_rate_field(const solver_data_t& solver_data, location_2d_t sin
 //=============================================================================
 binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
 {
-
-    // Note: this scheme still uses globally constant sound speed!
-    auto cs2 = std::pow(solver_data.mach_number, -2.0);
     auto sr2 = solver_data.gst_suppr_radius.pow<2>();
+    auto evaluate = nd::to_shared();
 
 
     /*
@@ -135,6 +133,15 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     };
 
 
+    auto cs2_at_position = [Ma=solver_data.mach_number] (location_2d_t x)
+    {
+        // return 1.0 / Ma / Ma;
+        auto GM = 1.0;
+        auto r2 = (x * x).sum().value;
+        return GM / std::sqrt(r2) / Ma / Ma;
+    };
+
+
     /*
      * @brief      Return an array of intercell fluxes by calling the specified
      *             riemann solver
@@ -143,14 +150,20 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
      *
      * @return     An array operator that returns arrays of fluxes
      */
-    auto intercell_flux = [cs2] (std::size_t axis)
+    auto intercell_flux = [cs2_at_position] (std::size_t axis)
     {
-        return [axis, cs2] (auto left_and_right_states)
+        return [axis, cs2_at_position] (auto left_and_right_states, auto face_coordinates)
         {
-            using namespace std::placeholders;
             auto nh = mara::unit_vector_t::on_axis(axis);
-            auto riemann = std::bind(mara::iso2d::riemann_hlle, _1, _2, cs2, cs2, nh);
-            return left_and_right_states | nd::apply(riemann);
+            auto Pl = nd::get<0>(left_and_right_states);
+            auto Pr = nd::get<1>(left_and_right_states);
+
+            return nd::zip(Pl, Pr, face_coordinates)
+            | nd::apply([nh, cs2_at_position] (auto pl, auto pr, auto xface)
+            {
+                auto cs2 = cs2_at_position(xface);
+                return mara::iso2d::riemann_hlle(pl, pr, cs2, cs2, nh);
+            });
         };
     };
 
@@ -209,9 +222,6 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     };
 
 
-    // Minor helper functions
-    //=========================================================================
-    auto evaluate = nd::to_shared();
     auto force_to_source_terms = [] (force_2d_t f, location_2d_t x)
     {
         auto sigma_dot = mara::make_dimensional<0, 1, -1>(0.0);
@@ -219,21 +229,29 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         auto lz_dot    = x[0] * f[1] - x[1] * f[0];
         return mara::make_arithmetic_tuple(sigma_dot, sr_dot, lz_dot);
     };
+
+
     auto force_to_source_terms_tree = [force_to_source_terms] (auto F, auto X)
     {
         return nd::zip(F, X) | nd::apply(force_to_source_terms);
     };
-    auto geometrical_source_terms_tree = [cs2, sr2] (auto P, auto X)
+
+
+    auto geometrical_source_terms_tree = [sr2, cs2_at_position] (auto P, auto X)
     {
         auto ramp = X | nd::map([sr2] (auto x)
         {
             return 1.0 - std::exp(-(x * x).sum() / sr2);
         });
 
-        return P
-        | nd::map([cs2] (auto p) { return p.source_terms_conserved_angmom(cs2); })
+        auto CS2 = X | nd::map(cs2_at_position);
+
+        return nd::zip(P, CS2)
+        | nd::apply([] (auto p, auto cs2) { return p.source_terms_conserved_angmom(cs2); })
         | nd::multiply(ramp);
     };
+
+
 
 
     // Binary parameters
@@ -255,8 +273,8 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto dy  =  v0.map([] (auto v) { return v | component<1>() | nd::difference_on_axis(1); });
     auto xf  =  v0.map([] (auto v) { return v | nd::midpoint_on_axis(1); });
     auto yf  =  v0.map([] (auto v) { return v | nd::midpoint_on_axis(0); });
-    auto fx  =  extend(p0, 0).map(extrapolate(0), tree_launch).map(intercell_flux(0));
-    auto fy  =  extend(p0, 1).map(extrapolate(1), tree_launch).map(intercell_flux(1));
+    auto fx  =  extend(p0, 0).map(extrapolate(0), tree_launch).pair(xf).apply(intercell_flux(0));
+    auto fy  =  extend(p0, 1).map(extrapolate(1), tree_launch).pair(yf).apply(intercell_flux(1));
     auto gx  =  fx.pair(xf).apply(to_angmom_fluxes(0)) * dy;
     auto gy  =  fy.pair(yf).apply(to_angmom_fluxes(1)) * dx;
     auto lx  = -gx.map(nd::difference_on_axis(0));
@@ -274,6 +292,16 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto ss2 =  -q0 * sink_rate_field(solver_data, body2_pos, dt) * dA;
     auto st  =   p0.pair(solver_data.cell_centers).apply(geometrical_source_terms_tree) * dA;
     auto bz  =  (solver_data.initial_conserved - q0) * solver_data.buffer_rate_field * dA;
+
+    // .map(nd::map([dt] (auto beta)
+    // {
+    //     return mara::make_dimensional<0,0,0>(1.0 - std::exp(-(dt * beta).scalar())) / dt;
+    // })) * dA;
+
+    auto mask = solver_data.cell_centers.map([rd=solver_data.domain_radius] (auto XC)
+    {
+        return XC | nd::map([rd] (auto xc) { return (xc * xc).sum() < rd * rd; });
+    });
 
 
     // The updated conserved densities

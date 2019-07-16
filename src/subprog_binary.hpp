@@ -22,8 +22,6 @@
 
  ==============================================================================
 */
-#include <cmath>
-#include <iostream>
 #include "app_compile_opts.hpp"
 #include "app_config.hpp"
 #include "app_performance.hpp"
