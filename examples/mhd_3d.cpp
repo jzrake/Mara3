@@ -40,7 +40,7 @@
 #include "core_hdf5.hpp"
 #include "physics_ideal_mhd.hpp"
 
-#define gamma_law_index 2.0
+#define gamma_law_index 1.4
 
 // ============================================================================
 //                                  Header 
@@ -268,7 +268,7 @@ auto blast_wave(mhd_3d::location_3d_t position)
     auto blast    = r < 0.1;
     auto pressure = blast ? 1000. : 0.1;
 
-    auto bx = 28.2;  // = 100/sqrt(4*pi)
+    auto bx = 0.0; //28.2;  // = 100/sqrt(4*pi)
     auto by = 0.0;
     auto bz = 0.0;
     
@@ -298,7 +298,7 @@ mhd_3d::solution_t mhd_3d::create_solution( const mara::config_t& run_config )
          | nd::midpoint_on_axis(0)
          | nd::midpoint_on_axis(1)
          | nd::midpoint_on_axis(2)
-         | nd::map(orzsag_tang_vortex)
+         | nd::map(blast_wave)
          | nd::map([] (auto p) { return p.to_conserved_density(gamma_law_index); }) // prim2cons
          | nd::to_shared();
     return solution_t{ 0.0, 0, vertices, conserved };
@@ -371,9 +371,9 @@ mhd_3d::solution_t mhd_3d::advance( const solution_t& solution, mara::unit_time<
     auto v0  =  solution.vertices;
     auto u0  =  solution.conserved;
     auto w0  =  u0 | nd::map(recover_primitive);
-    auto dx  =  v0 | component(0) | nd::difference_on_axis(0);
-    auto dy  =  v0 | component(1) | nd::difference_on_axis(1);
-    auto dz  =  v0 | component(2) | nd::difference_on_axis(2);
+    auto dx  =  v0 | component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1) | nd::midpoint_on_axis(2);
+    auto dy  =  v0 | component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0) | nd::midpoint_on_axis(2);
+    auto dz  =  v0 | component(2) | nd::difference_on_axis(2) | nd::midpoint_on_axis(0) | nd::midpoint_on_axis(1);
     auto dV  =  v0 | volume_from_vertices;
 
     // Extend for ghost-cells and get fluxes with specified riemann solver
@@ -381,9 +381,10 @@ mhd_3d::solution_t mhd_3d::advance( const solution_t& solution, mara::unit_time<
     auto fx  =  w0 | nd::extend_zero_gradient(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0);
     auto fy  =  w0 | nd::extend_zero_gradient(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1);
     auto fz  =  w0 | nd::extend_zero_gradient(2) | nd::zip_adjacent2_on_axis(2) | intercell_flux(2);
-    auto lx  =  fx | nd::multiply(dy) | nd::multiply(dz) | nd::difference_on_axis(0);
-    auto ly  =  fy | nd::multiply(dx) | nd::multiply(dz) | nd::difference_on_axis(1);
-    auto lz  =  fz | nd::multiply(dx) | nd::multiply(dy) | nd::difference_on_axis(2);
+    auto lx  =  fx | nd::difference_on_axis(0) | nd::multiply(dy) | nd::multiply(dz);
+    auto ly  =  fy | nd::difference_on_axis(1) | nd::multiply(dx) | nd::multiply(dz);
+    auto lz  =  fz | nd::difference_on_axis(2) | nd::multiply(dx) | nd::multiply(dy);
+
 
 
     // Updated conserved densities

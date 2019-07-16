@@ -95,7 +95,7 @@ namespace mhd_2d
         mara::unit_time<double>               time;
         nd::shared_array<location_2d_t, 2>    vertices;
         nd::shared_array<double, 2>           div_b;        //CHANGE TO HAVE CORRECT UNITS
-    }
+    };
 
     struct state_t
     {
@@ -219,6 +219,35 @@ auto initial_condition(mhd_2d::location_2d_t position)
     auto bx       = nexus ? 0.75 :  0.75;
     auto by       = nexus ? 1.00 : -1.0;
     auto bz       = nexus ? 0.00 :  0.0;
+
+    return mara::mhd::primitive_t()
+     .with_mass_density(density)
+     .with_gas_pressure(pressure)
+     .with_velocity_1(vx)
+     .with_velocity_2(vy)
+     .with_velocity_3(vz)
+     .with_bfield_1(bx)
+     .with_bfield_2(by)
+     .with_bfield_3(bz);
+}
+
+auto kelvin_helmholtz(mhd_2d::location_2d_t position)
+{
+    if( gamma_law_index!= 1.4 )
+        throw std::invalid_argument("wrong gamma: for this problem gamma=1.4");
+
+    auto y     = position[1];
+    auto nexus = std::abs(y.value) < 0.3;
+
+    auto density  = nexus ? 2.0  :  1.0; 
+    auto vx       = nexus ? 0.5  : -0.5;
+
+    auto pressure = 2.5;
+    auto vy       = 0.0;
+    auto vz       = 0.0;
+    auto bx       = 0.0;   
+    auto by       = 0.0;
+    auto bz       = 0.0;
 
     return mara::mhd::primitive_t()
      .with_mass_density(density)
@@ -464,19 +493,19 @@ mhd_2d::state_t mhd_2d::next_state( const mhd_2d::state_t& state )
     };
 }
 
-diagnostic_fields_t   ( const solution_t& solution, mara::config_t& run_config)
-{
-    //*****************************************************
-    //                 Calculate div_B
-    //*****************************************************
+// diagnostic_fields_t   ( const solution_t& solution, mara::config_t& run_config)
+// {
+//     //*****************************************************
+//     //                 Calculate div_B
+//     //*****************************************************
 
-    return diagnostic_fields_t{
-        run_config,
-        solution.time,
-        solution.vertices,
-        div_b
-    };
-}
+//     return diagnostic_fields_t{
+//         run_config,
+//         solution.time,
+//         solution.vertices,
+//         div_b
+//     };
+// }
 
 void output_solution_h5( const mhd_2d::solution_t& s, std::string fname )
 {	
