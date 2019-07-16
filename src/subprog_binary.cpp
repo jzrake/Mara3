@@ -76,8 +76,8 @@ mara::config_template_t binary::create_config_template()
     .item("softening_radius",    0.05)          // gravitational softening radius
     .item("source_term_softening", 1.)          // number of cells within which the Sr source term is suppressed
     .item("sink_radius",         0.05)          // radius of mass (and momentum) subtraction region
-    .item("sink_rate",            1e2)          // sink rate at the point masses (orbital angular frequency)
-    .item("buffer_damping_rate",  1.0)          // maximum rate of buffer zone, where solution is driven to initial state
+    .item("sink_rate",           50.0)          // sink rate at the point masses (orbital angular frequency)
+    .item("buffer_damping_rate", 10.0)          // maximum rate of buffer zone, where solution is driven to initial state
     .item("domain_radius",       24.0)          // half-size of square domain
     .item("disk_radius",          2.0)          // characteristic disk radius (in units of binary separation)
     .item("ambient_density",     1e-4)          // surface density beyond torus
