@@ -53,9 +53,10 @@ namespace mhd_2d
 
     // Type definitions for simplicity later
     // ========================================================================
-    using location_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
-    using velocity_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, -1, double>, 2>;
+    using location_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0,  0, double>, 2>;
+    using velocity_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0, -1, double>, 2>;
     using primitive_field_t = std::function<mara::mhd::primitive_t(location_2d_t)>;
+    using bfield_2d_t       = mara::dimensional_value_t<-1, 0, 0, double>; 
 
 
     // Solver structs
@@ -65,7 +66,7 @@ namespace mhd_2d
         mara::unit_time<double>                                time=0.0;
         mara::rational_number_t                                iteration=0;
         nd::shared_array<location_2d_t, 2>                     vertices;
-        nd::shared_array<mara::mhd::conserved_density_t, 2>   conserved;
+        nd::shared_array<mara::mhd::conserved_density_t, 2>    conserved;
 
         // Overload operators to manipulate solution_t types
         //=====================================================================
@@ -94,7 +95,7 @@ namespace mhd_2d
         mara::config_t                        run_config;
         mara::unit_time<double>               time;
         nd::shared_array<location_2d_t, 2>    vertices;
-        nd::shared_array<double, 2>           div_b;        //CHANGE TO HAVE CORRECT UNITS
+        nd::shared_array<  bfield_2d_t, 2>    div_b;        //CHANGE TO HAVE CORRECT UNITS
     };
 
     struct state_t
@@ -115,7 +116,7 @@ namespace mhd_2d
     state_t                             next_state            ( const state_t& state );
     solution_t                          next_solution         ( const state_t& state );
     solution_t                          advance               ( const solution_t& solution, mara::unit_time<double> dt );
-    diagnostic_fields_t                 diagnostic_fields_t   ( const solution_t& solution, mara::config_t& run_config);
+    diagnostic_fields_t                 diagnostic_fields     ( const solution_t& solution, mara::config_t& run_config);
 
     auto simulation_should_continue( const state_t& state );
     void print_run_loop_message    ( const state_t& state);
@@ -159,6 +160,7 @@ mara::config_template_t mhd_2d::create_config_template()
     return mara::make_config_template()
      .item("outdir", "hydro_run")       // directory where data products are written
      .item("cpi",             10)       // checkpoint interval
+     .item("doi",             10)       // diagnostic output interval
      .item("rk_order",         1)		// timestepping order
      .item("tfinal",         1.0)       
      .item("cfl",            0.4)       // courant number 
@@ -408,8 +410,10 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution, mara::unit_time<
 
     // Extend for ghost-cells and get fluxes with specified riemann solver
     // ========================================================================
-    auto fx  =  w0 | nd::extend_zero_gradient(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0);
-    auto fy  =  w0 | nd::extend_zero_gradient(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1);
+    // auto fx  =  w0 | nd::extend_zero_gradient(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0);
+    // auto fy  =  w0 | nd::extend_zero_gradient(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1);
+    auto fx  =  w0 | nd::extend_periodic_on_axis(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0);
+    auto fy  =  w0 | nd::extend_periodic_on_axis(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1);
     auto lx  =  fx | nd::multiply(dy) | nd::difference_on_axis(0);
     auto ly  =  fy | nd::multiply(dx) | nd::difference_on_axis(1);
 
@@ -493,19 +497,54 @@ mhd_2d::state_t mhd_2d::next_state( const mhd_2d::state_t& state )
     };
 }
 
-// diagnostic_fields_t   ( const solution_t& solution, mara::config_t& run_config)
-// {
-//     //*****************************************************
-//     //                 Calculate div_B
-//     //*****************************************************
+// Diagnostics -> right now just div_b
+//=============================================================================
 
-//     return diagnostic_fields_t{
-//         run_config,
-//         solution.time,
-//         solution.vertices,
-//         div_b
-//     };
-// }
+mhd_2d::diagnostic_fields_t mhd_2d::diagnostic_fields( const solution_t& solution, mara::config_t& run_config)
+{
+    //*****************************************************
+    //               Calculate div_B
+    //                 
+    //               __________________      
+    //              |         |        |
+    //              |    1    |   2    |
+    //              |         |        |
+    //              |---------|--------|
+    //              |         |        |
+    //              |    3    |   4    |
+    //              |_________|________|       
+    //                 
+    //  div_B_corner = (b^1_x - b^2_x + b^3_x - b^4_x) / (dx) 
+    //                 + (b^1_y - b^3_y + b^2_y - b^4_y) / (dy)
+    //   
+    //*****************************************************
+    
+    auto v0  =  solution.vertices;
+    auto u0  =  solution.conserved;
+    auto dx  =  v0 | component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
+    auto dy  =  v0 | component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
+
+    auto w0  =  u0 | nd::map(recover_primitive);
+    auto Bx  =  w0 | nd::map([] (auto w) { return w.bfield_1(); }) | nd::map([] (auto b) { return mara::make_dimensional<0,0,0>(b); });
+    auto By  =  w0 | nd::map([] (auto w) { return w.bfield_2(); }) | nd::map([] (auto b) { return mara::make_dimensional<0,0,0>(b); });
+
+    auto bx       =  Bx / dx;
+    auto by       =  By / dy;
+    auto div_b_x  =  bx | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
+    auto div_b_y  =  by | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
+    auto div_b    =  div_b_x + div_b_y;
+
+    return diagnostic_fields_t{
+        run_config,
+        solution.time,
+        solution.vertices,
+        div_b.shared()
+    };
+}
+
+
+// Outputting
+//=============================================================================
 
 void output_solution_h5( const mhd_2d::solution_t& s, std::string fname )
 {	
@@ -521,8 +560,15 @@ void output_solution_h5( const mhd_2d::solution_t& s, std::string fname )
 	h5f.close();
 }
 
+void output_diagnostic_h5( const mhd_2d::diagnostic_fields_t& diag, std::string fname )
+{
+    auto h5f = h5::File( fname, "w" );
 
-std::string get_output_filename( int nout )
+    h5f.write("time" , diag.time );
+    h5f.write("div_b", diag.div_b);
+}
+
+std::string get_checkpoint_filename( int nout )
 {
     char            buffer[256]; 
     sprintf(        buffer, "%03d", nout );
@@ -531,35 +577,58 @@ std::string get_output_filename( int nout )
     return "checkpoint_" + num + ".h5";
 }
 
+std::string get_diagnostic_filename( int dout )
+{
+    char            buffer[256];
+    sprintf        (buffer, "%03d", dout);
+    std::string num(buffer);
+
+    return "diagnostic_" + num + ".h5";
+}
+
 
 // ============================================================================
 int main(int argc, const char* argv[])
 {
     auto run_config  = mhd_2d::create_run_config(argc, argv);
     auto state       = mhd_2d::create_state(run_config);
+    auto diag        = mhd_2d::diagnostic_fields( state.solution, run_config );
 
-    mara::pretty_print( std::cout, "config", run_config );
-    output_solution_h5( state.solution, "checkpoint_000.h5" );
+    mara::pretty_print  ( std::cout, "config", run_config );
+    output_solution_h5  ( state.solution, "checkpoint_000.h5" );
+    output_diagnostic_h5( diag          , "diagnostic_000.h5" );
 
     int nout = 0;
-    double delta = run_config.get_double("tfinal") / run_config.get_int("cpi");
+    int dout = 0;
+    double delta_n = run_config.get_double("tfinal") / run_config.get_int("cpi");
+    double delta_d = run_config.get_double("tfinal") / run_config.get_int("doi");
 
     while( mhd_2d::simulation_should_continue(state) )
     {
         state = mhd_2d::next_state(state);
+        diag  = mhd_2d::diagnostic_fields( state.solution, run_config );
 
         //if( state.solution.time.value % 10 == 0 )
         printf( " %d : t = %0.2f \n", state.solution.iteration.as_integral(), state.solution.time.value );
 
-        if( state.solution.time.value / delta - nout > 1.0  )
+        if( state.solution.time.value / delta_n - nout > 1.0  )
         {
             nout++;
-            auto fname = get_output_filename(nout);
+            auto fname = get_checkpoint_filename(nout);
             output_solution_h5( state.solution, fname );
+        }
+        if( state.solution.time.value / delta_d - dout > 1.0  )
+        {
+            //dout++;
+            //auto dname = get_diagnostic_filename(dout);
+            output_diagnostic_h5( diag, get_diagnostic_filename(++dout) );
         }
     }
 
     output_solution_h5( state.solution, "output.h5" );
+    
+    diag = mhd_2d::diagnostic_fields( state.solution, run_config );
+    output_diagnostic_h5( diag, get_diagnostic_filename(++dout) );
 
     return 0;
 }
