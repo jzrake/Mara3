@@ -38,7 +38,7 @@
 #include "core_ndarray.hpp"
 #include "core_ndarray_ops.hpp"
 #include "core_hdf5.hpp"
-#include "physics_ideal_mhd.hpp"
+#include "physics_mhd.hpp"
 
 
 #define gamma_law_index 2.0

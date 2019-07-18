@@ -32,7 +32,7 @@
 #include "core_geometric.hpp"
 #include "physics_euler.hpp"
 #include "physics_iso2d.hpp"
-#include "physics_ideal_mhd.hpp"
+#include "physics_mhd.hpp"
 #include "model_two_body.hpp"
 #define gamma_law_index (5. / 3)
 

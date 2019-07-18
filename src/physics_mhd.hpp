@@ -43,14 +43,21 @@ namespace mara { struct mhd; }
 //=============================================================================
 struct mara::mhd
 {
-    using unit_conserved_density  = dimensional_value_t< -3, 1, 0, double>;
-    using unit_conserved          = dimensional_value_t<  0, 1, 0, double>;
-    using unit_flow               = dimensional_value_t<  0, 1,-1, double>;
-    using unit_flux               = dimensional_value_t< -2, 1,-1, double>; //flux through faces
+    using unit_conserved_density    = dimensional_value_t< -3, 1, 0, double>;
+    using unit_conserved            = dimensional_value_t<  0, 1, 0, double>;
+    using unit_flow                 = dimensional_value_t<  0, 1,-1, double>;
+    using unit_flux                 = dimensional_value_t< -2, 1,-1, double>; //flux through faces
+    using unit_field                = dimensional_value_t<  0, 0, 0, double>; //Might need to fix these units
 
-    using conserved_density_t     = arithmetic_sequence_t<unit_conserved_density, 8>; 
-    using conserved_t             = arithmetic_sequence_t<unit_conserved        , 8>;
-    using flux_vector_t           = arithmetic_sequence_t<unit_flux             , 8>;
+    using conserved_density_t       = arithmetic_sequence_t<unit_conserved_density, 8>; 
+    using conserved_t               = arithmetic_sequence_t<unit_conserved        , 8>;
+    using flux_vector_t             = arithmetic_sequence_t<unit_flux             , 8>;
+
+    using conserved_density_euler_t = arithmetic_sequence_t<unit_conserved_density, 5>;
+    using conserved_euler_t         = arithmetic_sequence_t<unit_conserved,         5>;
+    using flux_vector_euler_t       = arithmetic_sequence_t<unit_flux,              5>;
+
+    using magnetic_vector_t         = arithmetic_sequence_t<unit_field,             3>;
     
     struct primitive_t;
 
@@ -63,6 +70,12 @@ struct mara::mhd
 
     static inline primitive_t recover_primitive(
         const conserved_density_t& U,
+        double gamma_law_index,
+        double temperature_floor);
+
+    static inline primitive_t recover_primitive(
+        const conserved_density_euler_t& U,
+        const magnetic_vector_t& B,
         double gamma_law_index,
         double temperature_floor);
 
@@ -317,7 +330,7 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
 
     /**
      * @brief      Convert this state to a density of conserved mass, momentum,
-     *             and energy.
+     *             energy, and magnetif fields.
      *
      * @param[in]  gamma_law_index  The gamma law index
      *
@@ -343,7 +356,28 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     }
 
 
+    /**
+     * @brief      Convert this state to a density of just conserved mass,
+     *             momentum, and energy. Eneryg includes magnetic energy
+     *
+     * @param[in]  gamma_law_index  The gamma law index
+     *
+     * @return     The conserved density U
+     */
+    conserved_density_euler_t to_conserved_density_euler(double gamma_law_index) const
+    {
+        const auto& _ = *this;
+        auto d = mass_density();
+        auto p = gas_pressure();
+        auto U = conserved_density_euler_t();
+        U[0].value = d;
+        U[1].value = d * _[1];
+        U[2].value = d * _[2];
+        U[3].value = d * _[3];
+        U[4].value = 0.5 * d * velocity_squared() + p / (gamma_law_index - 1) /*mhd*/ + bfield_squared() / 2.0;
 
+        return U;
+    }
 
     /**
      * @brief      Return the flux of conserved quantities in the given
@@ -358,8 +392,6 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     {
         return flux(nhat, to_conserved_density(gamma_law_index));
     }
-
-
 
 
     /**
@@ -395,6 +427,56 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         return F;
     }
 
+
+    /**
+     * @brief      Same as above functions but only returns flux of 
+     *             the eulerian fluid quantities -- no magnetic fields
+     *
+     *             Overloaded for functions that take either the gamma law,
+     *             conserved quantities with magnetic fields, or conserved
+     *             quantities without magnetic fields
+     *
+     * 
+     * @return     The flux F, with no magnetic fields
+     */
+    flux_vector_euler_t flux_euler(const unit_vector_t& nhat, double gamma_law_index) const
+    {
+        return flux_euler(nhat, to_conserved_density_euler(gamma_law_index));
+    }
+
+    flux_vector_euler_t flux_euler(const unit_vector_t& nhat, const conserved_density_t& U) const
+    {
+        auto v  = velocity_along(nhat);
+        auto b  = bfield_along(nhat);
+        auto p  = gas_pressure();
+        auto p_tot = p + bfield_squared() / 2.0;
+        auto bv = bfield_dot_velocity();
+        auto F  = flux_vector_euler_t();
+        F[0].value = v * U[0].value;
+        F[1].value = v * U[1].value + p_tot * nhat.get_n1() /*mhd*/ - U[5].value * b;
+        F[2].value = v * U[2].value + p_tot * nhat.get_n2() /*mhd*/ - U[6].value * b;
+        F[3].value = v * U[3].value + p_tot * nhat.get_n3() /*mhd*/ - U[7].value * b; 
+        F[4].value = v * U[4].value + p_tot * v             /*mhd*/ - bv         * b;
+
+        return F;
+    }
+
+    flux_vector_euler_t flux_euler(const unit_vector_t& nhat, const conserved_density_euler_t& U) const
+    {
+        auto v  = velocity_along(nhat);
+        auto b  = bfield_along(nhat);
+        auto p  = gas_pressure();
+        auto p_tot = p + bfield_squared() / 2.0;
+        auto bv = bfield_dot_velocity();
+        auto F  = flux_vector_euler_t();
+        F[0].value = v * U[0].value;
+        F[1].value = v * U[1].value + p_tot * nhat.get_n1() /*mhd*/ - U[5].value * b;
+        F[2].value = v * U[2].value + p_tot * nhat.get_n2() /*mhd*/ - U[6].value * b;
+        F[3].value = v * U[3].value + p_tot * nhat.get_n3() /*mhd*/ - U[7].value * b; 
+        F[4].value = v * U[4].value + p_tot * v             /*mhd*/ - bv         * b;
+
+        return F;
+    }
 
 
 
@@ -499,6 +581,34 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
     P[5] =  U[5].value;
     P[6] =  U[6].value;
     P[7] =  U[7].value;
+
+    if (P[4] < 0.0 && temperature_floor > 0.0)
+    {
+        P[4] = temperature_floor * d;
+    }
+    return P;
+}
+
+mara::mhd::primitive_t mara::mhd::recover_primitive(
+    const conserved_density_euler_t& U,
+    const magnetic_vector_t& B,
+    double gamma_law_index,
+    double temperature_floor)
+{
+    auto d         =  U[0].value;
+    auto p_squared = (U[1] * U[1] + U[2] * U[2] + U[3] * U[3]).value;
+    auto b_squared = (B[0] * B[0] + B[1] * B[1] + B[2] * B[2]).value;
+    
+    auto P = primitive_t();
+
+    P[0] =  d;
+    P[1] =  U[1].value / d;
+    P[2] =  U[2].value / d;
+    P[3] =  U[3].value / d;
+    P[4] = (U[4].value - 0.5 * p_squared / d - 0.5 * b_squared) * (gamma_law_index - 1.0);
+    P[5] =  B[0].value;
+    P[6] =  B[1].value;
+    P[7] =  B[2].value;
 
     if (P[4] < 0.0 && temperature_floor > 0.0)
     {
