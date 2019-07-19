@@ -54,13 +54,69 @@ def plot_single_file(filename):
 
 
 
+def plot_radial_profile(filename):
+    fig = plt.figure(figsize=[12, 8])
+    ax1 = fig.add_subplot(3, 1, 1)
+    ax2 = fig.add_subplot(3, 1, 2)
+    ax3 = fig.add_subplot(3, 1, 3)
+
+    h5f = h5py.File(filename, 'r')
+    ja = 0
+    jb = np.argmin(abs(h5f['polar_vertices'][...] - 0.1))
+    jc = np.argmin(abs(h5f['polar_vertices'][...] - 0.2))
+
+    rva = h5f['radial_vertices'][...] / 1e10
+    u0a = h5f['radial_gamma_beta'][:,ja]
+    L0a = h5f['radial_energy_flow'][:,ja]
+    p0a = h5f['gas_pressure'][:,ja]
+
+    rvb = h5f['radial_vertices'][...] / 1e10
+    u0b = h5f['radial_gamma_beta'][:,jb]
+    L0b = h5f['radial_energy_flow'][:,jb]
+    p0b = h5f['gas_pressure'][:,jb]
+
+    rvc = h5f['radial_vertices'][...] / 1e10
+    u0c = h5f['radial_gamma_beta'][:,jc]
+    L0c = h5f['radial_energy_flow'][:,jc]
+    p0c = h5f['gas_pressure'][:,jc]
+
+    ax1.plot(rva[1:], u0a, lw=2.0, label=r'$\theta=0.0$')
+    ax2.plot(rva[1:], L0a, lw=2.0, label=r'$\theta=0.0$')
+    ax3.plot(rva[1:], p0a, lw=2.0, label=r'$\theta=0.0$')
+
+    ax1.plot(rvb[1:], u0b, lw=2.0, label=r'$\theta=0.1$')
+    ax2.plot(rvb[1:], L0b, lw=2.0, label=r'$\theta=0.1$')
+    ax3.plot(rvb[1:], p0b, lw=2.0, label=r'$\theta=0.1$')
+
+    ax1.plot(rvc[1:], u0c, lw=2.0, label=r'$\theta=0.2$')
+    ax2.plot(rvc[1:], L0c, lw=2.0, label=r'$\theta=0.2$')
+    ax3.plot(rvc[1:], p0c, lw=2.0, label=r'$\theta=0.2$')
+
+    ax1.axvline(h5f['shock_luminosity_radius'][ja] / 1e10, ls='--')
+    ax2.axvline(h5f['shock_luminosity_radius'][jb] / 1e10, ls='--')
+    ax3.axvline(h5f['shock_luminosity_radius'][jc] / 1e10, ls='--')
+
+    ax1.set_yscale('log')
+    ax2.set_yscale('log')
+    ax3.set_yscale('log')
+
+    ax3.set_xlabel(r'Radius ${\rm (10^{{10}} cm)}$')
+    ax1.set_ylabel(r'$\Gamma \beta_r$')
+    ax2.set_ylabel(r'$dL / d\Omega {\rm (erg/s/Sr)}$')
+    ax3.set_ylabel(r'Gas Pressure ${\rm (erg/cm^3)}$')
+    ax1.legend()
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("filenames", nargs='+')
-
+    parser.add_argument('filenames', nargs='+')
+    parser.add_argument('--radial', action='store_true')
     args = parser.parse_args()
 
     for filename in args.filenames:
-        plot_single_file(filename)
-
+        if args.radial:
+            plot_radial_profile(filename)
+        else:
+            plot_single_file(filename)
     plt.show()
