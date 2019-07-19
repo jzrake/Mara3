@@ -90,13 +90,13 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
      *
      * @return     A function that operates on trees
      */
-    auto extend = [] (auto tree, std::size_t axis)
+    auto extend = [] (auto tree, std::size_t guard_count, std::size_t axis)
     {
-        return tree.indexes().map([tree, axis] (auto index)
+        return tree.indexes().map([tree, guard_count, axis] (auto index)
         {
             auto C = tree.at(index);
-            auto L = mara::get_cell_block(tree, index.prev_on(axis), mara::compose(nd::to_shared(), nd::select_final(2, axis)));
-            auto R = mara::get_cell_block(tree, index.next_on(axis), mara::compose(nd::to_shared(), nd::select_first(2, axis)));
+            auto L = mara::get_cell_block(tree, index.prev_on(axis), mara::compose(nd::to_shared(), nd::select_final(guard_count, axis)));
+            auto R = mara::get_cell_block(tree, index.next_on(axis), mara::compose(nd::to_shared(), nd::select_first(guard_count, axis)));
             return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis);
         }, tree_launch);
     };
@@ -252,8 +252,6 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     };
 
 
-
-
     // Binary parameters
     //=========================================================================
     auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
@@ -263,20 +261,88 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     // auto body2_vel = velocity_2d_t{binary.body2.velocity_x, binary.body2.velocity_y};
 
 
+    auto viscous_fluxes_tree_x_direction = [] (auto P, auto X)
+    {
+        auto centered_stencil = [] (auto a, auto b, auto c) { return c - a; };
+        auto nu = mara::make_dimensional<2, 0, -1>(0.01);
+
+        auto d0 = P | nd::map([] (auto p) { return mara::make_dimensional<-2, 1, 0>(p.sigma()); });
+        auto ux = P | nd::map([] (auto p) { return mara::make_velocity(p.velocity_x()); });
+        auto uy = P | nd::map([] (auto p) { return mara::make_velocity(p.velocity_y()); });
+        auto xc = X | nd::map([] (auto p) { return p[0]; });
+        auto yc = X | nd::map([] (auto p) { return p[1]; });
+        auto mu = d0 * nu | nd::midpoint_on_axis(0) | nd::select_axis(1).from(1).to(1).from_the_end();
+        auto dx_ux = ux | nd::difference_on_axis(0) | nd::select_axis(1).from(1).to(1).from_the_end();
+        auto dx_uy = uy | nd::difference_on_axis(0) | nd::select_axis(1).from(1).to(1).from_the_end();
+        auto dy_ux = ux | nd::midpoint_on_axis(0) | nd::zip_adjacent3_on_axis(1) | nd::apply(centered_stencil);
+        auto dy_uy = uy | nd::midpoint_on_axis(0) | nd::zip_adjacent3_on_axis(1) | nd::apply(centered_stencil);
+
+        auto dx = xc | nd::difference_on_axis(0) | nd::select_axis(1).from(1).to(1).from_the_end();
+        auto dy = yc | nd::midpoint_on_axis(0) | nd::zip_adjacent3_on_axis(1) | nd::apply(centered_stencil);
+
+        auto tauxx = mu * (dx_ux / dx - dy_uy / dy);
+        auto tauxy = mu * (dx_uy / dx + dy_ux / dy);
+
+        return nd::zip(tauxx, tauxy) | nd::apply([] (auto txx, auto txy)
+        {
+            return mara::make_arithmetic_tuple(mara::make_dimensional<-1, 1, -1>(0.0), txx, txy);
+        });
+    };
+
+
+    auto viscous_fluxes_tree_y_direction = [] (auto P, auto X)
+    {
+        auto centered_stencil = [] (auto a, auto b, auto c) { return c - a; };
+        auto nu = mara::make_dimensional<2, 0, -1>(0.01);
+
+        auto d0 = P | nd::map([] (auto p) { return mara::make_dimensional<-2, 1, 0>(p.sigma()); });
+        auto ux = P | nd::map([] (auto p) { return mara::make_velocity(p.velocity_x()); });
+        auto uy = P | nd::map([] (auto p) { return mara::make_velocity(p.velocity_y()); });
+        auto xc = X | nd::map([] (auto p) { return p[0]; });
+        auto yc = X | nd::map([] (auto p) { return p[1]; });
+        auto mu = d0 * nu | nd::midpoint_on_axis(1) | nd::select_axis(0).from(1).to(1).from_the_end();
+        auto dy_ux = ux | nd::difference_on_axis(1) | nd::select_axis(0).from(1).to(1).from_the_end();
+        auto dy_uy = uy | nd::difference_on_axis(1) | nd::select_axis(0).from(1).to(1).from_the_end();
+        auto dx_ux = ux | nd::midpoint_on_axis(1) | nd::zip_adjacent3_on_axis(0) | nd::apply(centered_stencil);
+        auto dx_uy = uy | nd::midpoint_on_axis(1) | nd::zip_adjacent3_on_axis(0) | nd::apply(centered_stencil);
+
+        auto dx = xc | nd::midpoint_on_axis(1) | nd::zip_adjacent3_on_axis(0) | nd::apply(centered_stencil);
+        auto dy = yc | nd::difference_on_axis(1) | nd::select_axis(0).from(1).to(1).from_the_end();
+
+        auto tauyx =  mu * (dx_uy / dx + dy_ux / dy);
+        auto tauyy = -mu * (dx_ux / dx - dy_uy / dy);
+
+        return nd::zip(tauyx, tauyy) | nd::apply([] (auto tyx, auto tyy)
+        {
+            return mara::make_arithmetic_tuple(mara::make_dimensional<-1, 1, -1>(0.0), tyx, tyy);
+        });
+    };
+
+
     // Intermediate scheme data
     //=========================================================================
     auto v0  =  solver_data.vertices;
     auto dA  =  solver_data.cell_areas;
+    auto xc  =  solver_data.cell_centers;
     auto q0  =  solution.conserved;
     auto p0  =  recover_primitive(solution.conserved, solver_data.cell_centers);
+
+
+
     auto dx  =  v0.map([] (auto v) { return v | component<0>() | nd::difference_on_axis(0); });
     auto dy  =  v0.map([] (auto v) { return v | component<1>() | nd::difference_on_axis(1); });
     auto xf  =  v0.map([] (auto v) { return v | nd::midpoint_on_axis(1); });
     auto yf  =  v0.map([] (auto v) { return v | nd::midpoint_on_axis(0); });
-    auto fx  =  extend(p0, 0).map(extrapolate(0), tree_launch).pair(xf).apply(intercell_flux(0));
-    auto fy  =  extend(p0, 1).map(extrapolate(1), tree_launch).pair(yf).apply(intercell_flux(1));
-    auto gx  =  fx.pair(xf).apply(to_angmom_fluxes(0)) * dy;
-    auto gy  =  fy.pair(yf).apply(to_angmom_fluxes(1)) * dx;
+    auto fx  =  extend(p0, 2, 0).map(extrapolate(0), tree_launch).pair(xf).apply(intercell_flux(0));
+    auto fy  =  extend(p0, 2, 1).map(extrapolate(1), tree_launch).pair(yf).apply(intercell_flux(1));
+
+    // auto p0_extended_for_viscous_fluxes = extend(extend(p0, 1, 0), 1, 1);
+    // auto xc_extended_for_viscous_fluxes = extend(extend(xc, 1, 0), 1, 1);
+    // auto visc_fx = p0_extended_for_viscous_fluxes.pair(xc_extended_for_viscous_fluxes).apply(viscous_fluxes_tree_x_direction);
+    // auto visc_fy = p0_extended_for_viscous_fluxes.pair(xc_extended_for_viscous_fluxes).apply(viscous_fluxes_tree_y_direction);
+
+    auto gx  =  (fx /* + visc_fx*/).pair(xf).apply(to_angmom_fluxes(0)) * dy;
+    auto gy  =  (fy /* + visc_fy*/).pair(yf).apply(to_angmom_fluxes(1)) * dx;
     auto lx  = -gx.map(nd::difference_on_axis(0));
     auto ly  = -gy.map(nd::difference_on_axis(1));
     auto m0  =  q0.map(component<0>()) * dA; // cell masses
@@ -286,17 +352,12 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     //=========================================================================
     auto fg1 =        grav_vdot_field(solver_data, body1_pos, binary.body1.mass) * m0;
     auto fg2 =        grav_vdot_field(solver_data, body2_pos, binary.body2.mass) * m0;
-    auto sg1 =   fg1.pair(solver_data.cell_centers).apply(force_to_source_terms_tree);
-    auto sg2 =   fg2.pair(solver_data.cell_centers).apply(force_to_source_terms_tree);
+    auto sg1 =   fg1.pair(xc).apply(force_to_source_terms_tree);
+    auto sg2 =   fg2.pair(xc).apply(force_to_source_terms_tree);
     auto ss1 =  -q0 * sink_rate_field(solver_data, body1_pos, dt) * dA;
     auto ss2 =  -q0 * sink_rate_field(solver_data, body2_pos, dt) * dA;
     auto st  =   p0.pair(solver_data.cell_centers).apply(geometrical_source_terms_tree) * dA;
     auto bz  =  (solver_data.initial_conserved - q0) * solver_data.buffer_rate_field * dA;
-
-    // .map(nd::map([dt] (auto beta)
-    // {
-    //     return mara::make_dimensional<0,0,0>(1.0 - std::exp(-(dt * beta).scalar())) / dt;
-    // })) * dA;
 
     auto mask = solver_data.cell_centers.map([rd=solver_data.domain_radius] (auto XC)
     {
