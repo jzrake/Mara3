@@ -101,9 +101,9 @@ auto mara::find_index_of_maximum_behind(ArrayType array, std::size_t index)
     auto y = array | nd::bounds_check();
 
     try {
-        while (y(index - 1) < 0.5 * y(index - 2))
+        while (y(index - 1) > y(index))
         {
-            ++index;
+            --index;
         }
         return index;
     }
