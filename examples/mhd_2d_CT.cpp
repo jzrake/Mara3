@@ -67,13 +67,6 @@ namespace mhd_2d
 
         //Any routines to operate on all 3 fluxes at once
         //...
-        auto cell_centered_fields_per_area(unit_time dt) const
-        {            
-            auto bx = x_flux | nd::midpoint_on_axis(0);
-            auto by = y_flux | nd::midpoint_on_axis(1);
-
-            return (bx + by) * dt;
-        }
     }
 
     // Solver structs
@@ -91,19 +84,21 @@ namespace mhd_2d
         solution_t operator+(const solution_t& other) const
         {
             return {
-                time       + other.time,
-                iteration  + other.iteration,
+                time            + other.time,
+                iteration       + other.iteration,
                 vertices,
-                conserved  + other.conserved | nd::to_shared(),
+                conserved       + other.conserved       | nd::to_shared(),
+                magnetic_fluxes + other.magnetic_fluxes | nd::to_shared();
             };
         }
         solution_t operator*(mara::rational_number_t scale) const
         {
             return {
-                time      * scale.as_double(),
-                iteration * scale,
+                time            * scale.as_double(),
+                iteration       * scale,
                 vertices,
-                conserved * scale.as_double() | nd::to_shared(),
+                conserved       * scale.as_double() | nd::to_shared(),
+                magnetic_fluxes * scale.as_double() | nd::to_shared();
             };
         }
     };
@@ -174,6 +169,31 @@ auto recover_primitive(const mara::mhd::conserved_density_euler_t& conserved, co
     double temp_floor = 1e-4;
     return mara::mhd::recover_primitive(conserved, B, gamma_law_index, temp_floor);
 }
+
+
+/**
+ * @brief           Calculates an array of cell centered magnetic fields 
+ *                  from arrays of face-centered magnetic fluxes
+ *                  
+ * @param  solution The solution
+ * 
+ * @return          Array of cell-centered magnetic fields
+ */
+auto get_cell_centered_field( const solution_t& solution )
+{
+    auto v  = solution.vertices;
+    auto dx = v | nd::difference_on_axis(0);
+    auto dy = v | nd::difference_on_axis(1);
+
+    auto b1 = solution.magnetic_fluxes.x_flux | nd::multiply(dy) | nd::midpoint_on_axis(0);
+    auto b2 = solution.magnetic_fluxes.y_flux | nd::multiply(dx) | nd::midpoint_on_axis(1);
+
+    return (b1 + b2) / 2.0;
+    //Ought to be of type nd::shared_array<mara::mhd::magnetic_vector_t, 2>
+}
+
+//=============================================================================
+
 /**
  * @brief      Create the config template
  *

@@ -48,6 +48,7 @@ struct mara::mhd
     using unit_flow                 = dimensional_value_t<  0, 1,-1, double>;
     using unit_flux                 = dimensional_value_t< -2, 1,-1, double>; //flux through faces
     using unit_field                = dimensional_value_t<  0, 0, 0, double>; //Might need to fix these units
+    using unit_field_flux           = dimensional_value_t< -2, 0, 0, double>;
 
     using conserved_density_t       = arithmetic_sequence_t<unit_conserved_density, 8>; 
     using conserved_t               = arithmetic_sequence_t<unit_conserved        , 8>;
@@ -58,9 +59,9 @@ struct mara::mhd
     using flux_vector_euler_t       = arithmetic_sequence_t<unit_flux,              5>;
 
     using magnetic_vector_t         = arithmetic_sequence_t<unit_field,             3>;
+    using magnetic_flux_t           = arithmetic_sequence_t<unit_field_flux,        3>;
     
     struct primitive_t;
-
     struct wavespeeds_t
     {
         unit_velocity<double> m;
@@ -453,10 +454,10 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         auto bv = bfield_dot_velocity();
         auto F  = flux_vector_euler_t();
         F[0].value = v * U[0].value;
-        F[1].value = v * U[1].value + p_tot * nhat.get_n1() /*mhd*/ - U[5].value * b;
-        F[2].value = v * U[2].value + p_tot * nhat.get_n2() /*mhd*/ - U[6].value * b;
-        F[3].value = v * U[3].value + p_tot * nhat.get_n3() /*mhd*/ - U[7].value * b; 
-        F[4].value = v * U[4].value + p_tot * v             /*mhd*/ - bv         * b;
+        F[1].value = v * U[1].value + p_tot * nhat.get_n1(); // /*mhd*/ - U[5].value * b;
+        F[2].value = v * U[2].value + p_tot * nhat.get_n2(); // /*mhd*/ - U[6].value * b;
+        F[3].value = v * U[3].value + p_tot * nhat.get_n3(); // /*mhd*/ - U[7].value * b; 
+        F[4].value = v * U[4].value + p_tot * v            ; // /*mhd*/ - bv         * b;
 
         return F;
     }
@@ -470,10 +471,10 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         auto bv = bfield_dot_velocity();
         auto F  = flux_vector_euler_t();
         F[0].value = v * U[0].value;
-        F[1].value = v * U[1].value + p_tot * nhat.get_n1() /*mhd*/ - U[5].value * b;
-        F[2].value = v * U[2].value + p_tot * nhat.get_n2() /*mhd*/ - U[6].value * b;
-        F[3].value = v * U[3].value + p_tot * nhat.get_n3() /*mhd*/ - U[7].value * b; 
-        F[4].value = v * U[4].value + p_tot * v             /*mhd*/ - bv         * b;
+        F[1].value = v * U[1].value + p_tot * nhat.get_n1(); // /*mhd*/ - U[5].value * b;
+        F[2].value = v * U[2].value + p_tot * nhat.get_n2(); // /*mhd*/ - U[6].value * b;
+        F[3].value = v * U[3].value + p_tot * nhat.get_n3(); // /*mhd*/ - U[7].value * b; 
+        F[4].value = v * U[4].value + p_tot * v            ; // /*mhd*/ - bv         * b;
 
         return F;
     }
