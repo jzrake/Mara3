@@ -287,7 +287,8 @@ static auto block_update(const binary::solver_data_t& solver_data, mara::unit_ti
             gx |                    strip_axis(1, 2) | nd::zip_adjacent2_on_axis(0),
             gy | strip_axis(0, 1) | strip_axis(1, 1) | nd::zip_adjacent2_on_axis(0))
         | nd::apply(intercell_flux(0, solver_data))
-        | nd::multiply(dy);
+        | nd::multiply(dy)
+        | nd::to_shared();
 
         auto fhat_y = nd::zip(
             yf,
@@ -295,7 +296,8 @@ static auto block_update(const binary::solver_data_t& solver_data, mara::unit_ti
             gy |                    strip_axis(0, 2) | nd::zip_adjacent2_on_axis(1),
             gx | strip_axis(1, 1) | strip_axis(0, 1) | nd::zip_adjacent2_on_axis(1))
         | nd::apply(intercell_flux(1, solver_data))
-        | nd::multiply(dx);
+        | nd::multiply(dx)
+        | nd::to_shared();
 
         auto lx = fhat_x | nd::difference_on_axis(0);
         auto ly = fhat_y | nd::difference_on_axis(1);
@@ -316,7 +318,21 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     auto dq = extended_q0.pair_indexes().apply(block_update(solver_data, dt, safe_mode));
 
-    return solution;
+
+    // The full updated solution state
+    //=========================================================================
+    return solution_t{
+        solution.time + dt,
+        solution.iteration + 1,
+        solution.conserved,
+
+        solution.mass_accreted_on             ,//+ Mdot * dt,
+        solution.angular_momentum_accreted_on ,//+ Kdot * dt,
+        solution.integrated_torque_on         ,//+ Ldot * dt,
+        solution.work_done_on                 ,//, // + Edot * dt,
+        solution.mass_ejected                 ,//+ m0_ejection_rate * dt,
+        solution.angular_momentum_ejected     ,//+ lz_ejection_rate * dt,
+    };
 }
 
 
