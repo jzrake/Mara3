@@ -11,6 +11,7 @@
 
 static std::launch tree_launch = std::launch::deferred;
 using prim_pair_t = std::tuple<mara::iso2d::primitive_t, mara::iso2d::primitive_t>;
+using force_per_area_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<-1, 1, -2, double>, 2>;
 
 
 
@@ -23,7 +24,7 @@ using prim_pair_t = std::tuple<mara::iso2d::primitive_t, mara::iso2d::primitive_
 //=============================================================================
 namespace binary
 {
-    auto grav_vdot_field(const solver_data_t& solver_data, location_2d_t body_location, mara::unit_mass<double> body_mass);
+    // auto grav_vdot_field(const solver_data_t& solver_data, location_2d_t body_location, mara::unit_mass<double> body_mass);
     auto sink_rate_field(const solver_data_t& solver_data, location_2d_t sink_location, mara::unit_time<double> dt);
 }
 
@@ -62,22 +63,22 @@ static auto strip_axis(std::size_t axis, std::size_t count)
 
 
 //=============================================================================
-auto binary::grav_vdot_field(const solver_data_t& solver_data, location_2d_t body_location, mara::unit_mass<double> body_mass)
-{
-    auto accel = [body_location, body_mass, softening_radius=solver_data.softening_radius](location_2d_t field_point)
-    {
-        auto G   = mara::dimensional_value_t<3, -1, -2, double>(1.0);
-        auto dr  = field_point - body_location;
-        auto dr2 = dr[0] * dr[0] + dr[1] * dr[1];
-        auto rs2 = softening_radius * softening_radius;
-        return -dr / (dr2 + rs2).pow<3, 2>() * G * body_mass;
-    };
+// auto binary::grav_vdot_field(const solver_data_t& solver_data, location_2d_t body_location, mara::unit_mass<double> body_mass)
+// {
+//     auto accel = [body_location, body_mass, softening_radius=solver_data.softening_radius](location_2d_t field_point)
+//     {
+//         auto G   = mara::dimensional_value_t<3, -1, -2, double>(1.0);
+//         auto dr  = field_point - body_location;
+//         auto dr2 = dr[0] * dr[0] + dr[1] * dr[1];
+//         auto rs2 = softening_radius * softening_radius;
+//         return -dr / (dr2 + rs2).pow<3, 2>() * G * body_mass;
+//     };
 
-    return solver_data.cell_centers.map([accel] (auto block)
-    {
-        return block | nd::map(accel);
-    });
-}
+//     return solver_data.cell_centers.map([accel] (auto block)
+//     {
+//         return block | nd::map(accel);
+//     });
+// }
 
 
 
@@ -99,6 +100,37 @@ auto binary::sink_rate_field(const solver_data_t& solver_data, location_2d_t sin
     {
         return block | nd::map(sink);
     });
+}
+
+
+
+
+//=============================================================================
+static auto grav_vdot_field(const binary::solver_data_t& solver_data, binary::location_2d_t body_location, mara::unit_mass<double> body_mass)
+{
+    return [body_location, body_mass, softening_radius=solver_data.softening_radius](binary::location_2d_t field_point)
+    {
+        auto G   = mara::dimensional_value_t<3, -1, -2, double>(1.0);
+        auto dr  = field_point - body_location;
+        auto dr2 = dr[0] * dr[0] + dr[1] * dr[1];
+        auto rs2 = softening_radius * softening_radius;
+        return -dr / (dr2 + rs2).pow<3, 2>() * G * body_mass;
+    };
+}
+
+
+
+
+//=============================================================================
+static auto sink_rate_field(const binary::solver_data_t& solver_data, binary::location_2d_t sink_location)
+{
+    return [sink_location, sink_radius=solver_data.sink_radius, sink_rate=solver_data.sink_rate] (binary::location_2d_t field_point)
+    {
+        auto dr = field_point - sink_location;
+        auto s2 = sink_radius * sink_radius;
+        auto a2 = (dr * dr).sum() / s2 / 2.0;
+        return sink_rate * 0.5 * std::exp(-a2);
+    };
 }
 
 
@@ -258,12 +290,75 @@ static auto intercell_flux(std::size_t axis, const binary::solver_data_t& solver
 
 
 
+static auto force_to_source_terms(binary::location_2d_t x, force_per_area_t f)
+{
+    auto sigma_dot = mara::make_dimensional<-2, 1, -1>(0.0);
+    auto sr_dot    = x[0] * f[0] + x[1] * f[1];
+    auto lz_dot    = x[0] * f[1] - x[1] * f[0];
+    return mara::make_arithmetic_tuple(sigma_dot, sr_dot, lz_dot);
+};
+
+
+
+
 //=============================================================================
-static auto block_update(const binary::solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
+static auto source_terms(
+    const binary::solution_t& solution,
+    const binary::solver_data_t& solver_data,
+    mara::tree_index_t<2> tree_index,
+    mara::unit_time<double> dt)
+{
+    auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
+    auto body1_pos = binary::location_2d_t{binary.body1.position_x, binary.body1.position_y};
+    auto body2_pos = binary::location_2d_t{binary.body2.position_x, binary.body2.position_y};
+
+
+    auto sr2 = solver_data.gst_suppr_radius.pow<2>();
+    auto M   = solver_data.mach_number;
+    auto xc  = solver_data.cell_centers.at(tree_index);
+    auto dA  = solver_data.cell_areas.at(tree_index);
+    auto br  = solver_data.buffer_rate_field.at(tree_index);
+    auto q0  = solution.conserved.at(tree_index);
+
+
+    // TODO: use cached primitives
+    auto p0 = nd::zip(q0, xc)
+    | nd::apply([] (auto q, auto x) { return mara::iso2d::recover_primitive(q, x); })
+    | nd::to_shared();
+
+
+    auto sigma = q0 | component<0>();
+    auto fg1 = (xc | nd::map(grav_vdot_field(solver_data, body1_pos, binary.body1.mass))) * sigma;
+    auto fg2 = (xc | nd::map(grav_vdot_field(solver_data, body2_pos, binary.body2.mass))) * sigma;
+
+    auto s_grav_1 = (nd::zip(xc, fg1) | nd::apply(force_to_source_terms)) * dt;
+    auto s_grav_2 = (nd::zip(xc, fg2) | nd::apply(force_to_source_terms)) * dt;
+    auto s_sink_1 = -q0 * (xc | nd::map(sink_rate_field(solver_data, body1_pos))) * dt;
+    auto s_sink_2 = -q0 * (xc | nd::map(sink_rate_field(solver_data, body2_pos))) * dt;
+    auto s_buffer = (solver_data.initial_conserved.at(tree_index) - q0) * br * dt;
+    auto s_geom = nd::zip(p0, xc) | nd::apply([sr2, M, dt] (auto p, auto x)
+    {
+        auto ramp = 1.0 - std::exp(-(x * x).sum() / sr2);
+        auto cs2 = cs2_at_position(x, M);
+        return p.source_terms_conserved_angmom(cs2) * ramp * dt;
+    });
+
+    return s_grav_1 + s_grav_2 + s_sink_1 + s_sink_2 + s_buffer + s_geom | nd::to_shared();
+}
+
+
+
+
+//=============================================================================
+static auto block_update(
+    const binary::solution_t& solution,
+    const binary::solver_data_t& solver_data,
+    mara::unit_time<double> dt,
+    bool safe_mode)
 {
     auto extended_xc = extend(extend(solver_data.cell_centers, 0, 2), 1, 2);
 
-    return [solver_data, dt, extended_xc, safe_mode] (auto&& tree_index, auto&& extended_q0)
+    return [solver_data, solution, dt, extended_xc, safe_mode] (auto&& tree_index, auto&& extended_q0)
     {
         auto xv = solver_data.vertices.at(tree_index);
         auto xc = solver_data.cell_centers.at(tree_index);
@@ -301,9 +396,10 @@ static auto block_update(const binary::solver_data_t& solver_data, mara::unit_ti
 
         auto lx = fhat_x | nd::difference_on_axis(0);
         auto ly = fhat_y | nd::difference_on_axis(1);
-        auto q0 = extended_q0 | strip_axis(0, 2) | strip_axis(1, 2);
+        auto q0 = solution.conserved.at(tree_index);
 
-        return q0 + (lx + ly) * dt / dA | nd::to_shared();
+        auto dq_source = source_terms(solution, solver_data, tree_index, dt);
+        return q0 + (lx + ly) * dt / dA + dq_source | nd::to_shared();
     };
 }
 
@@ -316,7 +412,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto extended_q0 = extend(extend(solution.conserved, 0, 2), 1, 2);
     
 
-    auto dq = extended_q0.pair_indexes().apply(block_update(solver_data, dt, safe_mode));
+    auto dq = extended_q0.pair_indexes().apply(block_update(solution, solver_data, dt, safe_mode));
 
 
     // The full updated solution state
