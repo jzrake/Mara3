@@ -375,7 +375,6 @@ static auto block_update(
 
         auto s = source_terms(solution, solver_data, p0, tree_index, dt);
         return std::make_pair(q0 - (lx + ly) * dt / dA + s.first | nd::to_shared(), s.second);
-        // return q0 - (lx + ly) * dt / dA + s.first | nd::to_shared();
     };
 }
 
