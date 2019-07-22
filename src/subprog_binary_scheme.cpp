@@ -16,14 +16,19 @@ using force_per_area_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<-
 
 
 
-#define hard_coded_alpha 0.0
-
-
-
-
 //=============================================================================
 namespace binary
 {
+    struct source_term_total_t
+    {
+        mara::arithmetic_sequence_t<mara::unit_mass  <double>, 2> mass_accreted_on = {};
+        mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> angular_momentum_accreted_on = {};
+        mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> integrated_torque_on = {};
+        mara::arithmetic_sequence_t<mara::unit_energy<double>, 2> work_done_on = {};
+        mara::unit_mass  <double>                                 mass_ejected = {};
+        mara::unit_angmom<double>                                 angular_momentum_ejected = {};
+        source_term_total_t operator+(const source_term_total_t& other) const;
+    };
 }
 
 
@@ -56,6 +61,22 @@ static auto strip_axis(std::size_t axis, std::size_t count)
         return A | nd::select_axis(axis).from(count).to(count).from_the_end();
     };
 };
+
+
+
+
+//=============================================================================
+binary::source_term_total_t binary::source_term_total_t::operator+(const source_term_total_t& other) const
+{
+    return {
+        mass_accreted_on + other.mass_accreted_on,
+        angular_momentum_accreted_on + other.angular_momentum_accreted_on,
+        integrated_torque_on + other.integrated_torque_on,
+        work_done_on + other.work_done_on,
+        mass_ejected + other.mass_ejected,
+        angular_momentum_ejected + other.angular_momentum_ejected,
+    };
+}
 
 
 
@@ -162,7 +183,12 @@ static auto to_angmom_fluxes(std::size_t axis, mara::unit_length<double> domain_
 
 
 //=============================================================================
-static mara::iso2d::flux_t viscous_flux(std::size_t axis, prim_pair_t g_long, prim_pair_t g_tran, double mu, double grid_spacing)
+static mara::iso2d::flux_t viscous_flux(std::size_t axis,
+    prim_pair_t g_long,
+    prim_pair_t g_tran,
+    mara::unit_length<double> dx,
+    mara::unit_length<double> dy,
+    double mu)
 {
     auto [gl, gr] = g_long;
     auto [hl, hr] = g_tran;
@@ -176,8 +202,8 @@ static mara::iso2d::flux_t viscous_flux(std::size_t axis, prim_pair_t g_long, pr
             auto dy_ux = 0.5 * (hl.velocity_x() + hr.velocity_x());
             auto dy_uy = 0.5 * (hl.velocity_y() + hr.velocity_y());
 
-            auto tauxx = mu * (dx_ux - dy_uy) / grid_spacing;
-            auto tauxy = mu * (dx_uy + dy_ux) / grid_spacing;
+            auto tauxx = mu * (dx_ux / dx.value - dy_uy / dy.value);
+            auto tauxy = mu * (dx_uy / dx.value + dy_ux / dy.value);
 
             return mara::make_arithmetic_tuple(
                 mara::make_dimensional<-1, 1, -1>(0.0),
@@ -191,8 +217,8 @@ static mara::iso2d::flux_t viscous_flux(std::size_t axis, prim_pair_t g_long, pr
             auto dy_ux = 0.5 * (gl.velocity_x() + gr.velocity_x());
             auto dy_uy = 0.5 * (gl.velocity_y() + gr.velocity_y());
 
-            auto tauyx =  mu * (dx_uy + dy_ux) / grid_spacing;
-            auto tauyy = -mu * (dx_ux - dy_uy) / grid_spacing;
+            auto tauyx =  mu * (dx_uy / dx.value + dy_ux / dy.value);
+            auto tauyy = -mu * (dx_ux / dx.value - dy_uy / dy.value);
 
             return mara::make_arithmetic_tuple(
                 mara::make_dimensional<-1, 1, -1>(0.0),
@@ -207,25 +233,26 @@ static mara::iso2d::flux_t viscous_flux(std::size_t axis, prim_pair_t g_long, pr
 
 
 //=============================================================================
-static auto intercell_flux(std::size_t axis, const binary::solver_data_t& solver_data)
+static auto intercell_flux(std::size_t axis, const binary::solver_data_t& solver_data, mara::tree_index_t<2> tree_index)
 {
     auto to_angmom = to_angmom_fluxes(axis, solver_data.domain_radius);
+    auto dx = (solver_data.vertices.at(tree_index) | nd::difference_on_axis(0) | nd::read_index(0, 0))[0];
+    auto dy = (solver_data.vertices.at(tree_index) | nd::difference_on_axis(1) | nd::read_index(0, 0))[1];
 
-    return [axis, solver_data, to_angmom] (binary::location_2d_t xf, prim_pair_t p0, prim_pair_t g_long, prim_pair_t g_tran)
+    return [axis, solver_data, to_angmom, dx, dy] (binary::location_2d_t xf, prim_pair_t p0, prim_pair_t g_long, prim_pair_t g_tran)
     {
-        auto grid_spacing = 1.0; // TODO!
         auto [pl, pr] = p0;
         auto [gl, gr] = g_long;
 
         auto pl_hat = pl + gl * 0.5;
         auto pr_hat = pr - gr * 0.5;
         auto cs2 = cs2_at_position(xf, solver_data.mach_number);
-        auto nu = hard_coded_alpha * std::sqrt(cs2) * scale_height_at_position(xf, solver_data.mach_number);
+        auto nu = solver_data.alpha * std::sqrt(cs2) * scale_height_at_position(xf, solver_data.mach_number);
         auto mu = 0.5 * nu * (pl_hat.sigma() + pr_hat.sigma());
 
         auto nhat = mara::unit_vector_t::on_axis(axis);
         auto fhat = mara::iso2d::riemann_hlle(pl_hat, pr_hat, cs2, cs2, nhat);
-        auto fhat_visc = viscous_flux(axis, g_long, g_tran, mu, grid_spacing);
+        auto fhat_visc = viscous_flux(axis, g_long, g_tran, dx, dy, mu);
 
         return to_angmom(xf, fhat + fhat_visc);
     };
@@ -282,7 +309,17 @@ static auto source_terms(
         return p.source_terms_conserved_angmom(cs2) * ramp * dt;
     });
 
-    return s_grav_1 + s_grav_2 + s_sink_1 + s_sink_2 + s_buffer + s_geom | nd::to_shared();
+    auto totals = binary::source_term_total_t();
+    totals.mass_accreted_on[0]             = -(s_sink_1 | component<0>() | nd::multiply(dA) | nd::sum());
+    totals.mass_accreted_on[1]             = -(s_sink_2 | component<0>() | nd::multiply(dA) | nd::sum());
+    totals.angular_momentum_accreted_on[0] = -(s_sink_1 | component<2>() | nd::multiply(dA) | nd::sum());
+    totals.angular_momentum_accreted_on[1] = -(s_sink_2 | component<2>() | nd::multiply(dA) | nd::sum());
+    totals.integrated_torque_on[0]         = -(s_grav_1 | component<2>() | nd::multiply(dA) | nd::sum());
+    totals.integrated_torque_on[1]         = -(s_grav_2 | component<2>() | nd::multiply(dA) | nd::sum());
+    totals.mass_ejected                    = -(s_buffer | component<0>() | nd::multiply(dA) | nd::sum());
+    totals.angular_momentum_ejected        = -(s_buffer | component<2>() | nd::multiply(dA) | nd::sum());
+
+    return std::make_pair(s_grav_1 + s_grav_2 + s_sink_1 + s_sink_2 + s_buffer + s_geom | nd::to_shared(), totals);
 }
 
 
@@ -319,7 +356,7 @@ static auto block_update(
             p0 | strip_axis(0, 1) | strip_axis(1, 2) | nd::zip_adjacent2_on_axis(0),
             gx |                    strip_axis(1, 2) | nd::zip_adjacent2_on_axis(0),
             gy | strip_axis(0, 1) | strip_axis(1, 1) | nd::zip_adjacent2_on_axis(0))
-        | nd::apply(intercell_flux(0, solver_data))
+        | nd::apply(intercell_flux(0, solver_data, tree_index))
         | nd::multiply(dy)
         | nd::to_shared();
 
@@ -328,7 +365,7 @@ static auto block_update(
             p0 | strip_axis(1, 1) | strip_axis(0, 2) | nd::zip_adjacent2_on_axis(1),
             gy |                    strip_axis(0, 2) | nd::zip_adjacent2_on_axis(1),
             gx | strip_axis(1, 1) | strip_axis(0, 1) | nd::zip_adjacent2_on_axis(1))
-        | nd::apply(intercell_flux(1, solver_data))
+        | nd::apply(intercell_flux(1, solver_data, tree_index))
         | nd::multiply(dx)
         | nd::to_shared();
 
@@ -336,8 +373,9 @@ static auto block_update(
         auto ly = fhat_y | nd::difference_on_axis(1);
         auto q0 = solution.conserved.at(tree_index);
 
-        auto dq_source = source_terms(solution, solver_data, p0, tree_index, dt);
-        return q0 - (lx + ly) * dt / dA + dq_source | nd::to_shared();
+        auto s = source_terms(solution, solver_data, p0, tree_index, dt);
+        return std::make_pair(q0 - (lx + ly) * dt / dA + s.first | nd::to_shared(), s.second);
+        // return q0 - (lx + ly) * dt / dA + s.first | nd::to_shared();
     };
 }
 
@@ -348,9 +386,9 @@ static auto block_update(
 binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
 {
     auto extended_q0 = extend(extend(solution.conserved, 0, 2), 1, 2);
-    
-
-    auto q1 = extended_q0.pair_indexes().apply(block_update(solution, solver_data, dt, safe_mode));
+    auto block_results = extended_q0.pair_indexes().apply(block_update(solution, solver_data, dt, safe_mode));
+    auto q1 = block_results.map([] (const auto& t) { return t.first; });
+    auto totals = block_results.map([] (const auto& t) { return t.second; }).sum();
 
 
     // The full updated solution state
@@ -360,12 +398,12 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         solution.iteration + 1,
         q1,
 
-        solution.mass_accreted_on             ,//+ Mdot * dt,
-        solution.angular_momentum_accreted_on ,//+ Kdot * dt,
-        solution.integrated_torque_on         ,//+ Ldot * dt,
-        solution.work_done_on                 ,//, // + Edot * dt,
-        solution.mass_ejected                 ,//+ m0_ejection_rate * dt,
-        solution.angular_momentum_ejected     ,//+ lz_ejection_rate * dt,
+        solution.mass_accreted_on             + totals.mass_accreted_on,
+        solution.angular_momentum_accreted_on + totals.angular_momentum_accreted_on,
+        solution.integrated_torque_on         + totals.integrated_torque_on,
+        solution.work_done_on                 , //+ totals.work_done_on,
+        solution.mass_ejected                 + totals.mass_ejected,
+        solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
     };
 }
 

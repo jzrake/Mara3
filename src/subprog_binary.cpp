@@ -85,7 +85,8 @@ mara::config_template_t binary::create_config_template()
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
     .item("counter_rotate",         0)          // retrograde disk option: 0 or 1
-    .item("mach_number",         40.0);
+    .item("mach_number",         40.0)          // disk mach number; for locally isothermal EOS
+    .item("alpha",                0.0);         // viscous alpha coefficient
 }
 
 

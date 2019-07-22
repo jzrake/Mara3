@@ -80,6 +80,7 @@ namespace binary
         mara::unit_length<double>                             domain_radius;
         mara::unit_length<double>                             sink_radius;
         double                                                mach_number;
+        double                                                alpha;
         double                                                plm_theta;
         int                                                   rk_order;
         reconstruct_method_t                                  reconstruct_method;
