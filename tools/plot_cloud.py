@@ -92,7 +92,10 @@ def plot_radial_profile(filename):
     ax2.plot(rvc[1:], L0c, lw=2.0, label=r'$\theta=0.2$')
     ax3.plot(rvc[1:], p0c, lw=2.0, label=r'$\theta=0.2$')
 
-    ax1.axvline(h5f['shock_luminosity_radius'][ja] / 1e10, ls='--')
+    ax1.axvline(h5f['shock_luminosity_radius'][ja] / 1e10, ls='--', c='r', label='shock_luminosity_radius')
+    ax1.axvline(h5f['shock_pressure_radius']  [ja] / 1e10, ls='--', c='g', label='shock_pressure_radius')
+    ax1.axvline(h5f['shock_midpoint_radius']  [ja] / 1e10, ls='--', c='b', label='shock_midpoint_radius')
+
     ax2.axvline(h5f['shock_luminosity_radius'][jb] / 1e10, ls='--')
     ax3.axvline(h5f['shock_luminosity_radius'][jc] / 1e10, ls='--')
 
