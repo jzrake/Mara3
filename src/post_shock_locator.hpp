@@ -82,7 +82,6 @@ auto mara::find_shock_index(PrimitiveArray1d primitive, double gamma_law_index)
 
 
 
-
 /**
  * @brief      Return the index of a local maximum in the array at indexes
  *             smaller than the one given.
