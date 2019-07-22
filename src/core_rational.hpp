@@ -152,7 +152,7 @@ public:
 
     bool is_integral() const
     {
-        return den == 1;
+        return den == 1 || num == 0;
     }
 
     int as_integral() const
