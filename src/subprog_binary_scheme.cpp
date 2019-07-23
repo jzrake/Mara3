@@ -54,18 +54,6 @@ static auto component()
 
 
 //=============================================================================
-static auto strip_axis(std::size_t axis, std::size_t count)
-{
-    return [axis, count] (auto A)
-    {
-        return A | nd::select_axis(axis).from(count).to(count).from_the_end();
-    };
-};
-
-
-
-
-//=============================================================================
 binary::source_term_total_t binary::source_term_total_t::operator+(const source_term_total_t& other) const
 {
     return {
@@ -121,7 +109,7 @@ static auto extend(TreeType tree, std::size_t axis, std::size_t guard_count)
         auto C = tree.at(index);
         auto L = mara::get_cell_block(tree, index.prev_on(axis), mara::compose(nd::to_shared(), nd::select_final(guard_count, axis)));
         auto R = mara::get_cell_block(tree, index.next_on(axis), mara::compose(nd::to_shared(), nd::select_first(guard_count, axis)));
-        return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis);
+        return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis) | nd::to_shared();
     }, tree_launch);
 };
 
@@ -274,24 +262,18 @@ static auto force_to_source_terms(binary::location_2d_t x, force_per_area_t f)
 
 
 //=============================================================================
-static auto source_terms(
-    const binary::solution_t& solution,
-    const binary::solver_data_t& solver_data,
-    const nd::shared_array<mara::iso2d::primitive_t, 2>& extended_p0,
-    mara::tree_index_t<2> tree_index,
-    mara::unit_time<double> dt)
+static auto source_terms = [] (auto solver_data, auto solution, auto p0, auto tree_index, auto dt)
 {
     auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
     auto body1_pos = binary::location_2d_t{binary.body1.position_x, binary.body1.position_y};
     auto body2_pos = binary::location_2d_t{binary.body2.position_x, binary.body2.position_y};
 
-    auto sr2 = solver_data.gst_suppr_radius.pow<2>();
+    auto sr2 = solver_data.gst_suppr_radius.template pow<2>();
     auto M   = solver_data.mach_number;
     auto xc  = solver_data.cell_centers.at(tree_index);
     auto dA  = solver_data.cell_areas.at(tree_index);
     auto br  = solver_data.buffer_rate_field.at(tree_index);
     auto q0  = solution.conserved.at(tree_index);
-    auto p0  = extended_p0 | strip_axis(0, 2) | strip_axis(1, 2);
 
     auto sigma = q0 | component<0>();
     auto fg1 = (xc | nd::map(grav_vdot_field(solver_data, body1_pos, binary.body1.mass))) * sigma;
@@ -302,7 +284,7 @@ static auto source_terms(
     auto s_sink_1 = -q0 * (xc | nd::map(sink_rate_field(solver_data, body1_pos))) * dt;
     auto s_sink_2 = -q0 * (xc | nd::map(sink_rate_field(solver_data, body2_pos))) * dt;
     auto s_buffer = (solver_data.initial_conserved.at(tree_index) - q0) * br * dt;
-    auto s_geom = nd::zip(p0, xc) | nd::apply([sr2, M, dt] (auto p, auto x)
+    auto s_geom = nd::zip(p0.at(tree_index), xc) | nd::apply([sr2, M, dt] (auto p, auto x)
     {
         auto ramp = 1.0 - std::exp(-(x * x).sum() / sr2);
         auto cs2 = cs2_at_position(x, M);
@@ -320,22 +302,27 @@ static auto source_terms(
     totals.angular_momentum_ejected        = -(s_buffer | component<2>() | nd::multiply(dA) | nd::sum());
 
     return std::make_pair(s_grav_1 + s_grav_2 + s_sink_1 + s_sink_2 + s_buffer + s_geom | nd::to_shared(), totals);
-}
+};
 
 
 
 
 //=============================================================================
-static auto block_update(
-    const binary::solution_t& solution,
-    const binary::solver_data_t& solver_data,
-    mara::unit_time<double> dt,
-    bool safe_mode)
+static auto block_update = [] (
+    auto solver_data,
+    auto solution,
+    auto p0,
+    auto p0_ex,
+    auto p0_ey,
+    auto gx_ex,
+    auto gx_ey,
+    auto gy_ex,
+    auto gy_ey,
+    auto dt)
 {
-    auto extended_xc = extend(extend(solver_data.cell_centers, 0, 2), 1, 2);
-
-    return [solver_data, solution, dt, extended_xc, safe_mode] (auto&& tree_index, auto&& extended_q0)
+    return [=] (auto tree_index)
     {
+        auto q0 = solution.conserved.at(tree_index);
         auto xv = solver_data.vertices.at(tree_index);
         auto xc = solver_data.cell_centers.at(tree_index);
         auto dA = solver_data.cell_areas.at(tree_index);
@@ -343,40 +330,32 @@ static auto block_update(
         auto dy = xv | component<1>() | nd::difference_on_axis(1);
         auto xf = xv | nd::midpoint_on_axis(1);
         auto yf = xv | nd::midpoint_on_axis(0);
-        auto p0 = nd::zip(extended_q0, extended_xc.at(tree_index))
-        | nd::apply([] (auto q, auto x) { return mara::iso2d::recover_primitive(q, x); })
-        | nd::to_shared();
-
-        auto plm = safe_mode ? 0.0 : solver_data.plm_theta;
-        auto gx = estimate_gradient(p0, 0, plm) | nd::to_shared();
-        auto gy = estimate_gradient(p0, 1, plm) | nd::to_shared();
 
         auto fhat_x = nd::zip(
             xf,
-            p0 | strip_axis(0, 1) | strip_axis(1, 2) | nd::zip_adjacent2_on_axis(0),
-            gx |                    strip_axis(1, 2) | nd::zip_adjacent2_on_axis(0),
-            gy | strip_axis(0, 1) | strip_axis(1, 1) | nd::zip_adjacent2_on_axis(0))
+            p0_ex.at(tree_index) | nd::zip_adjacent2_on_axis(0),
+            gx_ex.at(tree_index) | nd::zip_adjacent2_on_axis(0),
+            gy_ex.at(tree_index) | nd::zip_adjacent2_on_axis(0))
         | nd::apply(intercell_flux(0, solver_data, tree_index))
         | nd::multiply(dy)
         | nd::to_shared();
 
         auto fhat_y = nd::zip(
             yf,
-            p0 | strip_axis(1, 1) | strip_axis(0, 2) | nd::zip_adjacent2_on_axis(1),
-            gy |                    strip_axis(0, 2) | nd::zip_adjacent2_on_axis(1),
-            gx | strip_axis(1, 1) | strip_axis(0, 1) | nd::zip_adjacent2_on_axis(1))
+            p0_ey.at(tree_index) | nd::zip_adjacent2_on_axis(1),
+            gy_ey.at(tree_index) | nd::zip_adjacent2_on_axis(1),
+            gx_ey.at(tree_index) | nd::zip_adjacent2_on_axis(1))
         | nd::apply(intercell_flux(1, solver_data, tree_index))
         | nd::multiply(dx)
         | nd::to_shared();
 
         auto lx = fhat_x | nd::difference_on_axis(0);
         auto ly = fhat_y | nd::difference_on_axis(1);
-        auto q0 = solution.conserved.at(tree_index);
 
-        auto s = source_terms(solution, solver_data, p0, tree_index, dt);
+        auto s = source_terms(solver_data, solution, p0, tree_index, dt);
         return std::make_pair(q0 - (lx + ly) * dt / dA + s.first | nd::to_shared(), s.second);
     };
-}
+};
 
 
 
@@ -384,9 +363,32 @@ static auto block_update(
 //=============================================================================
 binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
 {
-    auto extended_q0 = extend(extend(solution.conserved, 0, 2), 1, 2);
-    auto block_results = extended_q0.pair_indexes().apply(block_update(solution, solver_data, dt, safe_mode));
-    auto q1 = block_results.map([] (const auto& t) { return t.first; });
+
+    // Compute pre-requisite data
+    //=========================================================================
+    auto th = solver_data.plm_theta;
+    auto q0 = solution.conserved;
+    auto p0 = q0.pair(solver_data.cell_centers).apply([] (auto Q, auto X)
+    {
+        return nd::zip(Q, X)
+        | nd::apply([] (auto q, auto x) { return mara::iso2d::recover_primitive(q, x); })
+        | nd::to_shared();
+    });
+
+
+    auto p0_ex = extend(p0, 0, 1);
+    auto p0_ey = extend(p0, 1, 1);
+    auto gx = p0_ex.map([th] (auto p) { return estimate_gradient(p, 0, th) | nd::to_shared(); });
+    auto gy = p0_ey.map([th] (auto p) { return estimate_gradient(p, 1, th) | nd::to_shared(); });
+    auto gx_ex = extend(gx, 0, 1);
+    auto gx_ey = extend(gx, 1, 1);
+    auto gy_ex = extend(gy, 0, 1);
+    auto gy_ey = extend(gy, 1, 1);
+    auto block_results = p0
+    .indexes()
+    .map(block_update(solver_data, solution, p0, p0_ex, p0_ey, gx_ex, gx_ey, gy_ex, gy_ey, dt));
+
+    auto q1     = block_results.map([] (const auto& t) { return t.first; });
     auto totals = block_results.map([] (const auto& t) { return t.second; }).sum();
 
 
@@ -396,11 +398,10 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         solution.time + dt,
         solution.iteration + 1,
         q1,
-
         solution.mass_accreted_on             + totals.mass_accreted_on,
         solution.angular_momentum_accreted_on + totals.angular_momentum_accreted_on,
         solution.integrated_torque_on         + totals.integrated_torque_on,
-        solution.work_done_on                 , //+ totals.work_done_on,
+        solution.work_done_on,
         solution.mass_ejected                 + totals.mass_ejected,
         solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
     };
