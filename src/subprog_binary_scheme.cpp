@@ -193,8 +193,8 @@ static mara::iso2d::flux_t viscous_flux(std::size_t axis,
 
             return mara::make_arithmetic_tuple(
                 mara::make_dimensional<-1, 1, -1>(0.0),
-                mara::make_dimensional< 0, 1,-2>(tauxx),
-                mara::make_dimensional< 0, 1,-2>(tauxy));
+                mara::make_dimensional< 0, 1,-2>(-tauxx),
+                mara::make_dimensional< 0, 1,-2>(-tauxy));
         }
         case 1:
         {
@@ -208,8 +208,8 @@ static mara::iso2d::flux_t viscous_flux(std::size_t axis,
 
             return mara::make_arithmetic_tuple(
                 mara::make_dimensional<-1, 1, -1>(0.0),
-                mara::make_dimensional< 0, 1,-2>(tauyx),
-                mara::make_dimensional< 0, 1,-2>(tauyy));
+                mara::make_dimensional< 0, 1,-2>(-tauyx),
+                mara::make_dimensional< 0, 1,-2>(-tauyy));
         }
     }
     throw;
