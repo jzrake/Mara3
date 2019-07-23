@@ -89,6 +89,7 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     result.gst_suppr_radius      = run_config.get_double("source_term_softening") * std::min(min_dx, min_dy).value;
     result.plm_theta             = run_config.get_double("plm_theta");
     result.rk_order              = run_config.get_int("rk_order");
+    result.block_size            = run_config.get_int("block_size");
     result.recommended_time_step = std::min(min_dx, min_dy) / max_velocity * run_config.get_double("cfl_number");
     result.binary_params         = create_binary_params(run_config);
     result.buffer_rate_field     = buffer_rate_field.map(nd::to_shared());

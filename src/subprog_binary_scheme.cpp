@@ -118,7 +118,7 @@ static auto extend(TreeType tree, std::size_t axis, std::size_t guard_count)
 
 //=============================================================================
 template<typename PrimitiveArray>
-static auto estimate_gradient(PrimitiveArray p0, std::size_t axis, double plm_theta)
+static auto estimate_plm_difference(PrimitiveArray p0, std::size_t axis, double plm_theta)
 {
     return p0
     | nd::zip_adjacent3_on_axis(axis)
@@ -174,8 +174,6 @@ static auto to_angmom_fluxes(std::size_t axis, mara::unit_length<double> domain_
 static mara::iso2d::flux_t viscous_flux(std::size_t axis,
     prim_pair_t g_long,
     prim_pair_t g_tran,
-    mara::unit_length<double> dx,
-    mara::unit_length<double> dy,
     double mu)
 {
     auto [gl, gr] = g_long;
@@ -190,8 +188,8 @@ static mara::iso2d::flux_t viscous_flux(std::size_t axis,
             auto dy_ux = 0.5 * (hl.velocity_x() + hr.velocity_x());
             auto dy_uy = 0.5 * (hl.velocity_y() + hr.velocity_y());
 
-            auto tauxx = mu * (dx_ux / dx.value - dy_uy / dy.value);
-            auto tauxy = mu * (dx_uy / dx.value + dy_ux / dy.value);
+            auto tauxx = mu * (dx_ux - dy_uy);
+            auto tauxy = mu * (dx_uy + dy_ux);
 
             return mara::make_arithmetic_tuple(
                 mara::make_dimensional<-1, 1, -1>(0.0),
@@ -205,8 +203,8 @@ static mara::iso2d::flux_t viscous_flux(std::size_t axis,
             auto dy_ux = 0.5 * (gl.velocity_x() + gr.velocity_x());
             auto dy_uy = 0.5 * (gl.velocity_y() + gr.velocity_y());
 
-            auto tauyx =  mu * (dx_uy / dx.value + dy_ux / dy.value);
-            auto tauyy = -mu * (dx_ux / dx.value - dy_uy / dy.value);
+            auto tauyx =  mu * (dx_uy + dy_ux);
+            auto tauyy = -mu * (dx_ux - dy_uy);
 
             return mara::make_arithmetic_tuple(
                 mara::make_dimensional<-1, 1, -1>(0.0),
@@ -224,23 +222,22 @@ static mara::iso2d::flux_t viscous_flux(std::size_t axis,
 static auto intercell_flux(std::size_t axis, const binary::solver_data_t& solver_data, mara::tree_index_t<2> tree_index)
 {
     auto to_angmom = to_angmom_fluxes(axis, solver_data.domain_radius);
-    auto dx = (solver_data.vertices.at(tree_index) | nd::difference_on_axis(0) | nd::read_index(0, 0))[0];
-    auto dy = (solver_data.vertices.at(tree_index) | nd::difference_on_axis(1) | nd::read_index(0, 0))[1];
+    auto grid_spacing = 2.0 * solver_data.domain_radius.value / solver_data.block_size / (1 << tree_index.level);
 
-    return [axis, solver_data, to_angmom, dx, dy] (binary::location_2d_t xf, prim_pair_t p0, prim_pair_t g_long, prim_pair_t g_tran)
+    return [axis, solver_data, to_angmom, grid_spacing] (binary::location_2d_t xf, prim_pair_t p0, prim_pair_t g_long, prim_pair_t g_tran)
     {
         auto [pl, pr] = p0;
         auto [gl, gr] = g_long;
 
-        auto pl_hat = pl + gl * 0.5;
-        auto pr_hat = pr - gr * 0.5;
+        auto pl_hat = pl + gl * 0.5 * grid_spacing;
+        auto pr_hat = pr - gr * 0.5 * grid_spacing;
         auto cs2 = cs2_at_position(xf, solver_data.mach_number);
         auto nu = solver_data.alpha * std::sqrt(cs2) * scale_height_at_position(xf, solver_data.mach_number);
         auto mu = 0.5 * nu * (pl_hat.sigma() + pr_hat.sigma());
 
         auto nhat = mara::unit_vector_t::on_axis(axis);
         auto fhat = mara::iso2d::riemann_hlle(pl_hat, pr_hat, cs2, cs2, nhat);
-        auto fhat_visc = viscous_flux(axis, g_long, g_tran, dx, dy, mu);
+        auto fhat_visc = viscous_flux(axis, g_long, g_tran, mu);
 
         return to_angmom(xf, fhat + fhat_visc);
     };
@@ -363,10 +360,20 @@ static auto block_update = [] (
 //=============================================================================
 binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
 {
+    auto th = solver_data.plm_theta;
+    auto spacing_at_root = 2.0 * solver_data.domain_radius.value / solver_data.block_size;
+    auto estimate_gradient = [th, spacing_at_root] (std::size_t axis)
+    {
+        return [th, spacing_at_root, axis] (mara::tree_index_t<2> tree_index, auto p)
+        {
+            auto spacing = spacing_at_root / (1 << tree_index.level);
+            return (estimate_plm_difference(p, axis, th) / spacing) | nd::to_shared();
+        };
+    };
+
 
     // Compute pre-requisite data
     //=========================================================================
-    auto th = solver_data.plm_theta;
     auto q0 = solution.conserved;
     auto p0 = q0.pair(solver_data.cell_centers).apply([] (auto Q, auto X)
     {
@@ -375,11 +382,10 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         | nd::to_shared();
     });
 
-
     auto p0_ex = extend(p0, 0, 1);
     auto p0_ey = extend(p0, 1, 1);
-    auto gx = p0_ex.map([th] (auto p) { return estimate_gradient(p, 0, th) | nd::to_shared(); });
-    auto gy = p0_ey.map([th] (auto p) { return estimate_gradient(p, 1, th) | nd::to_shared(); });
+    auto gx = p0_ex.pair_indexes().apply(estimate_gradient(0));
+    auto gy = p0_ey.pair_indexes().apply(estimate_gradient(1));
     auto gx_ex = extend(gx, 0, 1);
     auto gx_ey = extend(gx, 1, 1);
     auto gy_ex = extend(gy, 0, 1);

@@ -83,6 +83,7 @@ namespace binary
         double                                                alpha;
         double                                                plm_theta;
         int                                                   rk_order;
+        std::size_t                                           block_size;
         reconstruct_method_t                                  reconstruct_method;
         riemann_solver_t                                      riemann_solver;
         mara::two_body_parameters_t                           binary_params;
