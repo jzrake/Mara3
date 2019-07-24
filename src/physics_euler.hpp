@@ -208,15 +208,14 @@ struct mara::euler::primitive_t : public mara::derivable_sequence_t<double, 5, p
      */
     conserved_density_t to_conserved_density(double gamma_law_index) const
     {
-        const auto& _ = *this;
         auto d = mass_density();
         auto p = gas_pressure();
         auto U = conserved_density_t();
-        U[0].value = d;
-        U[1].value = d * _[1];
-        U[2].value = d * _[2];
-        U[3].value = d * _[3];
-        U[4].value = 0.5 * d * velocity_squared() + p / (gamma_law_index - 1);
+        U[0] = d;
+        U[1] = d * velocity_1();
+        U[2] = d * velocity_2();
+        U[3] = d * velocity_3();
+        U[4] = 0.5 * d * velocity_squared() + p / (gamma_law_index - 1);
         return U;
     }
 
@@ -255,11 +254,11 @@ struct mara::euler::primitive_t : public mara::derivable_sequence_t<double, 5, p
         auto v = velocity_along(nhat);
         auto p = gas_pressure();
         auto F = flux_vector_t();
-        F[0].value = v * U[0].value;
-        F[1].value = v * U[1].value + p * nhat.get_n1();
-        F[2].value = v * U[2].value + p * nhat.get_n2();
-        F[3].value = v * U[3].value + p * nhat.get_n3();
-        F[4].value = v * U[4].value + p * v;
+        F[0] = v * U[0].value;
+        F[1] = v * U[1].value + p * nhat.get_n1();
+        F[2] = v * U[2].value + p * nhat.get_n2();
+        F[3] = v * U[3].value + p * nhat.get_n3();
+        F[4] = v * U[4].value + p * v;
         return F;
     }
 

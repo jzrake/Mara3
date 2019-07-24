@@ -154,18 +154,28 @@ auto mara::prolong_cells(std::size_t axis)
         return nd::make_array([axis, coarse=coarse | nd::bounds_check()] (auto i)
         {
             auto I = coarsen_index_cells(i, axis);
+            auto dx = i[axis] % 2 == 0 ? -0.25 : +0.25;
 
-            try {
-                auto pl = coarse(I.prev_on(axis));
-                auto p0 = coarse(I);
-                auto pr = coarse(I.next_on(axis));
-                auto dx = i[axis] % 2 == 0 ? -0.25 : +0.25;
-                return p0 + plm_gradient(pl, p0, pr, 1.0) * dx;
-            }
-            catch (const std::out_of_range&)
+            if (I[axis] == 0)
             {
-                return coarse(I);
+                auto pl = coarse(I);
+                auto p0 = coarse(I.next_on(axis));
+                auto pr = coarse(I.next_on(axis).next_on(axis));
+                return pl + plm_gradient(pl, p0, pr, 1.0) * dx;
             }
+            if (I[axis] == coarse.shape(axis) - 1)
+            {
+                auto pl = coarse(I.prev_on(axis).prev_on(axis));
+                auto p0 = coarse(I.prev_on(axis));
+                auto pr = coarse(I);
+                return pr + plm_gradient(pl, p0, pr, 1.0) * dx;
+            }
+
+            auto pl = coarse(I.prev_on(axis));
+            auto p0 = coarse(I);
+            auto pr = coarse(I.next_on(axis));
+            return p0 + plm_gradient(pl, p0, pr, 1.0) * dx;
+
         }, prolong_shape_cells(coarse.shape(), axis));
     };
 }
@@ -178,6 +188,10 @@ auto mara::bisect_verts(std::size_t axis)
 {
     return [axis] (auto parent)
     {
+        if (parent.shape(axis) % 2 == 0)
+        {
+            throw std::invalid_argument("mara::bisect_verts (array size is odd on given axis)");
+        }
         auto h0 = parent | nd::select_axis(axis).from(0).to(parent.shape(axis) / 2 + 1);
         auto h1 = parent | nd::select_axis(axis).from(parent.shape(axis) / 2).to(0).from_the_end();
         return std::make_tuple(h0, h1);
@@ -188,6 +202,10 @@ auto mara::bisect_cells(std::size_t axis)
 {
     return [axis] (auto parent)
     {
+        if (parent.shape(axis) % 2 != 0)
+        {
+            throw std::invalid_argument("mara::bisect_cells (array size is odd on given axis)");
+        }
         auto h0 = parent | nd::select_axis(axis).from(0).to(parent.shape(axis) / 2);
         auto h1 = parent | nd::select_axis(axis).from(parent.shape(axis) / 2).to(0).from_the_end();
         return std::make_tuple(h0, h1);

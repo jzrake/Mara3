@@ -33,6 +33,7 @@
 #include "core_geometric.hpp"
 #include "core_matrix.hpp"
 #include "core_sequence.hpp"
+#include "core_tuple.hpp"
 #include "core_linked_list.hpp"
 #include "core_tree.hpp"
 #include "core_ndarray.hpp"
@@ -82,6 +83,24 @@ TEST_CASE("sequence algorithms work correctly", "[covariant_sequence]")
         REQUIRE(A.transpose()[1][0] == A[0][1]);
         REQUIRE(A.transpose()[2][1] == A[1][2]);
     }
+}
+
+TEST_CASE("tuples work correctly")
+{
+    auto a = mara::make_arithmetic_tuple(1, 2.0, 2.1f);
+    REQUIRE(mara::get<0>(a.set<0>(2)) == 2);
+    REQUIRE(mara::get<0>(a.map([] (auto x) { return x + x; })) == 2);
+    REQUIRE(mara::get<1>(a.map([] (auto x) { return x + x; })) == 4.0);
+    REQUIRE(mara::get<2>(a.map([] (auto x) { return x + x; })) == 4.2f);
+    REQUIRE(mara::get<0>(a + 1) == 2);
+    REQUIRE(mara::get<1>(a + 2.0) == 4.0);
+    REQUIRE(mara::get<2>(a + 2.1f) == 4.2f);
+    REQUIRE(mara::get<0>(a + a) == 2);
+    REQUIRE(mara::get<1>(a + a) == 4.0);
+    REQUIRE(mara::get<2>(a + a) == 4.2f);
+    REQUIRE(mara::get<1>(a + a * 2.0) == 6.0);
+    REQUIRE((a < 3).to_sequence().all());
+    static_assert(std::is_same<decltype(a + a * 2.0), mara::arithmetic_tuple_t<double, double, double>>::value);
 }
 
 TEST_CASE("linked lists work as expected", "[linked_list]")

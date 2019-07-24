@@ -30,6 +30,7 @@
 #include <cmath>
 #include "core_dimensional.hpp"
 #include "core_sequence.hpp"
+#include "core_tuple.hpp"
 
 
 
@@ -56,6 +57,25 @@ namespace mara
         derivable_sequence_t<ValueType, Rank, DerivedType> yl,
         derivable_sequence_t<ValueType, Rank, DerivedType> y0,
         derivable_sequence_t<ValueType, Rank, DerivedType> yr, double theta);
+
+    template<typename... ValueType>
+    auto plm_gradient(
+        arithmetic_tuple_t<ValueType...> yl,
+        arithmetic_tuple_t<ValueType...> y0,
+        arithmetic_tuple_t<ValueType...> yr, double theta);
+
+
+
+
+    //=========================================================================
+    namespace detail
+    {
+        template<typename Function, typename TupleType, std::size_t... Is>
+        auto map_three_tuples(Function&& fn, TupleType a, TupleType b, TupleType c, std::index_sequence<Is...>)
+        {
+            return make_arithmetic_tuple(fn(mara::get<Is>(a), mara::get<Is>(b), mara::get<Is>(c))...);
+        }
+    }
 }
 
 
@@ -98,4 +118,16 @@ auto mara::plm_gradient(
     derivable_sequence_t<ValueType, Rank, DerivedType> yr, double theta)
 {
     return DerivedType{{plm_gradient(yl.__impl, y0.__impl, yr.__impl, theta)}};
+}
+
+template<typename... ValueType>
+auto mara::plm_gradient(
+    arithmetic_tuple_t<ValueType...> yl,
+    arithmetic_tuple_t<ValueType...> y0,
+    arithmetic_tuple_t<ValueType...> yr, double theta)
+{
+    return detail::map_three_tuples([theta] (auto a, auto b, auto c)
+    {
+        return plm_gradient(a, b, c, theta);
+    }, yl, y0, yr, std::make_index_sequence<sizeof...(ValueType)>());
 }

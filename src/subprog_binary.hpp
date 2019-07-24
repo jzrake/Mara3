@@ -22,8 +22,6 @@
 
  ==============================================================================
 */
-#include <cmath>
-#include <iostream>
 #include "app_compile_opts.hpp"
 #include "app_config.hpp"
 #include "app_performance.hpp"
@@ -75,22 +73,25 @@ namespace binary
     //=========================================================================
     struct solver_data_t
     {
-        mara::unit_rate  <double>                      sink_rate;
-        mara::unit_time  <double>                      recommended_time_step;
-        mara::unit_length<double>                      softening_radius;
-        mara::unit_length<double>                      sink_radius;
-
-        double                                         mach_number;
-        double                                         plm_theta;
-        int                                            rk_order;
-        reconstruct_method_t                           reconstruct_method;
-        riemann_solver_t                               riemann_solver;
-        mara::two_body_parameters_t                    binary_params;
-        quad_tree_t<location_2d_t>                     vertices;
-        quad_tree_t<location_2d_t>                     cell_centers;
-        quad_tree_t<mara::unit_area<double>>           cell_areas;
-        quad_tree_t<mara::iso2d::conserved_per_area_t> initial_conserved;
-        quad_tree_t<mara::unit_rate<double>>           buffer_rate_field;
+        mara::unit_rate  <double>                             sink_rate;
+        mara::unit_time  <double>                             recommended_time_step;
+        mara::unit_length<double>                             softening_radius;
+        mara::unit_length<double>                             gst_suppr_radius;
+        mara::unit_length<double>                             domain_radius;
+        mara::unit_length<double>                             sink_radius;
+        double                                                mach_number;
+        double                                                alpha;
+        double                                                plm_theta;
+        int                                                   rk_order;
+        std::size_t                                           block_size;
+        reconstruct_method_t                                  reconstruct_method;
+        riemann_solver_t                                      riemann_solver;
+        mara::two_body_parameters_t                           binary_params;
+        quad_tree_t<location_2d_t>                            vertices;
+        quad_tree_t<location_2d_t>                            cell_centers;
+        quad_tree_t<mara::unit_area<double>>                  cell_areas;
+        quad_tree_t<mara::iso2d::conserved_angmom_per_area_t> initial_conserved;
+        quad_tree_t<mara::unit_rate<double>>                  buffer_rate_field;
     };
 
 
@@ -99,7 +100,7 @@ namespace binary
     {
         mara::unit_time<double>                                   time = 0.0;
         mara::rational_number_t                                   iteration = 0;
-        quad_tree_t<mara::iso2d::conserved_per_area_t>            conserved;
+        quad_tree_t<mara::iso2d::conserved_angmom_per_area_t>     conserved;
 
         mara::arithmetic_sequence_t<mara::unit_mass  <double>, 2> mass_accreted_on = {};
         mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> angular_momentum_accreted_on = {};
