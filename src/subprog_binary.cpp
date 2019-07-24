@@ -234,7 +234,7 @@ binary::state_t binary::create_state(const mara::config_t& run_config)
 //=============================================================================
 auto binary::next_solution(const solution_t& state, const solver_data_t& solver_data)
 {
-    auto can_fail = [] (const solution_t& state, const solver_data_t& solver_data, auto dt)
+    auto can_fail = [] (const solution_t& state, const solver_data_t& solver_data, auto dt, bool safe_mode)
     {
         auto s0 = state;
 
@@ -242,13 +242,13 @@ auto binary::next_solution(const solution_t& state, const solver_data_t& solver_
         {
             case 1:
             {
-                return advance(s0, solver_data, dt);
+                return advance(s0, solver_data, dt, safe_mode);
             }
             case 2:
             {
                 auto b0 = mara::make_rational(1, 2);
-                auto s1 = advance(s0, solver_data, dt);
-                auto s2 = advance(s1, solver_data, dt);
+                auto s1 = advance(s0, solver_data, dt, safe_mode);
+                auto s2 = advance(s1, solver_data, dt, safe_mode);
                 return s0 * b0 + s2 * (1 - b0);
             }
         }
@@ -256,12 +256,12 @@ auto binary::next_solution(const solution_t& state, const solver_data_t& solver_
     };
 
     try {
-        return can_fail(state, solver_data, solver_data.recommended_time_step);
+        return can_fail(state, solver_data, solver_data.recommended_time_step, false);
     }
     catch (const std::exception& e)
     {
         std::cout << e.what() << std::endl;
-        return can_fail(state, solver_data, solver_data.recommended_time_step * 0.01);
+        return can_fail(state, solver_data, solver_data.recommended_time_step * 0.1, true);
     }
 }
 

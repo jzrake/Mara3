@@ -41,6 +41,10 @@ namespace nd
     template<typename Function> auto apply(Function fn);
     inline auto select_first(std::size_t count, std::size_t axis);
     inline auto select_final(std::size_t count, std::size_t axis);
+    inline auto take_first_on_axis(std::size_t axis);
+    inline auto take_final_on_axis(std::size_t axis);
+    inline auto drop_first_on_axis(std::size_t axis);
+    inline auto drop_final_on_axis(std::size_t axis);
     inline auto midpoint_on_axis(std::size_t axis);
     inline auto difference_on_axis(std::size_t axis);
     inline auto zip_adjacent2_on_axis(std::size_t axis);
@@ -92,6 +96,26 @@ auto nd::select_final(std::size_t count, std::size_t axis)
 
         return array | nd::select(nd::make_access_pattern(shape).with_start(start).with_final(final));
     };
+}
+
+auto nd::take_first_on_axis(std::size_t axis)
+{
+    return select_first(1, axis);
+}
+
+auto nd::take_final_on_axis(std::size_t axis)
+{
+    return select_final(1, axis);
+}
+
+auto nd::drop_first_on_axis(std::size_t axis)
+{
+    return nd::select_axis(axis).from(1).to(0).from_the_end();
+}
+
+auto nd::drop_final_on_axis(std::size_t axis)
+{
+    return nd::select_axis(axis).from(0).to(1).from_the_end();
 }
 
 auto nd::midpoint_on_axis(std::size_t axis)

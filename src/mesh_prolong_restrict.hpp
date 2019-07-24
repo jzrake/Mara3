@@ -56,6 +56,7 @@ namespace mara
 
     inline auto restrict_verts    (std::size_t axis);
     inline auto restrict_cells    (std::size_t axis);
+    inline auto restrict_extrinsic(std::size_t axis);
     inline auto prolong_verts     (std::size_t axis);
     inline auto prolong_cells     (std::size_t axis);
     inline auto bisect_verts      (std::size_t axis);
@@ -130,6 +131,16 @@ auto mara::restrict_cells(std::size_t axis)
     };
 }
 
+auto mara::restrict_extrinsic(std::size_t axis)
+{
+    return [axis] (auto parent)
+    {
+        auto h0 = parent | nd::select_axis(axis).from(0).to(1).from_the_end().jumping(2);
+        auto h1 = parent | nd::select_axis(axis).from(1).to(0).from_the_end().jumping(2);
+        return h0 + h1;
+    };
+}
+
 
 
 
@@ -154,27 +165,31 @@ auto mara::prolong_cells(std::size_t axis)
         return nd::make_array([axis, coarse=coarse | nd::bounds_check()] (auto i)
         {
             auto I = coarsen_index_cells(i, axis);
-            auto dx = i[axis] % 2 == 0 ? -0.25 : +0.25;
+            return coarse(I);
 
-            if (I[axis] == 0)
-            {
-                auto pl = coarse(I);
-                auto p0 = coarse(I.next_on(axis));
-                auto pr = coarse(I.next_on(axis).next_on(axis));
-                return pl + plm_gradient(pl, p0, pr, 1.0) * dx;
-            }
-            if (I[axis] == coarse.shape(axis) - 1)
-            {
-                auto pl = coarse(I.prev_on(axis).prev_on(axis));
-                auto p0 = coarse(I.prev_on(axis));
-                auto pr = coarse(I);
-                return pr + plm_gradient(pl, p0, pr, 1.0) * dx;
-            }
+            // NOTE: PLM is disabled 
 
-            auto pl = coarse(I.prev_on(axis));
-            auto p0 = coarse(I);
-            auto pr = coarse(I.next_on(axis));
-            return p0 + plm_gradient(pl, p0, pr, 1.0) * dx;
+            // auto dx = i[axis] % 2 == 0 ? -0.25 : +0.25;
+
+            // if (I[axis] == 0)
+            // {
+            //     auto pl = coarse(I);
+            //     auto p0 = coarse(I.next_on(axis));
+            //     auto pr = coarse(I.next_on(axis).next_on(axis));
+            //     return pl + plm_gradient(pl, p0, pr, 1.0) * dx;
+            // }
+            // if (I[axis] == coarse.shape(axis) - 1)
+            // {
+            //     auto pl = coarse(I.prev_on(axis).prev_on(axis));
+            //     auto p0 = coarse(I.prev_on(axis));
+            //     auto pr = coarse(I);
+            //     return pr + plm_gradient(pl, p0, pr, 1.0) * dx;
+            // }
+
+            // auto pl = coarse(I.prev_on(axis));
+            // auto p0 = coarse(I);
+            // auto pr = coarse(I.next_on(axis));
+            // return p0 + plm_gradient(pl, p0, pr, 1.0) * dx;
 
         }, prolong_shape_cells(coarse.shape(), axis));
     };

@@ -305,7 +305,7 @@ static auto source_terms = [] (auto solver_data, auto solution, auto p0, auto tr
 
 
 //=============================================================================
-static auto block_update = [] (
+static auto block_fluxes = [] (
     auto solver_data,
     auto solution,
     auto p0,
@@ -346,8 +346,25 @@ static auto block_update = [] (
         | nd::multiply(dx)
         | nd::to_shared();
 
-        auto lx = fhat_x | nd::difference_on_axis(0);
-        auto ly = fhat_y | nd::difference_on_axis(1);
+        return std::make_tuple(fhat_x, fhat_y);
+    };
+};
+
+
+static auto block_update = [] (
+    auto solver_data,
+    auto solution,
+    auto p0,
+    auto fhat_x,
+    auto fhat_y,
+    auto dt)
+{
+    return [=] (auto tree_index)
+    {
+        auto dA = solver_data.cell_areas.at(tree_index);
+        auto q0 = solution.conserved.at(tree_index);
+        auto lx = fhat_x.at(tree_index) | nd::difference_on_axis(0);
+        auto ly = fhat_y.at(tree_index) | nd::difference_on_axis(1);
 
         auto s = source_terms(solver_data, solution, p0, tree_index, dt);
         return std::make_pair(q0 - (lx + ly) * dt / dA + s.first | nd::to_shared(), s.second);
@@ -357,10 +374,117 @@ static auto block_update = [] (
 
 
 
+static auto correct_fluxes_xl = [] (auto fhat_tree, mara::tree_index_t<2> index)
+{
+    return [fhat_tree, index] (auto fhat)
+    {
+        if (fhat_tree.contains(index.prev_on(0)))
+            return fhat;
+
+        if (fhat_tree.contains(index.prev_on(0).parent_index()))
+            return fhat;
+
+        auto nodel = fhat_tree.node_at(index.prev_on(0));
+        auto fluxl = nodel.at({1, {1, 0}})
+        | nd::concat(nodel.at({1, {1, 1}})).on_axis(1)
+        | mara::restrict_extrinsic(1)
+        | nd::take_final_on_axis(0);
+
+        auto fluxr = fhat | nd::drop_first_on_axis(0);
+        return fluxl | nd::concat(fluxr).on_axis(0) | nd::to_shared();
+    };
+};
+
+static auto correct_fluxes_xr = [] (auto fhat_tree, mara::tree_index_t<2> index)
+{
+    return [fhat_tree, index] (auto fhat)
+    {
+        if (fhat_tree.contains(index.next_on(0)))
+            return fhat;
+
+        if (fhat_tree.contains(index.next_on(0).parent_index()))
+            return fhat;
+
+        auto noder = fhat_tree.node_at(index.next_on(0));
+        auto fluxr = noder.at({1, {0, 0}})
+        | nd::concat(noder.at({1, {0, 1}})).on_axis(1)
+        | mara::restrict_extrinsic(1)
+        | nd::take_first_on_axis(0);
+
+        auto fluxl = fhat | nd::drop_final_on_axis(0);
+        return fluxl | nd::concat(fluxr).on_axis(0) | nd::to_shared();
+    };
+};
+
+static auto correct_fluxes_yl = [] (auto fhat_tree, mara::tree_index_t<2> index)
+{
+    return [fhat_tree, index] (auto fhat)
+    {
+        if (fhat_tree.contains(index.prev_on(1)))
+            return fhat;
+
+        if (fhat_tree.contains(index.prev_on(1).parent_index()))
+            return fhat;
+
+        auto nodel = fhat_tree.node_at(index.prev_on(1));
+        auto fluxl = nodel.at({1, {0, 1}})
+        | nd::concat(nodel.at({1, {1, 1}})).on_axis(0)
+        | mara::restrict_extrinsic(0)
+        | nd::take_final_on_axis(1);
+
+        auto fluxr = fhat | nd::drop_first_on_axis(1);
+        return fluxl | nd::concat(fluxr).on_axis(1) | nd::to_shared();
+    };
+};
+
+static auto correct_fluxes_yr = [] (auto fhat_tree, mara::tree_index_t<2> index)
+{
+    return [fhat_tree, index] (auto fhat)
+    {
+        if (fhat_tree.contains(index.next_on(1)))
+            return fhat;
+
+        if (fhat_tree.contains(index.next_on(1).parent_index()))
+            return fhat;
+
+        auto noder = fhat_tree.node_at(index.next_on(1));
+        auto fluxr = noder.at({1, {0, 0}})
+        | nd::concat(noder.at({1, {1, 0}})).on_axis(0)
+        | mara::restrict_extrinsic(0)
+        | nd::take_first_on_axis(1);
+
+        auto fluxl = fhat | nd::drop_final_on_axis(1);
+        return fluxl | nd::concat(fluxr).on_axis(1) | nd::to_shared();
+    };
+};
+
+auto correct_fluxes_x = [] (auto fhat_x)
+{
+    return [fhat_x] (mara::tree_index_t<2> index)
+    {
+        return fhat_x.at(index)
+        | correct_fluxes_xl(fhat_x, index)
+        | correct_fluxes_xr(fhat_x, index);
+    };
+};
+
+auto correct_fluxes_y = [] (auto fhat_y)
+{
+    return [fhat_y] (mara::tree_index_t<2> index)
+    {
+        return fhat_y.at(index)
+        | correct_fluxes_yl(fhat_y, index)
+        | correct_fluxes_yr(fhat_y, index);
+    };
+};
+
+
+
+
 //=============================================================================
 binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
 {
-    auto th = solver_data.plm_theta;
+    auto th = safe_mode ? 0.0 : solver_data.plm_theta;
     auto spacing_at_root = 2.0 * solver_data.domain_radius.value / solver_data.block_size;
     auto estimate_gradient = [th, spacing_at_root] (std::size_t axis)
     {
@@ -390,9 +514,22 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto gx_ey = extend(gx, 1, 1);
     auto gy_ex = extend(gy, 0, 1);
     auto gy_ey = extend(gy, 1, 1);
+
+    auto fhat = p0
+    .indexes()
+    .map(block_fluxes(solver_data, solution, p0, p0_ex, p0_ey, gx_ex, gx_ey, gy_ex, gy_ey, dt));
+
+
+    auto fhat_x = fhat.map([] (auto t) { return std::get<0>(t); });
+    auto fhat_y = fhat.map([] (auto t) { return std::get<1>(t); });
+    auto fhat_xc = fhat_x.indexes().map(correct_fluxes_x(fhat_x));
+    auto fhat_yc = fhat_y.indexes().map(correct_fluxes_y(fhat_y));
+
+
     auto block_results = p0
     .indexes()
-    .map(block_update(solver_data, solution, p0, p0_ex, p0_ey, gx_ex, gx_ey, gy_ex, gy_ey, dt));
+    .map(block_update(solver_data, solution, p0, fhat_xc, fhat_yc, dt));
+
 
     auto q1     = block_results.map([] (const auto& t) { return t.first; });
     auto totals = block_results.map([] (const auto& t) { return t.second; }).sum();
@@ -411,6 +548,8 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         solution.mass_ejected                 + totals.mass_ejected,
         solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
     };
+
+    return solution;
 }
 
 

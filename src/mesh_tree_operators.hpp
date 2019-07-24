@@ -50,6 +50,13 @@ namespace mara
     -> arithmetic_binary_tree_t<bool, 2>;
 
     inline amr_types::vertex_2d_tree_t ensure_valid_quadtree(amr_types::vertex_2d_tree_t tree);
+
+    inline amr_types::vertex_2d_tree_t create_vertex_quadtree(
+        std::function<bool(std::size_t, double)> predicate,
+        std::size_t zones_per_block_x,
+        std::size_t zones_per_block_y,
+        std::size_t depth);
+
     inline amr_types::vertex_2d_tree_t create_vertex_quadtree(
         std::function<bool(std::size_t, double)> predicate,
         std::size_t zones_per_block,
@@ -137,28 +144,31 @@ mara::amr_types::vertex_2d_tree_t mara::ensure_valid_quadtree(amr_types::vertex_
 /**
  * @brief      Returns a new quadtree of vertex blocks given some parameters.
  *
- * @param[in]  predicate        A function indicating whether the vertex block
- *                              (at level i and with centroid radius r) should
- *                              be refined further
- * @param[in]  zones_per_block  The number of zones per block (in both
- *                              directions)
- * @param[in]  depth            The maximum depth of the tree
+ * @param[in]  predicate          A function indicating whether the vertex block
+ *                                (at level i and with centroid radius r) should
+ *                                be refined further
+ * @param[in]  zones_per_block_x  The number of zones per block in the
+ *                                x-direction
+ * @param[in]  zones_per_block_y  The number of zones per block in the
+ *                                y-direction
+ * @param[in]  depth              The maximum depth of the tree
  *
  * @return     A new vertex quadtree
  */
 mara::amr_types::vertex_2d_tree_t mara::create_vertex_quadtree(
     std::function<bool(std::size_t, double)> predicate,
-    std::size_t zones_per_block,
+    std::size_t zones_per_block_x,
+    std::size_t zones_per_block_y,
     std::size_t depth)
 {
-    auto centroid_radius = [n=zones_per_block] (auto vertices)
+    auto centroid_radius = [nx=zones_per_block_x, ny=zones_per_block_y] (auto vertices)
     {
-        auto centroid = (vertices(0, 0) + vertices(n, n)) * 0.5;
+        auto centroid = (vertices(0, 0) + vertices(nx, ny)) * 0.5;
         return std::sqrt((centroid * centroid).sum().value);
     };
 
-    auto x = nd::linspace(-1, 1, zones_per_block + 1);
-    auto y = nd::linspace(-1, 1, zones_per_block + 1);
+    auto x = nd::linspace(-1, 1, zones_per_block_x + 1);
+    auto y = nd::linspace(-1, 1, zones_per_block_y + 1);
     auto vertices = mara::tree_of<2>(
           nd::cartesian_product(x, y)
         | nd::apply([] (auto x, auto y) { return amr_types::vertex_2d_t{x, y}; })
@@ -177,6 +187,14 @@ mara::amr_types::vertex_2d_tree_t mara::create_vertex_quadtree(
         });
     }
     return ensure_valid_quadtree(vertices);
+}
+
+mara::amr_types::vertex_2d_tree_t mara::create_vertex_quadtree(
+    std::function<bool(std::size_t, double)> predicate,
+    std::size_t zones_per_block,
+    std::size_t depth)
+{
+    return create_vertex_quadtree(predicate, zones_per_block, zones_per_block, depth);
 }
 
 
