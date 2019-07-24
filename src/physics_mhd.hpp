@@ -31,6 +31,7 @@
 #include "core_geometric.hpp"
 #include "core_matrix.hpp"
 #include "core_dimensional.hpp"
+#include "core_tuple.hpp"
 
 
 
@@ -61,7 +62,7 @@ struct mara::mhd
     using magnetic_field_t          = arithmetic_sequence_t<unit_field,             3>;
     using flux_vector_bfield_t      = arithmetic_sequence_t<unit_field,             3>;
 
-    using  flux_t = arithmetic_tuple_t<flux_vector_euler_t, flux_vector_bfield_t>;
+    // using  flux_t = arithmetic_tuple_t<flux_vector_euler_t, flux_vector_bfield_t>;
     struct primitive_t;
     struct wavespeeds_t
     {
@@ -117,11 +118,11 @@ struct mara::mhd
         const unit_vector_t& nhat,
         double gamma_law_index);
 
-    static inline flux_t riemann_hlle_EMF(
-    const primitive_t& Pl,
-    const primitive_t& Pr,
-    const unit_vector_t& nhat,
-    double gamma_law_index);
+    // static inline flux_t riemann_hlle_EMF(
+    // const primitive_t& Pl,
+    // const primitive_t& Pr,
+    // const unit_vector_t& nhat,
+    // double gamma_law_index);
 };
 
 
@@ -500,33 +501,33 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
      * 
      * @return     The flux F, with no magnetic fields
      */
-    flux_vector_euler_t flux_euler_emf(const unit_vector_t& nhat, double gamma_law_index) const
-    {
-        return flux_euler(nhat, to_conserved_density(gamma_law_index));
-    }
+    // flux_t flux_euler_emf(const unit_vector_t& nhat, double gamma_law_index) const
+    // {
+    //     return flux_euler_emf(nhat, to_conserved_density(gamma_law_index));
+    // }
 
-    flux_t flux_euler_emf(const unit_vector_t& nhat, const conserved_density_t& U) const
-    {
-        auto d  = mass_density();
-        auto v  = velocity_along(nhat);
-        auto b  = bfield_along(nhat);
-        auto p  = gas_pressure();
-        auto p_tot = p + bfield_squared() / 2.0;
-        auto bv = bfield_dot_velocity();
-        auto F  = flux_vector_euler_t();
-        F[0].value = v * U[0].value;
-        F[1].value = v * U[1].value + p_tot * nhat.get_n1() /*mhd*/ - U[5].value * b;
-        F[2].value = v * U[2].value + p_tot * nhat.get_n2() /*mhd*/ - U[6].value * b;
-        F[3].value = v * U[3].value + p_tot * nhat.get_n3() /*mhd*/ - U[7].value * b; 
-        F[4].value = v * U[4].value + p_tot * v             /*mhd*/ - bv         * b;
+    // flux_t flux_euler_emf(const unit_vector_t& nhat, const conserved_density_t& U) const
+    // {
+    //     auto d  = mass_density();
+    //     auto v  = velocity_along(nhat);
+    //     auto b  = bfield_along(nhat);
+    //     auto p  = gas_pressure();
+    //     auto p_tot = p + bfield_squared() / 2.0;
+    //     auto bv = bfield_dot_velocity();
+    //     auto F  = flux_vector_euler_t();
+    //     F[0].value = v * U[0].value;
+    //     F[1].value = v * U[1].value + p_tot * nhat.get_n1() /*mhd*/ - U[5].value * b;
+    //     F[2].value = v * U[2].value + p_tot * nhat.get_n2() /*mhd*/ - U[6].value * b;
+    //     F[3].value = v * U[3].value + p_tot * nhat.get_n3() /*mhd*/ - U[7].value * b; 
+    //     F[4].value = v * U[4].value + p_tot * v             /*mhd*/ - bv         * b;
 
-        auto E = flux_vector_bfield_t();
-        E[0].value = v * U[5].value - U[1].value / d * b;
-        E[1].value = v * U[6].value - U[2].value / d * b;  
-        E[2].value = v * U[7].value - U[3].value / d * b;
+    //     auto E = flux_vector_bfield_t();
+    //     E[0].value = v * U[5].value - U[1].value / d * b;
+    //     E[1].value = v * U[6].value - U[2].value / d * b;  
+    //     E[2].value = v * U[7].value - U[3].value / d * b;
 
-        return flux_t{ F, E };
-    }
+    //     return flux_t{F,E};
+    // }
 
 
 
@@ -698,21 +699,21 @@ mara::mhd::flux_vector_t mara::mhd::riemann_hlle(
     return (Fl * ap - Fr * am - (Ul - Ur) * ap * am) / (ap - am);
 }
 
-mara::mhd::flux_t mara::mhd::riemann_hlle_EMF(
-    const primitive_t& Pl,
-    const primitive_t& Pr,
-    const unit_vector_t& nhat,
-    double gamma_law_index)
-{
-    auto Ul = Pl.to_conserved_density_euler(gamma_law_index);
-    auto Ur = Pr.to_conserved_density_euler(gamma_law_index);
-    auto Al = Pl.fast_wave_speeds(nhat, gamma_law_index ); 
-    auto Ar = Pr.fast_wave_speeds(nhat, gamma_law_index );
-    auto Fl = Pl.flux_euler_emf(nhat, gamma_law_index);
-    auto Fr = Pr.flux_euler_emf(nhat, gamma_law_index);
+// mara::mhd::flux_t mara::mhd::riemann_hlle_EMF(
+//     const primitive_t& Pl,
+//     const primitive_t& Pr,
+//     const unit_vector_t& nhat,
+//     double gamma_law_index)
+// {
+//     auto Ul = Pl.to_conserved_density_euler(gamma_law_index);
+//     auto Ur = Pr.to_conserved_density_euler(gamma_law_index);
+//     auto Al = Pl.fast_wave_speeds(nhat, gamma_law_index ); 
+//     auto Ar = Pr.fast_wave_speeds(nhat, gamma_law_index );
+//     auto Fl = Pl.flux_euler_emf(nhat, gamma_law_index);
+//     auto Fr = Pr.flux_euler_emf(nhat, gamma_law_index);
 
-    auto ap = std::max(make_velocity(0.0), std::max(Al.p, Ar.p));
-    auto am = std::min(make_velocity(0.0), std::min(Al.m, Ar.m));
+//     auto ap = std::max(make_velocity(0.0), std::max(Al.p, Ar.p));
+//     auto am = std::min(make_velocity(0.0), std::min(Al.m, Ar.m));
 
-    return (Fl * ap - Fr * am - (Ul - Ur) * ap * am) / (ap - am);
-}
+//     return (Fl * ap - Fr * am - (Ul - Ur) * ap * am) / (ap - am);
+// }

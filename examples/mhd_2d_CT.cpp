@@ -433,13 +433,18 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution, mara::unit_t
      */
     auto intercell_flux = [] (std::size_t axis)
     {
-        return [axis, riemann_solver=mara::mhd::riemann_hlle_EMF] (auto left_and_right_states)
+        return [axis, riemann_solver=mara::mhd::riemann_hlle] (auto left_and_right_states)
         {
             using namespace std::placeholders;
             auto nh = mara::unit_vector_t::on_axis(axis);
             auto riemann = std::bind(riemann_solver, _1, _2, nh, gamma_law_index);
             return left_and_right_states | nd::apply(riemann);
         };
+    };
+
+    auto to_euler_fluxes = [] ()
+    {
+        return nd::map([] (auto f) { return mara::mhd::flux_vector_euler_t{f[0], f[1], f[2], f[3], f[4]}; });
     };
 
 
@@ -464,24 +469,25 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution, mara::unit_t
     auto FX  =  w0 | nd::extend_periodic_on_axis(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0);
     auto FY  =  w0 | nd::extend_periodic_on_axis(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1);
 
-    auto fx  = mara::get<0>(FX); 
-    auto fy  = mara::get<1>(FY);
+    auto fx  =  FX | to_euler_fluxes();
+    auto fy  =  FY | to_euler_fluxes();
     auto lx  =  fx | nd::multiply(dy) | nd::difference_on_axis(0);
     auto ly  =  fy | nd::multiply(dx) | nd::difference_on_axis(1);
     
 
     //Get z-component of the flux -> area averaged electric field
     //=========================================================================
-    auto emf_x_faces  = -mara::get<0>(FX) | component(6) | nd::midpoint_on_axis(1); //avg flux of By in x-direction
-    auto emf_y_faces  =  mara::get<1>(FY) | component(5) | nd::midpoint_on_axis(0); //avg flux of Bx in y-direction
-    auto emf_corners  = (emf_x_faces + emf_y_faces) * 0.5; 
+    auto e = make_dimensional<3, 0, -1>(1.0);
+    auto emf_x_edges  = -FX | component(6) | nd::midpoint_on_axis(1); //avg flux of By in x-direction
+    auto emf_y_edges  =  FY | component(5) | nd::midpoint_on_axis(0); //avg flux of Bx in y-direction
+    auto emf_edges  = (emf_x_edges + emf_y_edges) * e * 0.5; 
     
 
     // Updated conserved quantities and face-centered fields
     //=========================================================================
     auto u1  = u0  - (lx + ly) * dt / dA;
-    auto bx1 = bx0 - ( emf_corners|nd::midpoint_on_axis(1) ) / dy * dt;
-    auto by1 = by0 + ( emf_corners|nd::midpoint_on_axis(0) ) / dx * dt;
+    auto bx1 = bx0 - ( emf_edges|nd::difference_on_axis(1) ); // / dy * dt;
+    auto by1 = by0 + ( emf_edges|nd::difference_on_axis(0) ); // / dx * dt;
     auto bz1 = u1 | component(7);
     // auto bx1 = bx0;
     // auto by1 = by0;
