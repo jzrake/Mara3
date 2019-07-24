@@ -300,6 +300,7 @@ auto blast_wave(mhd_3d::location_3d_t position)
      .with_bfield_3(bz);
 }
 
+
 /**
  * @brief             Create an initial solution object according to initial_condition()
  *                      

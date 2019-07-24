@@ -150,6 +150,7 @@ auto recover_primitive(const mara::mhd::conserved_density_t& conserved)
 	double temp_floor = 1e-4;
     return mara::mhd::recover_primitive(conserved, gamma_law_index, temp_floor);
 }
+                    
 
 /**
  * @brief      Create the config template
@@ -321,6 +322,43 @@ auto blast_wave(mhd_2d::location_2d_t position)
      .with_bfield_3(bz);
 }
 
+auto duffel_flywheel(mhd_2d::location_2d_t position)
+{
+    auto x = position[0].value;
+    auto y = position[1].value;
+
+    auto r     = std::sqrt(x * x + y * y);
+    auto theta = std::atan2(y , x);
+    auto sinth = std::sin(theta);
+    auto costh = std::cos(theta);
+
+    auto R       = 0.1;
+    auto Om      = 1.5;
+    auto density = 1.0;
+
+    auto w  = Om * std::exp(-0.5 * r * r / R / R);
+    auto vp = w * r;
+    auto vx = -vp * sinth;
+    auto vy =  vp * costh;
+
+    auto B0 =  vp * std::sqrt(density);
+    auto bx = -B0 * sinth;
+    auto by =  B0 * costh;
+
+    auto P0       = 1.1 * 0.5 * std::exp(-1) * Om * Om * R * R * density;
+    auto pressure = P0 - 0.5 * B0 * B0;
+
+    return mara::mhd::primitive_t()
+     .with_mass_density(density)
+     .with_gas_pressure(pressure)
+     .with_velocity_1(vx)
+     .with_velocity_2(vy)
+     .with_velocity_3(0.0)
+     .with_bfield_1(bx)
+     .with_bfield_2(by)
+     .with_bfield_3(0.0);
+}
+
 /**
  * @brief             Create an initial solution object according to initial_condition()
  *                      
@@ -335,7 +373,7 @@ mhd_2d::solution_t mhd_2d::create_solution( const mara::config_t& run_config )
     auto conserved = vertices
          | nd::midpoint_on_axis(0)
          | nd::midpoint_on_axis(1)
-         | nd::map(orzsag_tang_vortex)
+         | nd::map(duffel_flywheel)
          | nd::map([] (auto p) { return p.to_conserved_density(gamma_law_index); }) // prim2cons
          | nd::to_shared();
     return solution_t{ 0.0, 0, vertices, conserved };
