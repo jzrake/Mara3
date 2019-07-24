@@ -30,6 +30,7 @@
 #include <cmath>
 #include "core_geometric.hpp"
 #include "core_matrix.hpp"
+#include "core_dimensional.hpp"
 
 
 
@@ -46,9 +47,8 @@ struct mara::mhd
     using unit_conserved_density    = dimensional_value_t< -3, 1, 0, double>;
     using unit_conserved            = dimensional_value_t<  0, 1, 0, double>;
     using unit_flow                 = dimensional_value_t<  0, 1,-1, double>;
-    using unit_flux                 = dimensional_value_t< -2, 1,-1, double>; //flux through faces
-    using unit_field                = dimensional_value_t<  0, 0, 0, double>; //Might need to fix these units
-    using unit_field_flux           = dimensional_value_t< -2, 0, 0, double>;
+    using unit_flux                 = dimensional_value_t< -2, 1,-1, double>; 
+    using unit_field                = dimensional_value_t<  1, 1,-2, double>; //Units of force
 
     using conserved_density_t       = arithmetic_sequence_t<unit_conserved_density, 8>; 
     using conserved_t               = arithmetic_sequence_t<unit_conserved        , 8>;
@@ -58,15 +58,36 @@ struct mara::mhd
     using conserved_euler_t         = arithmetic_sequence_t<unit_conserved,         5>;
     using flux_vector_euler_t       = arithmetic_sequence_t<unit_flux,              5>;
 
-    using magnetic_vector_t         = arithmetic_sequence_t<unit_field,             3>;
-    using magnetic_flux_t           = arithmetic_sequence_t<unit_field_flux,        3>;
-    
+    using magnetic_field_t          = arithmetic_sequence_t<unit_field,             3>;
+    using flux_vector_bfield_t      = arithmetic_sequence_t<unit_field,             3>;
+
+    using  flux_t = arithmetic_tuple_t<flux_vector_euler_t, flux_vector_bfield_t>;
     struct primitive_t;
     struct wavespeeds_t
     {
         unit_velocity<double> m;
         unit_velocity<double> p;
     };
+
+    // struct flux_t
+    // {
+    //     flux_vector_euler_t  F;
+    //     flux_vector_bfield_t E;
+
+    //     flux_t operator+(const flux_t other) const
+    //     {
+    //         return{ F + other.F, E + other.E };
+    //     }
+    //     flux_t operator-(const flux_t other) const
+    //     {
+    //         return{ F - other.F, E - other.E };
+    //     }
+    //     flux_t operator*(const unit_velocity<double> scale) const
+    //     {
+    //         return{ F * scale, E * scale };
+    //     }
+    // };
+
 
 
     static inline primitive_t recover_primitive(
@@ -75,10 +96,16 @@ struct mara::mhd
         double temperature_floor);
 
     static inline primitive_t recover_primitive(
-        const conserved_density_euler_t& U,
-        const magnetic_vector_t& B,
+        const conserved_density_euler_t U,
+        const magnetic_field_t B,
         double gamma_law_index,
         double temperature_floor);
+
+    // static inline primitive_t recover_primitive(
+    //     const conserved_density_euler_t& U,
+    //     const magnetic_vector_t& B,
+    //     double gamma_law_index,
+    //     double temperature_floor);
 
     static inline primitive_t roe_average(
         const primitive_t& Pl,
@@ -89,6 +116,12 @@ struct mara::mhd
         const primitive_t& Pr,
         const unit_vector_t& nhat,
         double gamma_law_index);
+
+    static inline flux_t riemann_hlle_EMF(
+    const primitive_t& Pl,
+    const primitive_t& Pr,
+    const unit_vector_t& nhat,
+    double gamma_law_index);
 };
 
 
@@ -254,6 +287,16 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         return _[1] * _[5] + _[2] * _[6] + _[3] * _[7];
     }
 
+    double bfield_cross_velocity(const unit_vector_t& nhat) const
+    {
+        const auto& _ = *this;
+
+        auto cross_x =  _[2] * _[7] - _[3] * _[6];
+        auto cross_y = -_[1] * _[7] + _[3] * _[5];
+        auto cross_z =  _[1] * _[6] - _[2] * _[5];
+        return nhat.project(cross_x, cross_y,cross_z);
+    }
+
 
 
    /**
@@ -328,6 +371,13 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         return 0.5 * one - two;
     }
 
+    //Might need a better way to do this but using for now....
+    // double reference_emf() const
+    // {
+    //     const auto &_ = *this;
+    //     return - (_[1] * _[6] - _[2] * _[5] );
+    // }
+
 
     /**
      * @brief      Convert this state to a density of conserved mass, momentum,
@@ -378,6 +428,16 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         U[4].value = 0.5 * d * velocity_squared() + p / (gamma_law_index - 1) /*mhd*/ + bfield_squared() / 2.0;
 
         return U;
+    }
+
+    magnetic_field_t get_magnetic_field_vector() const
+    {
+        const auto& _ = *this;
+        auto B = magnetic_field_t();
+        B[0].value = _[5];
+        B[1].value = _[6];
+        B[2].value = _[7];
+        return B;
     }
 
     /**
@@ -440,13 +500,14 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
      * 
      * @return     The flux F, with no magnetic fields
      */
-    flux_vector_euler_t flux_euler(const unit_vector_t& nhat, double gamma_law_index) const
+    flux_vector_euler_t flux_euler_emf(const unit_vector_t& nhat, double gamma_law_index) const
     {
-        return flux_euler(nhat, to_conserved_density_euler(gamma_law_index));
+        return flux_euler(nhat, to_conserved_density(gamma_law_index));
     }
 
-    flux_vector_euler_t flux_euler(const unit_vector_t& nhat, const conserved_density_t& U) const
+    flux_t flux_euler_emf(const unit_vector_t& nhat, const conserved_density_t& U) const
     {
+        auto d  = mass_density();
         auto v  = velocity_along(nhat);
         auto b  = bfield_along(nhat);
         auto p  = gas_pressure();
@@ -454,29 +515,17 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         auto bv = bfield_dot_velocity();
         auto F  = flux_vector_euler_t();
         F[0].value = v * U[0].value;
-        F[1].value = v * U[1].value + p_tot * nhat.get_n1(); // /*mhd*/ - U[5].value * b;
-        F[2].value = v * U[2].value + p_tot * nhat.get_n2(); // /*mhd*/ - U[6].value * b;
-        F[3].value = v * U[3].value + p_tot * nhat.get_n3(); // /*mhd*/ - U[7].value * b; 
-        F[4].value = v * U[4].value + p_tot * v            ; // /*mhd*/ - bv         * b;
+        F[1].value = v * U[1].value + p_tot * nhat.get_n1() /*mhd*/ - U[5].value * b;
+        F[2].value = v * U[2].value + p_tot * nhat.get_n2() /*mhd*/ - U[6].value * b;
+        F[3].value = v * U[3].value + p_tot * nhat.get_n3() /*mhd*/ - U[7].value * b; 
+        F[4].value = v * U[4].value + p_tot * v             /*mhd*/ - bv         * b;
 
-        return F;
-    }
+        auto E = flux_vector_bfield_t();
+        E[0].value = v * U[5].value - U[1].value / d * b;
+        E[1].value = v * U[6].value - U[2].value / d * b;  
+        E[2].value = v * U[7].value - U[3].value / d * b;
 
-    flux_vector_euler_t flux_euler(const unit_vector_t& nhat, const conserved_density_euler_t& U) const
-    {
-        auto v  = velocity_along(nhat);
-        auto b  = bfield_along(nhat);
-        auto p  = gas_pressure();
-        auto p_tot = p + bfield_squared() / 2.0;
-        auto bv = bfield_dot_velocity();
-        auto F  = flux_vector_euler_t();
-        F[0].value = v * U[0].value;
-        F[1].value = v * U[1].value + p_tot * nhat.get_n1(); // /*mhd*/ - U[5].value * b;
-        F[2].value = v * U[2].value + p_tot * nhat.get_n2(); // /*mhd*/ - U[6].value * b;
-        F[3].value = v * U[3].value + p_tot * nhat.get_n3(); // /*mhd*/ - U[7].value * b; 
-        F[4].value = v * U[4].value + p_tot * v            ; // /*mhd*/ - bv         * b;
-
-        return F;
+        return flux_t{ F, E };
     }
 
 
@@ -591,15 +640,14 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
 }
 
 mara::mhd::primitive_t mara::mhd::recover_primitive(
-    const conserved_density_euler_t& U,
-    const magnetic_vector_t& B,
+    const conserved_density_euler_t U,
+    const magnetic_field_t B,
     double gamma_law_index,
     double temperature_floor)
 {
-    auto d         =  U[0].value;
     auto p_squared = (U[1] * U[1] + U[2] * U[2] + U[3] * U[3]).value;
     auto b_squared = (B[0] * B[0] + B[1] * B[1] + B[2] * B[2]).value;
-    
+    auto d = U[0].value;
     auto P = primitive_t();
 
     P[0] =  d;
@@ -607,9 +655,9 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
     P[2] =  U[2].value / d;
     P[3] =  U[3].value / d;
     P[4] = (U[4].value - 0.5 * p_squared / d - 0.5 * b_squared) * (gamma_law_index - 1.0);
-    P[5] =  B[0].value;
-    P[6] =  B[1].value;
-    P[7] =  B[2].value;
+    P[5] =  U[5].value;
+    P[6] =  U[6].value;
+    P[7] =  U[7].value;
 
     if (P[4] < 0.0 && temperature_floor > 0.0)
     {
@@ -617,8 +665,6 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
     }
     return P;
 }
-
-
 
 
 
@@ -645,6 +691,25 @@ mara::mhd::flux_vector_t mara::mhd::riemann_hlle(
     auto Ar = Pr.fast_wave_speeds(nhat, gamma_law_index );
     auto Fl = Pl.flux(nhat, Ul);
     auto Fr = Pr.flux(nhat, Ur);
+
+    auto ap = std::max(make_velocity(0.0), std::max(Al.p, Ar.p));
+    auto am = std::min(make_velocity(0.0), std::min(Al.m, Ar.m));
+
+    return (Fl * ap - Fr * am - (Ul - Ur) * ap * am) / (ap - am);
+}
+
+mara::mhd::flux_t mara::mhd::riemann_hlle_EMF(
+    const primitive_t& Pl,
+    const primitive_t& Pr,
+    const unit_vector_t& nhat,
+    double gamma_law_index)
+{
+    auto Ul = Pl.to_conserved_density_euler(gamma_law_index);
+    auto Ur = Pr.to_conserved_density_euler(gamma_law_index);
+    auto Al = Pl.fast_wave_speeds(nhat, gamma_law_index ); 
+    auto Ar = Pr.fast_wave_speeds(nhat, gamma_law_index );
+    auto Fl = Pl.flux_euler_emf(nhat, gamma_law_index);
+    auto Fr = Pr.flux_euler_emf(nhat, gamma_law_index);
 
     auto ap = std::max(make_velocity(0.0), std::max(Al.p, Ar.p));
     auto am = std::min(make_velocity(0.0), std::min(Al.m, Ar.m));
