@@ -351,6 +351,9 @@ static auto block_fluxes = [] (
 };
 
 
+
+
+//=============================================================================
 static auto block_update = [] (
     auto solver_data,
     auto solution,
@@ -374,6 +377,7 @@ static auto block_update = [] (
 
 
 
+//=============================================================================
 static auto correct_fluxes_xl = [] (auto fhat_tree, mara::tree_index_t<2> index)
 {
     return [fhat_tree, index] (auto fhat)
@@ -458,6 +462,10 @@ static auto correct_fluxes_yr = [] (auto fhat_tree, mara::tree_index_t<2> index)
     };
 };
 
+
+
+
+//=============================================================================
 auto correct_fluxes_x = [] (auto fhat_x)
 {
     return [fhat_x] (mara::tree_index_t<2> index)
@@ -476,6 +484,35 @@ auto correct_fluxes_y = [] (auto fhat_y)
         | correct_fluxes_yl(fhat_y, index)
         | correct_fluxes_yr(fhat_y, index);
     };
+};
+
+
+
+
+//=============================================================================
+auto validate = [] (auto solution, auto solver_data)
+{
+    bool any_failures = false;
+
+    solution.conserved.indexes().sink([&any_failures, solution, solver_data] (auto index)
+    {
+        auto XQ = nd::zip(solver_data.cell_centers.at(index), solution.conserved.at(index));
+
+        for (auto [x, q] : XQ)
+        {
+            if (mara::get<0>(q) < 0.0)
+            {                
+                std::printf("negative density %3.2e (at position [%+3.2lf %+3.2lf])\n", mara::get<0>(q).value, x[0].value, x[1].value);
+                any_failures = true;
+            }
+        }
+    });
+
+    if (any_failures)
+    {
+        throw std::runtime_error("negative density in updated state");
+    }
+    return solution;
 };
 
 
@@ -537,7 +574,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     // The full updated solution state
     //=========================================================================
-    return solution_t{
+    return validate(solution_t{
         solution.time + dt,
         solution.iteration + 1,
         q1,
@@ -547,9 +584,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         solution.work_done_on,
         solution.mass_ejected                 + totals.mass_ejected,
         solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
-    };
-
-    return solution;
+    }, solver_data);
 }
 
 

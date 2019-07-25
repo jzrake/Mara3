@@ -232,11 +232,11 @@ binary::state_t binary::create_state(const mara::config_t& run_config)
 
 
 //=============================================================================
-auto binary::next_solution(const solution_t& state, const solver_data_t& solver_data)
+auto binary::next_solution(const solution_t& solution, const solver_data_t& solver_data)
 {
-    auto can_fail = [] (const solution_t& state, const solver_data_t& solver_data, auto dt, bool safe_mode)
+    auto can_fail = [] (const solution_t& solution, const solver_data_t& solver_data, auto dt, bool safe_mode)
     {
-        auto s0 = state;
+        auto s0 = solution;
 
         switch (solver_data.rk_order)
         {
@@ -256,12 +256,12 @@ auto binary::next_solution(const solution_t& state, const solver_data_t& solver_
     };
 
     try {
-        return can_fail(state, solver_data, solver_data.recommended_time_step, false);
+        return can_fail(solution, solver_data, solver_data.recommended_time_step, false);
     }
     catch (const std::exception& e)
     {
         std::cout << e.what() << std::endl;
-        return can_fail(state, solver_data, solver_data.recommended_time_step * 0.1, true);
+        return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true);
     }
 }
 
@@ -357,6 +357,20 @@ void binary::prepare_filesystem(const mara::config_t& run_config)
     auto outdir = run_config.get_string("outdir");
     mara::filesystem::require_dir(outdir);
 }
+
+// void binary::print_zones_with_negative_density(const solution_t& solution, const solver_data_t& solver_data)
+// {
+//     solution.conserved.indexes().sink([solution, solver_data] (auto index)
+//     {
+//         std::printf("printing it...\n");
+
+//         auto XQ = nd::zip(solver_data.cell_centers.at(index), solution.conserved.at(index));
+
+//         for (auto [x, q] : XQ)
+//             if (mara::get<0>(q) < 0.0)
+//                 std::printf("negative density %e (at position [%lf %lf])\n", mara::get<0>(q).value, x[0].value, x[1].value);
+//     });
+// }
 
 void binary::print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf)
 {
