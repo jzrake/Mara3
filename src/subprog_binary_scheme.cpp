@@ -541,12 +541,12 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         return nd::zip(Q, X)
         | nd::apply([] (auto q, auto x) { return mara::iso2d::recover_primitive(q, x); })
         | nd::to_shared();
-    });
+    }, tree_launch);
 
     auto p0_ex = extend(p0, 0, 1);
     auto p0_ey = extend(p0, 1, 1);
-    auto gx = p0_ex.pair_indexes().apply(estimate_gradient(0));
-    auto gy = p0_ey.pair_indexes().apply(estimate_gradient(1));
+    auto gx = p0_ex.pair_indexes().apply(estimate_gradient(0), tree_launch);
+    auto gy = p0_ey.pair_indexes().apply(estimate_gradient(1), tree_launch);
     auto gx_ex = extend(gx, 0, 1);
     auto gx_ey = extend(gx, 1, 1);
     auto gy_ex = extend(gy, 0, 1);
@@ -554,7 +554,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     auto fhat = p0
     .indexes()
-    .map(block_fluxes(solver_data, solution, p0, p0_ex, p0_ey, gx_ex, gx_ey, gy_ex, gy_ey, dt));
+    .map(block_fluxes(solver_data, solution, p0, p0_ex, p0_ey, gx_ex, gx_ey, gy_ex, gy_ey, dt), tree_launch);
 
 
     auto fhat_x = fhat.map([] (auto t) { return std::get<0>(t); });
@@ -565,7 +565,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     auto block_results = p0
     .indexes()
-    .map(block_update(solver_data, solution, p0, fhat_xc, fhat_yc, dt));
+    .map(block_update(solver_data, solution, p0, fhat_xc, fhat_yc, dt), tree_launch);
 
 
     auto q1     = block_results.map([] (const auto& t) { return t.first; });
