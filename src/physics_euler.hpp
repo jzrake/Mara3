@@ -254,11 +254,11 @@ struct mara::euler::primitive_t : public mara::derivable_sequence_t<double, 5, p
         auto v = velocity_along(nhat);
         auto p = gas_pressure();
         auto F = flux_vector_t();
-        F[0].value = v * U[0].value;
-        F[1].value = v * U[1].value + p * nhat.get_n1();
-        F[2].value = v * U[2].value + p * nhat.get_n2();
-        F[3].value = v * U[3].value + p * nhat.get_n3();
-        F[4].value = v * U[4].value + p * v;
+        F[0] = v * U[0].value;
+        F[1] = v * U[1].value + p * nhat.get_n1();
+        F[2] = v * U[2].value + p * nhat.get_n2();
+        F[3] = v * U[3].value + p * nhat.get_n3();
+        F[4] = v * U[4].value + p * v;
         return F;
     }
 

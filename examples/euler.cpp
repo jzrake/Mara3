@@ -39,22 +39,96 @@
 #include "core_ndarray_ops.hpp"
 #include "core_hdf5.hpp"
 #include "physics_iso2d.hpp"
-#include "euler.hpp"
 
 #define cs2    1e-1
 
-
-
-
 // ============================================================================
+//                                  Header 
+// ============================================================================
+
+template<>
+struct h5::hdf5_type_info<mara::iso2d::conserved_per_area_t>
+{
+    using native_type = mara::iso2d::conserved_per_area_t;
+    static auto make_datatype_for(const native_type& value) { return h5::Datatype::native_double().as_array(3); }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+};
+//=============================================================================
+//
+
 namespace euler
 {
+
+
+    // Type definitions for simplicity later
+    // ========================================================================
+    using location_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
+    using velocity_2d_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0, -1, double>, 2>;
+    using primitive_field_t = std::function<mara::iso2d::primitive_t(location_2d_t)>;
+
+
+    // Solver structs
+    // ========================================================================
+    struct solution_t
+    {
+        mara::unit_time<double>                                time=0.0;
+        mara::rational_number_t                                iteration=0;
+        //location_2d_t                                          vertices;
+        nd::shared_array<location_2d_t, 2>                     vertices;
+        nd::shared_array<mara::iso2d::conserved_per_area_t, 2> conserved;
+
+        // Overload operators to manipulate solution_t types
+        //=====================================================================
+        solution_t operator+(const solution_t& other) const
+        {
+            return {
+                time       + other.time,
+                iteration  + other.iteration,
+                vertices,
+                conserved  + other.conserved | nd::to_shared(),
+            };
+        }
+        solution_t operator*(mara::rational_number_t scale) const
+        {
+            return {
+                time      * scale.as_double(),
+                iteration * scale,
+                vertices,
+                conserved * scale.as_double() | nd::to_shared(),
+            };
+        }
+    };
+
+    struct state_t
+    {
+        solution_t          solution;
+        mara::config_t      run_config;
+    };
+
+
+    // Declaration of necessary functions
+    //=========================================================================
+    mara::config_template_t             create_config_template();
+    mara::config_t                      create_run_config( int argc, const char* argv[] );
+    nd::shared_array<location_2d_t, 2>  create_vertices( const mara::config_t& run_config );
+    solution_t                          create_solution( const mara::config_t& run_config );
+    state_t                             create_state   ( const mara::config_t& run_config );
+    solution_t                          advance( const solution_t&, mara::unit_time<double> dt );
     euler::solution_t next_solution( const state_t& state );
     euler::state_t    next_state   ( const state_t& state );
     auto simulation_should_continue( const state_t& state );
 }
 
 
+
+// ============================================================================
+//                               Body 
+// ============================================================================
 
 
 /**
@@ -75,8 +149,7 @@ auto component(std::size_t cmpnt)
 
 auto recover_primitive(const mara::iso2d::conserved_per_area_t& conserved)
 {
-	double density_floor = 0.0;
-    return mara::iso2d::recover_primitive(conserved, density_floor);
+    return mara::iso2d::recover_primitive(conserved);
 }
 
 /**
@@ -337,16 +410,13 @@ euler::state_t euler::next_state( const euler::state_t& state )
 void output_solution_h5( const euler::solution_t& s, std::string fname )
 {	
 	std::cout << "   Outputting: " << fname << std::endl;
-	auto h5f = h5::File( fname, "w" );
-
+	auto group = h5::File( fname, "w" ).open_group("/");
     //auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
 
-	h5f.write( "time"      , s.time      );
-	h5f.write( "vertices"  , s.vertices  );
-	h5f.write( "conserved" , s.conserved );
+	mara::write(group, "time"      , s.time      );
+	mara::write(group, "vertices"  , s.vertices  );
+	mara::write(group, "conserved" , s.conserved );
 	//h5f.write( "primitive" , s.conserved | nd::map(recover_primitive) | nd::to_shared() );
-
-	h5f.close();
 }
 
 

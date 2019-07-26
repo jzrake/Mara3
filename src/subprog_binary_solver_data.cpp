@@ -18,6 +18,7 @@ static auto component(std::size_t component)
 binary::solver_data_t binary::create_solver_data(const mara::config_t& run_config)
 {
     auto vertices = create_vertices(run_config);
+
     auto cell_centers = vertices.map([] (auto block)
     {
         return block
@@ -76,29 +77,28 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
         });
     });
 
-    auto initial_conserved = primitive
-    .map(nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area)))
-    .map(nd::to_shared());
-
 
     //=========================================================================
     auto result = solver_data_t();
+    result.domain_radius         = run_config.get_double("domain_radius");
     result.mach_number           = run_config.get_double("mach_number");
+    result.alpha                 = run_config.get_double("alpha");
     result.sink_rate             = run_config.get_double("sink_rate");
     result.sink_radius           = run_config.get_double("sink_radius");
     result.softening_radius      = run_config.get_double("softening_radius");
+    result.gst_suppr_radius      = run_config.get_double("source_term_softening") * std::min(min_dx, min_dy).value;
     result.plm_theta             = run_config.get_double("plm_theta");
     result.rk_order              = run_config.get_int("rk_order");
+    result.block_size            = run_config.get_int("block_size");
     result.recommended_time_step = std::min(min_dx, min_dy) / max_velocity * run_config.get_double("cfl_number");
     result.binary_params         = create_binary_params(run_config);
     result.buffer_rate_field     = buffer_rate_field.map(nd::to_shared());
     result.cell_centers          = cell_centers.map(nd::to_shared());
     result.cell_areas            = cell_areas.map(nd::to_shared());
     result.vertices              = vertices;
-    result.initial_conserved     = initial_conserved;
+    result.initial_conserved     = create_solution(run_config).conserved;
 
     if      (run_config.get_string("riemann") == "hlle") result.riemann_solver = riemann_solver_t::hlle;
-    // else if (run_config.get_string("riemann") == "hllc") result.riemann_solver = riemann_solver_t::hllc;
     else throw std::invalid_argument("invalid riemann solver '" + run_config.get_string("riemann") + "', must be hlle");
 
     if      (run_config.get_string("reconstruct_method") == "pcm") result.reconstruct_method = reconstruct_method_t::pcm;

@@ -39,6 +39,9 @@ namespace mara
     template<typename PrimitiveArray1d>
     auto find_shock_index(PrimitiveArray1d primitive, double gamma_law_index);
 
+    template<typename ArrayType>
+    auto find_index_of_maximum_behind(ArrayType array, std::size_t index);
+
     template<typename PrimitiveArray1d>
     auto find_index_of_maximum_pressure_behind(PrimitiveArray1d primitive, std::size_t index);
 
@@ -80,6 +83,39 @@ auto mara::find_shock_index(PrimitiveArray1d primitive, double gamma_law_index)
 
 
 /**
+ * @brief      Return the index of a local maximum in the array at indexes
+ *             smaller than the one given.
+ *
+ * @param[in]  array      The array of values
+ * @param[in]  index      The index at which to begin scanning backwards
+ *
+ * @tparam     ArrayType  The array type
+ *
+ * @return     The index containing the first local maximum to the left of the
+ *             given index
+ */
+template<typename ArrayType>
+auto mara::find_index_of_maximum_behind(ArrayType array, std::size_t index)
+{
+    auto y = array | nd::bounds_check();
+
+    try {
+        while (y(index - 1) > y(index))
+        {
+            --index;
+        }
+        return index;
+    }
+    catch (const std::exception& e)
+    {
+        return std::size_t(0);
+    }
+}
+
+
+
+
+/**
  * @brief      Return the index of a local maximum in the pressure at indexes
  *             smaller than the one given.
  *
@@ -93,22 +129,7 @@ auto mara::find_shock_index(PrimitiveArray1d primitive, double gamma_law_index)
 template<typename PrimitiveArray1d>
 auto mara::find_index_of_maximum_pressure_behind(PrimitiveArray1d primitive, std::size_t index)
 {
-    auto p = primitive
-    | nd::map([] (auto p) { return p.gas_pressure(); })
-    | nd::bounds_check();
-
-    try {
-        while (p(index - 1) > p(index))
-        {
-            --index;
-        }
-        return index;
-    }
-    catch (const std::exception& e)
-    {
-        // std::printf("find_index_of_maximum_pressure_behind: %s\n", e.what());
-        return std::size_t(0);
-    }
+    return find_index_of_maximum_behind(primitive | nd::map([] (auto p) { return p.gas_pressure(); }), index);
 }
 
 

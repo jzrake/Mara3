@@ -28,6 +28,7 @@
 
 
 
+#include <iostream>
 #include "subprog_binary.hpp"
 #include "mesh_tree_operators.hpp"
 #include "core_ndarray_ops.hpp"
@@ -72,10 +73,11 @@ mara::config_template_t binary::create_config_template()
     .item("reconstruct_method", "plm")          // zone extrapolation method: pcm or plm
     .item("plm_theta",            1.8)          // plm theta parameter: [1.0, 2.0]
     .item("riemann",           "hlle")          // riemann solver to use: hlle only (hllc disabled until further testing)
-    .item("softening_radius",    0.02)          // gravitational softening radius
-    .item("sink_radius",         0.02)          // radius of mass (and momentum) subtraction region
-    .item("sink_rate",            1e2)          // sink rate at the point masses (orbital angular frequency)
-    .item("buffer_damping_rate",  1.0)          // maximum rate of buffer zone, where solution is driven to initial state
+    .item("softening_radius",    0.05)          // gravitational softening radius
+    .item("source_term_softening", 1.)          // number of cells within which the Sr source term is suppressed
+    .item("sink_radius",         0.05)          // radius of mass (and momentum) subtraction region
+    .item("sink_rate",           50.0)          // sink rate at the point masses (orbital angular frequency)
+    .item("buffer_damping_rate", 10.0)          // maximum rate of buffer zone, where solution is driven to initial state
     .item("domain_radius",       24.0)          // half-size of square domain
     .item("disk_radius",          2.0)          // characteristic disk radius (in units of binary separation)
     .item("ambient_density",     1e-4)          // surface density beyond torus
@@ -83,7 +85,8 @@ mara::config_template_t binary::create_config_template()
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
     .item("counter_rotate",         0)          // retrograde disk option: 0 or 1
-    .item("mach_number",         40.0);
+    .item("mach_number",         40.0)          // disk mach number; for locally isothermal EOS
+    .item("alpha",                0.0);         // viscous alpha coefficient
 }
 
 
@@ -102,31 +105,42 @@ binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_
 
     auto sigma = [=] (double r)
     {
-        return std::exp(-0.5 * (r / rc - 1) * (r / rc - 1)) + s1;
+        auto x = r / rc;
+        return std::exp(-0.5 * (x - 1) * (x - 1)) + s1;
     };
 
-    auto dlogsigma_dlogr = [=] (double r)
+    // auto dlogsigma_dlogr = [=] (double r)
+    // {
+    //     auto x = r / rc;
+    //     return x * (1 - x) * (1 - s1 / sigma(r));
+    // };
+
+    auto dp_dr = [=] (double r)
     {
+        auto GM = 1.0;
+        auto Ma = mach_number;
+        auto rs = softening_radius;
         auto x = r / rc;
-        return x * (1 - x) * (1 - s1 / sigma(r));
+        return (GM / Ma / Ma / (r + rs)) * (x * (1 - x) * (1 - s1 / sigma(r)) - 1.0);
     };
 
     return [=] (location_2d_t point)
     {
-        auto GM             = 1.0;
-        auto cs2            = 1.0 / mach_number / mach_number; // constant sound-speed
         auto x              = point[0].value;
         auto y              = point[1].value;
-        auto rs             = softening_radius;
         auto r2             = x * x + y * y;
         auto r              = std::sqrt(r2);
-        auto gradp_term     = cs2 * dlogsigma_dlogr(r);
-        auto vp             = std::sqrt(GM / (r + rs) + gradp_term) * (counter_rotate ? -1 : 1);
+        auto rs             = softening_radius;
+        auto GM             = 1.0;
+        // auto cs2            = 1.0 / mach_number / mach_number; // constant sound-speed
+        // auto gradp_term     = dp_dr(r) * r / sigma(r);
+        // auto vp             = std::sqrt(GM / (r + rs) + cs2 * dlogsigma_dlogr(r)) * (counter_rotate ? -1 : 1);
+        auto vp             = std::sqrt(GM / (r + rs) + dp_dr(r)) * (counter_rotate ? -1 : 1);
         auto vx             = vp * (-y / r);
         auto vy             = vp * ( x / r);
 
-        if (GM / (r + rs) + gradp_term < 0.0)
-            throw std::invalid_argument("no disk solution: increase mach_number or ambient_density");
+        // if (GM / (r + rs) + gradp_term < 0.0)
+        //     throw std::invalid_argument("no disk solution: increase mach_number or ambient_density");
 
         return mara::iso2d::primitive_t()
             .with_sigma(sigma(r))
@@ -180,11 +194,10 @@ binary::solution_t binary::create_solution(const mara::config_t& run_config)
 {
     auto conserved = create_vertices(run_config).map([&run_config] (auto block)
     {
-        return block
-        | nd::midpoint_on_axis(0)
-        | nd::midpoint_on_axis(1)
-        | nd::map(create_disk_profile(run_config))
-        | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
+        auto cell_centers = block | nd::midpoint_on_axis(0) | nd::midpoint_on_axis(1);
+        auto primitive = cell_centers | nd::map(create_disk_profile(run_config));
+        return nd::zip(cell_centers, primitive)
+        | nd::apply([] (auto x, auto p) { return p.to_conserved_angmom_per_area(x); })
         | nd::to_shared();
     });
     return solution_t{0, 0.0, conserved, {}, {}, {}, {}, {}, {}};
@@ -221,24 +234,35 @@ binary::state_t binary::create_state(const mara::config_t& run_config)
 //=============================================================================
 auto binary::next_solution(const solution_t& state, const solver_data_t& solver_data)
 {
-    auto dt = solver_data.recommended_time_step;
-    auto s0 = state;
-
-    switch (solver_data.rk_order)
+    auto can_fail = [] (const solution_t& state, const solver_data_t& solver_data, auto dt)
     {
-        case 1:
+        auto s0 = state;
+
+        switch (solver_data.rk_order)
         {
-            return advance(s0, solver_data, dt);
+            case 1:
+            {
+                return advance(s0, solver_data, dt);
+            }
+            case 2:
+            {
+                auto b0 = mara::make_rational(1, 2);
+                auto s1 = advance(s0, solver_data, dt);
+                auto s2 = advance(s1, solver_data, dt);
+                return s0 * b0 + s2 * (1 - b0);
+            }
         }
-        case 2:
-        {
-            auto b0 = mara::make_rational(1, 2);
-            auto s1 = advance(s0, solver_data, dt);
-            auto s2 = advance(s1, solver_data, dt);
-            return s0 * b0 + s2 * (1 - b0);
-        }
+        throw std::invalid_argument("binary::next_solution");
+    };
+
+    try {
+        return can_fail(state, solver_data, solver_data.recommended_time_step);
     }
-    throw std::invalid_argument("binary::next_solution");
+    catch (const std::exception& e)
+    {
+        std::cout << e.what() << std::endl;
+        return can_fail(state, solver_data, solver_data.recommended_time_step * 0.01);
+    }
 }
 
 auto binary::next_schedule(const state_t& state)
@@ -323,9 +347,9 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
 
 
     return mara::run_scheduled_tasks(state, {
-        {"write_checkpoint",  write_checkpoint},
         {"write_diagnostics", write_diagnostics},
-        {"record_time_series", record_time_series}});
+        {"record_time_series", record_time_series},
+        {"write_checkpoint",  write_checkpoint}});
 }
 
 void binary::prepare_filesystem(const mara::config_t& run_config)

@@ -32,6 +32,7 @@
 #include "core_geometric.hpp"
 #include "physics_euler.hpp"
 #include "physics_iso2d.hpp"
+#include "physics_mhd.hpp"
 #include "model_two_body.hpp"
 #define gamma_law_index (5. / 3)
 
@@ -98,16 +99,47 @@ TEST_CASE("Roe average states have the correct mathematical properties")
 
 TEST_CASE("Isothermal 2d system", "[mara::iso2d::primitive_t]")
 {
-    auto P = mara::iso2d::primitive_t()
-    .with_sigma(2.0)
-    .with_velocity_x(0.5)
-    .with_velocity_y(1.5);
+    SECTION("U -> P and P -> U work correctly")
+    {
+        auto P = mara::iso2d::primitive_t()
+        .with_sigma(2.0)
+        .with_velocity_x(0.5)
+        .with_velocity_y(1.5);
 
-    auto U = P.to_conserved_per_area();
-    REQUIRE(P.velocity_x() == 0.5);
-    REQUIRE(U[0].value == P.sigma());
-    REQUIRE(U[1].value == P.sigma() * P.velocity_x());
-    REQUIRE(U[2].value == P.sigma() * P.velocity_y());
+        auto U = P.to_conserved_per_area();
+        REQUIRE(P.velocity_x() == 0.5);
+        REQUIRE(mara::get<0>(U).value == P.sigma());
+        REQUIRE(mara::get<1>(U).value == P.sigma() * P.velocity_x());
+        REQUIRE(mara::get<2>(U).value == P.sigma() * P.velocity_y());
+    }
+
+    SECTION("Q -> P and P -> Q work correctly away from the origin")
+    {
+        auto x = mara::iso2d::location_2d_t{1.0, 2.0};
+        auto P = mara::iso2d::primitive_t()
+        .with_sigma(2.0)
+        .with_velocity_x(0.5)
+        .with_velocity_y(1.5);
+
+        auto U = P.to_conserved_angmom_per_area(x);
+        REQUIRE(mara::iso2d::recover_primitive(U, x).sigma() == P.sigma());
+        REQUIRE(mara::iso2d::recover_primitive(U, x).velocity_x() == P.velocity_x());
+        REQUIRE(mara::iso2d::recover_primitive(U, x).velocity_y() == P.velocity_y());
+    }
+
+    SECTION("Q -> P and P -> Q work correctly away from the origin")
+    {
+        auto x = mara::iso2d::location_2d_t{1e-8, 1e-8};
+        auto P = mara::iso2d::primitive_t()
+        .with_sigma(2.0)
+        .with_velocity_x(0.5)
+        .with_velocity_y(1.5);
+
+        auto U = P.to_conserved_angmom_per_area(x);
+        REQUIRE(mara::iso2d::recover_primitive(U, x).sigma() == P.sigma());
+        REQUIRE(mara::iso2d::recover_primitive(U, x).velocity_x() == Approx(P.velocity_x()).epsilon(1e-14));
+        REQUIRE(mara::iso2d::recover_primitive(U, x).velocity_y() == Approx(P.velocity_y()).epsilon(1e-14));
+    }
 
     SECTION("HLLC gets zero contact speed for zero-velocity, equal pressure states")
     {
@@ -120,6 +152,39 @@ TEST_CASE("Isothermal 2d system", "[mara::iso2d::primitive_t]")
         REQUIRE(Pl.gas_pressure(al2) == Approx(Pr.gas_pressure(ar2)));
         REQUIRE(vars.contact_speed() == 0.0);
     }
+}
+
+TEST_CASE("MHD system", "[mara::mhd::primitive_t]")
+{
+    SECTION("Cons2Prim and Prim2Cons consistent")
+    {
+        auto P1 = mara::mhd::primitive_t()
+        .with_mass_density(2.0)
+        .with_velocity_1(0.5)
+        .with_velocity_2(1.5)
+        .with_velocity_3(1.0)
+        .with_bfield_1(1.5)
+        .with_bfield_2(1.0)
+        .with_bfield_3(2.3);
+
+        auto P2 = mara::mhd::recover_primitive( P1.to_conserved_density(1.4), 1.4, 0.0 );
+
+        REQUIRE( P1==P2 );
+    }
+    SECTION("Wavespeeds are correct")
+    {
+        auto P = mara::mhd::primitive_t()
+        .with_mass_density(2.0)
+        .with_velocity_1(0.0)
+        .with_velocity_2(0.0)
+        .with_velocity_3(0.0)
+        .with_bfield_1(1.5)
+        .with_bfield_2(1.0)
+        .with_bfield_3(2.3);        
+
+        auto B2 = P.bfield_squared();
+    }
+
 }
 
 TEST_CASE("Two body gravity model works as expected", "[model_two_body]")
