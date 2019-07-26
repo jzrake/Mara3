@@ -46,6 +46,20 @@
 //                                  Header 
 // ============================================================================
 
+template<>
+struct h5::hdf5_type_info<mara::iso2d::conserved_per_area_t>
+{
+    using native_type = mara::iso2d::conserved_per_area_t;
+    static auto make_datatype_for(const native_type& value) { return h5::Datatype::native_double().as_array(3); }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+};
+//=============================================================================
+//
 
 namespace euler
 {
@@ -135,8 +149,7 @@ auto component(std::size_t cmpnt)
 
 auto recover_primitive(const mara::iso2d::conserved_per_area_t& conserved)
 {
-	double density_floor = 0.0;
-    return mara::iso2d::recover_primitive(conserved, density_floor);
+    return mara::iso2d::recover_primitive(conserved);
 }
 
 /**
@@ -397,16 +410,13 @@ euler::state_t euler::next_state( const euler::state_t& state )
 void output_solution_h5( const euler::solution_t& s, std::string fname )
 {	
 	std::cout << "   Outputting: " << fname << std::endl;
-	auto h5f = h5::File( fname, "w" );
-
+	auto group = h5::File( fname, "w" ).open_group("/");
     //auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
 
-	h5f.write( "time"      , s.time      );
-	h5f.write( "vertices"  , s.vertices  );
-	h5f.write( "conserved" , s.conserved );
+	mara::write(group, "time"      , s.time      );
+	mara::write(group, "vertices"  , s.vertices  );
+	mara::write(group, "conserved" , s.conserved );
 	//h5f.write( "primitive" , s.conserved | nd::map(recover_primitive) | nd::to_shared() );
-
-	h5f.close();
 }
 
 
