@@ -56,7 +56,6 @@ namespace mhd_2dCT
     using location_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0,  0, double>, 2>;
     using velocity_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0, -1, double>, 2>;
     using primitive_field_t = std::function<mara::mhd::primitive_t(location_2d_t)>;
-    using bfield_2d_t       = mara::dimensional_value_t<-1, 0, 0, double>; 
 
     // Solver structs
     // ========================================================================
@@ -100,10 +99,10 @@ namespace mhd_2dCT
 
     struct diagnostic_fields_t
     {
-        mara::config_t                        run_config;
-        mara::unit_time<double>               time;
-        nd::shared_array<location_2d_t, 2>    vertices;
-        nd::shared_array<  bfield_2d_t, 2>    div_b;        //CHANGE TO HAVE CORRECT UNITS
+        mara::config_t                                run_config;
+        mara::unit_time<double>                       time;
+        nd::shared_array<location_2d_t,         2>    vertices;
+        nd::shared_array<mara::mhd::unit_field, 2>    div_b; 
     };
 
     struct state_t
@@ -152,6 +151,14 @@ auto component(std::size_t cmpnt)
     return nd::map([cmpnt] (auto p) { return p[cmpnt]; });
 }
 
+/**
+ * @brief      An operator on arrays of magnetic fields. Takes three components of a field
+ *             and returns a sequence defining a field at a point
+ *             
+ * @param  b1  Components 1, 2, 3
+ * 
+ * @return     The magnetic field vector
+ */
 auto to_magnetic_vector(mara::mhd::unit_field b1, mara::mhd::unit_field b2, mara::mhd::unit_field b3)
 {
     return mara::mhd::magnetic_field_t{b1, b2, b3};
@@ -159,12 +166,15 @@ auto to_magnetic_vector(mara::mhd::unit_field b1, mara::mhd::unit_field b2, mara
 
 
 
-// auto recover_primitive(const mara::mhd::conserved_density_t& conserved)
-// {
-// 	double temp_floor = 1e-4;
-//     return mara::mhd::recover_primitive(conserved, gamma_law_index, temp_floor);
-// }
-
+/**
+ * @brief             Build primitives array
+ * 
+ * @param  conserved  Array of conserved hydro quantities
+ * 
+ * @param  B          Array of magnetic field vectors
+ * 
+ * @return            Array of 8 primitive, cell-centered quantities
+ */
 auto recover_primitive(const mara::mhd::conserved_density_euler_t& conserved,
                        const mara::mhd::magnetic_field_t& B)
 {
@@ -259,16 +269,20 @@ auto kelvin_helmholtz(mhd_2dCT::location_2d_t position)
     if( gamma_law_index!= 1.4 )
         throw std::invalid_argument("wrong gamma: for this problem gamma=1.4");
 
-    auto y     = position[1];
-    auto nexus = std::abs(y.value) < 0.3;
+    auto x     = position[0].value;
+    auto y     = position[1].value;
+    auto nexus = std::abs(y) < 0.3;
 
     auto density  = nexus ? 2.0  :  1.0; 
     auto vx       = nexus ? 0.5  : -0.5;
 
+    auto amp    = 0.01;
+    auto pert_y = amp * std::sin(x);
+
     auto pressure = 2.5;
-    auto vy       = 0.0;
+    auto vy       = pert_y;
     auto vz       = 0.0;
-    auto bx       = 0.0;   
+    auto bx       = 0.5;   
     auto by       = 0.0;
     auto bz       = 0.0;
 
@@ -341,6 +355,7 @@ auto blast_wave(mhd_2dCT::location_2d_t position)
      .with_bfield_2(by)
      .with_bfield_3(bz);
 }
+
 
 /**
  * @brief             Create an initial solution object according to initial_condition()
@@ -442,13 +457,16 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution, mara::unit_t
         };
     };
 
-    auto to_euler_fluxes = [] ()
+    // Separate out only the hydro components of a flux array
+    // ========================================================================
+    auto just_euler_fluxes = [] ()
     {
         return nd::map([] (auto f) { return mara::mhd::flux_vector_euler_t{f[0], f[1], f[2], f[3], f[4]}; });
     };
 
 
-    //auto recover_primitive = std::bind(mara::mhd::recover_primitive, std::placeholders::_1, 0.0);
+    // ========================================================================
+
     auto v0  =  solution.vertices;
     auto u0  =  solution.conserved;
     auto bx0 =  solution.bfield_x;
@@ -464,34 +482,34 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution, mara::unit_t
 
 
     // Extend for ghost-cells and get fluxes with specified riemann solver
-    //    --> intercell_flux returns tuple of {hydro_flux, emf_corners}
     // ========================================================================
-    auto FX  =  w0 | nd::extend_periodic_on_axis(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0);
-    auto FY  =  w0 | nd::extend_periodic_on_axis(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1);
+    auto FX    =  w0 | nd::extend_periodic_on_axis(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0);
+    auto FY    =  w0 | nd::extend_periodic_on_axis(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1);
+    auto lx    =  FX | just_euler_fluxes() | nd::multiply(dy) | nd::difference_on_axis(0);
+    auto ly    =  FY | just_euler_fluxes() | nd::multiply(dx) | nd::difference_on_axis(1);
+    auto lx_bz =  FX | component(7) | nd::multiply(dy) | nd::difference_on_axis(0);
+    auto ly_bz =  FY | component(7) | nd::multiply(dx) | nd::difference_on_axis(1); 
 
-    auto fx  =  FX | to_euler_fluxes();
-    auto fy  =  FY | to_euler_fluxes();
-    auto lx  =  fx | nd::multiply(dy) | nd::difference_on_axis(0);
-    auto ly  =  fy | nd::multiply(dx) | nd::difference_on_axis(1);
-    
-
-    //Get z-component of the flux -> area averaged electric field
+ 
+    // Meaningless 'charge' to convert from units of flux to units of field/force
     //=========================================================================
-    auto e = make_dimensional<3, 0, -1>(1.0);
-    auto emf_x_edges  = -FX | component(6) | nd::midpoint_on_axis(1); //avg flux of By in x-direction
-    auto emf_y_edges  =  FY | component(5) | nd::midpoint_on_axis(0); //avg flux of Bx in y-direction
-    auto emf_edges  = (emf_x_edges + emf_y_edges) * e * 0.5; 
-    
+    auto e = mara::make_dimensional<4, 0, -2>(1.0);
+
+
+    // Get z-directed electric fields and calculate corner-centered EMFs
+    //=========================================================================
+    auto emf_x_edges  = -FX | component(6) | nd::extend_periodic_on_axis(1) | nd::midpoint_on_axis(1); //avg flux of By in x-direction
+    auto emf_y_edges  =  FY | component(5) | nd::extend_periodic_on_axis(0) | nd::midpoint_on_axis(0); //avg flux of Bx in y-direction
+    auto emf_edges    = (emf_x_edges + emf_y_edges) * 0.5 * e; 
+
 
     // Updated conserved quantities and face-centered fields
     //=========================================================================
-    auto u1  = u0  - (lx + ly) * dt / dA;
-    auto bx1 = bx0 - ( emf_edges|nd::difference_on_axis(1) ); // / dy * dt;
-    auto by1 = by0 + ( emf_edges|nd::difference_on_axis(0) ); // / dx * dt;
-    auto bz1 = u1 | component(7);
-    // auto bx1 = bx0;
-    // auto by1 = by0;
-    // auto bz1 = bz0;
+    auto u1  = u0  - (lx    + ly   ) * dt / dA;
+    auto bz1 = bz0 - (lx_bz + ly_bz) * dt / dA * e;
+    auto bx1 = bx0 - ( emf_edges|nd::difference_on_axis(1) ) / dy * dt;
+    auto by1 = by0 + ( emf_edges|nd::difference_on_axis(0) ) / dx * dt;
+
 
     // Updated solution state
     //=========================================================================
@@ -504,6 +522,7 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution, mara::unit_t
         by1.shared(),
         bz1.shared(),
     };
+
 }
 
 
@@ -542,9 +561,32 @@ mara::unit_time<double> get_timestep( const mhd_2dCT::solution_t& s, double cfl 
     return std::min(min_dx, min_dy) / s_max * cfl;
 }
 
+// void test_nan(const mara::mhd_2dCT::solution_t& s, int n )
+// {
+//     bool is_nan = (auto u) [] 
+//             {
+//                 if( std::isnan(u[0].value) ) return 1;
+//                 if( std::isnan(u[1].value) ) return 1;
+//                 if( std::isnan(u[2].value) ) return 1;
+//                 if( std::isnan(u[3].value) ) return 1;
+//                 if( std::isnan(u[4].value) ) return 1;
+
+//                 return 0;
+//             };
+
+//     auto u  = s.conserved;
+
+//     if( nd::any( u|nd::map(is_nan) ) )
+//         printf("Conserved went nan... %d\n", n);
+
+//     return;
+// }
+
 mhd_2dCT::solution_t mhd_2dCT::next_solution( const state_t& state )
 {
     auto s0 = state.solution;
+
+    int n = 0;
     auto dt = get_timestep( s0, state.run_config.get_double("cfl") );
 
     switch( state.run_config.get_int("rk_order") )
@@ -572,50 +614,29 @@ mhd_2dCT::state_t mhd_2dCT::next_state( const mhd_2dCT::state_t& state )
     };
 }
 
+
 // Diagnostics -> right now just div_b
 //=============================================================================
 
-// mhd_2dCT::diagnostic_fields_t mhd_2dCT::diagnostic_fields( const solution_t& solution, mara::config_t& run_config)
-// {
-//     //*****************************************************
-//     //               Calculate div_B
-//     //                 
-//     //               __________________      
-//     //              |         |        |
-//     //              |    1    |   2    |
-//     //              |         |        |
-//     //              |---------|--------|
-//     //              |         |        |
-//     //              |    3    |   4    |
-//     //              |_________|________|       
-//     //                 
-//     //  div_B_corner = (b^1_x - b^2_x + b^3_x - b^4_x) / (dx) 
-//     //                 + (b^1_y - b^3_y + b^2_y - b^4_y) / (dy)
-//     //   
-//     //*****************************************************
-    
-//     auto v0  =  solution.vertices;
-//     auto u0  =  solution.conserved;
-//     auto dx  =  v0 | component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
-//     auto dy  =  v0 | component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
+mhd_2dCT::diagnostic_fields_t mhd_2dCT::diagnostic_fields( const solution_t& solution, mara::config_t& run_config)
+{
+    auto v0  =  solution.vertices;
+    auto dx  =  v0 | component(0) | nd::difference_on_axis(0);
+    auto dy  =  v0 | component(1) | nd::difference_on_axis(1);
 
-//     auto w0  =  u0 | nd::map(recover_primitive);
-//     auto Bx  =  w0 | nd::map([] (auto w) { return w.bfield_1(); }) | nd::map([] (auto b) { return mara::make_dimensional<0,0,0>(b); });
-//     auto By  =  w0 | nd::map([] (auto w) { return w.bfield_2(); }) | nd::map([] (auto b) { return mara::make_dimensional<0,0,0>(b); });
+    auto bx       =  solution.bfield_x;
+    auto by       =  solution.bfield_y;
+    auto div_b_x  =  bx | nd::difference_on_axis(0);
+    auto div_b_y  =  by | nd::difference_on_axis(1);
+    auto div_b    =  div_b_x + div_b_y;
 
-//     auto bx       =  Bx / dx;
-//     auto by       =  By / dy;
-//     auto div_b_x  =  bx | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
-//     auto div_b_y  =  by | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
-//     auto div_b    =  div_b_x + div_b_y;
-
-//     return diagnostic_fields_t{
-//         run_config,
-//         solution.time,
-//         solution.vertices,
-//         div_b.shared()
-//     };
-// }
+    return diagnostic_fields_t{
+        run_config,
+        solution.time,
+        solution.vertices,
+        div_b.shared()
+    };
+}
 
 
 // Outputting
@@ -671,39 +692,40 @@ int main(int argc, const char* argv[])
 {
     auto run_config  = mhd_2dCT::create_run_config(argc, argv);
     auto state       = mhd_2dCT::create_state(run_config);
-    //auto diag        = mhd_2dCT::diagnostic_fields( state.solution, run_config );
+    auto diag        = mhd_2dCT::diagnostic_fields( state.solution, run_config );
 
     mara::pretty_print  ( std::cout, "config", run_config );
     output_solution_h5  ( state.solution, "checkpoint_000.h5" );
-    //utput_diagnostic_h5( diag          , "diagnostic_000.h5" );
+    output_diagnostic_h5( diag          , "diagnostic_000.h5" );
 
     int nout = 0;
-    // int dout = 0;
+    int dout = 0;
     double delta_n = run_config.get_double("tfinal") / run_config.get_int("cpi");
-    // double delta_d = run_config.get_double("tfinal") / run_config.get_int("doi");
+    double delta_d = run_config.get_double("tfinal") / run_config.get_int("doi");
 
     while( mhd_2dCT::simulation_should_continue(state) )
     {
         state = mhd_2dCT::next_state(state);
-        // diag  = mhd_2dCT::diagnostic_fields( state.solution, run_config );
+        diag  = mhd_2dCT::diagnostic_fields( state.solution, run_config );
 
-        //if( state.solution.time.value % 10 == 0 )
+        // if( state.solution.time.value % 10 == 0 )
         printf( " %d : t = %0.2f \n", state.solution.iteration.as_integral(), state.solution.time.value );
 
         if( state.solution.time.value / delta_n - nout > 1.0  )
         {
             output_solution_h5( state.solution, get_checkpoint_filename(++nout) );
         }
-        // if( state.solution.time.value / delta_d - dout > 1.0  )
-        // {
-        //     output_diagnostic_h5( diag, get_diagnostic_filename(++dout) );
-        // }
+        if( state.solution.time.value / delta_d - dout > 1.0  )
+        {
+            //printf("Am I ever actually here??\n");
+            output_diagnostic_h5( diag, get_diagnostic_filename(++dout) );
+        }
     }
 
     output_solution_h5( state.solution, "output.h5" );
     
-    // diag = mhd_2dCT::diagnostic_fields( state.solution, run_config );
-    // output_diagnostic_h5( diag, get_diagnostic_filename(++dout) );
+    diag = mhd_2dCT::diagnostic_fields( state.solution, run_config );
+    output_diagnostic_h5( diag, get_diagnostic_filename(++dout) );
 
     return 0;
 }
