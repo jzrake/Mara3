@@ -91,6 +91,27 @@ struct mara::mhd
         const unit_vector_t& nhat,
         double gamma_law_index);
 
+    // HLLD
+    // ========================================================================
+    struct riemann_hlld_variables_t;
+
+    static inline flux_vector_t riemann_hlld(
+        const  primitive_t& Pl,
+        const  primitive_t& Pr,
+        const  unit_vector_t& nhat,
+        double gamma_law_index);
+
+    static inline riemann_hlld_variables_t compute_hlld_variables(
+        const  primitive_t& Pl,
+        const  primitive_t& Pr,
+        const  unit_vector_t& nhat,
+        double gamma_law_index);
+
+    static inline flux_vector_t conserved_to_flux(
+        const  conserved_density_t& U,
+        const  unit_vector_t& nhat,
+        double gamma_law_index);
+
 };
 
 
@@ -173,6 +194,20 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         return nhat.project(_[1], _[2], _[3]);
     }
 
+    /**
+     * @brief    Return sequence of 3 velocity components
+     * 
+     * @return   The velocity
+     */
+    auto velocity() const
+    {
+        return arithmetic_sequence_t<double, 3>{velocity_1(), velocity_2(), velocity_3()};
+    }
+
+    auto bfield() const
+    {
+        return arithmetic_sequence_t<double, 3>{bfield_1(), bfield_2(), bfield_3()};
+    }
 
 
      /**
@@ -544,9 +579,9 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
     P[2] =  U[2].value / d;
     P[3] =  U[3].value / d;
     P[4] = (U[4].value - 0.5 * p_squared / d - 0.5 * b_squared) * (gamma_law_index - 1.0);
-    P[5] =  U[5].value;
-    P[6] =  U[6].value;
-    P[7] =  U[7].value;
+    P[5] =  B[0].value;
+    P[6] =  B[1].value;
+    P[7] =  B[2].value;
 
     if (P[4] < 0.0 && temperature_floor > 0.0)
     {
