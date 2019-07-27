@@ -82,7 +82,7 @@ struct mara::mhd::riemann_hlld_variables_t
 	auto FL() const { return PL.flux(nhat, gamma_law_index); }
 	auto FR() const { return PR.flux(nhat, gamma_law_index); }
 
-	mara::mhd::conserved_density_t UL_star() const
+	mara::mhd::conserved_density_t UL_star(void) const
 	{
 		auto beta = (SM - ul) / ( dl * (SL - ul) * (SL - SM) - b_along * b_along );
 
@@ -116,7 +116,7 @@ struct mara::mhd::riemann_hlld_variables_t
 		};
 	}
 
-	mara::mhd::conserved_density_t UR_star() const
+	mara::mhd::conserved_density_t UR_star(void) const
 	{
 		auto beta = (SM - ur) / ( dr * (SR - ur) * (SR - SM) - b_along );
 
@@ -155,22 +155,22 @@ struct mara::mhd::riemann_hlld_variables_t
 		auto b_sign  = sgn(b_along);
 
 		if( b_sign != 0 ){
-			auto UL_star = UL_star();
-			auto UR_star = UR_star();
-			auto d_star  = UL_star[0].value;
-			auto vx_star = UL_star[1].value;
-			auto vy_star = UL_star[2].value;
-			auto vz_star = UL_star[3].value;
-			auto bx_star = UL_star[5].value;
-			auto by_star = UL_star[6].value;
-			auto bz_star = UL_star[7].value;
+			auto Ul_star = UL_star();
+			auto Ur_star = UR_star();
+			auto d_star  = Ul_star[0].value;
+			auto vx_star = Ul_star[1].value;
+			auto vy_star = Ul_star[2].value;
+			auto vz_star = Ul_star[3].value;
+			auto bx_star = Ul_star[5].value;
+			auto by_star = Ul_star[6].value;
+			auto bz_star = Ul_star[7].value;
 
 			auto bv_star = vx_star * bx_star + vy_star * by_star + vz_star * bz_star;
 
-			auto v_starstar  = get_v_starstar(UL_star, UR_star, b_sign);
-			auto b_starstar  = get_b_starstar(UL_star, UR_star, b_sign);
+			auto v_starstar  = get_v_starstar(Ul_star, Ur_star, b_sign);
+			auto b_starstar  = get_b_starstar(Ul_star, Ur_star, b_sign);
 			auto bv_starstar = v_starstar[0] * b_starstar[0] + v_starstar[1] * b_starstar[1] + v_starstar[2] * b_starstar[2];
-			auto e_starstar  = UL_star[4].value - std::sqrt(d_star) * (bv_star - bv_starstar) * b_sign;
+			auto e_starstar  = Ul_star[4].value - std::sqrt(d_star) * (bv_star - bv_starstar) * b_sign;
 
 			return mara::mhd::conserved_density_t{
 				d_star,
@@ -193,22 +193,22 @@ struct mara::mhd::riemann_hlld_variables_t
 		auto b_sign  = sgn(b_along);
 
 		if( b_along !=0 ){
-			auto UL_star = UL_star();
-			auto UR_star = UR_star();
-			auto d_star  = UR_star[0].value;
-			auto vx_star = UR_star[1].value;
-			auto vy_star = UR_star[2].value;
-			auto vz_star = UR_star[3].value;
-			auto bx_star = UR_star[5].value;
-			auto by_star = UR_star[6].value;
-			auto bz_star = UR_star[7].value;
+			auto Ul_star = UL_star();
+			auto Ur_star = UR_star();
+			auto d_star  = Ur_star[0].value;
+			auto vx_star = Ur_star[1].value;
+			auto vy_star = Ur_star[2].value;
+			auto vz_star = Ur_star[3].value;
+			auto bx_star = Ur_star[5].value;
+			auto by_star = Ur_star[6].value;
+			auto bz_star = Ur_star[7].value;
 
 			auto bv_star = vx_star * bx_star + vy_star * by_star + vz_star * bz_star;
 
-			auto v_starstar  = get_v_starstar(UL_star, UR_star, b_sign);
-			auto b_starstar  = get_b_starstar(UL_star, UR_star, b_sign);
+			auto v_starstar  = get_v_starstar(Ul_star, Ur_star, b_sign);
+			auto b_starstar  = get_b_starstar(Ul_star, Ur_star, b_sign);
 			auto bv_starstar = v_starstar[0] * b_starstar[0] + v_starstar[1] * b_starstar[1] + v_starstar[2] * b_starstar[2];
-			auto e_starstar  = UR_star[4].value + std::sqrt(d_star) * (bv_star - bv_starstar) * b_sign;
+			auto e_starstar  = Ur_star[4].value + std::sqrt(d_star) * (bv_star - bv_starstar) * b_sign;
 
 			return mara::mhd::conserved_density_t{
 				d_star,
