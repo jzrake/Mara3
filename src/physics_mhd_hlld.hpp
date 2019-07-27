@@ -94,6 +94,9 @@ struct mara::mhd::riemann_hlld_variables_t
 		auto vy_star = SM * nhat[1] + v_perp_l[1] - beta * b_along * b_perp_l[1];
 		auto vz_star = SM * nhat[2] + v_perp_l[2] - beta * b_along * b_perp_l[2];
 
+		// if( beta==0.0 ) printf("Beta to zero!\n");
+		// if( zeta==0.0 ) printf("Zeta to zero!\n");
+
 		//IS IT RIGHT TO NOT CHANGE B_PARALLEL???
 		auto bx_star = zeta * b_perp_l[0] + b_para_l[0];
 		auto by_star = zeta * b_perp_l[1] + b_para_l[1];
@@ -104,6 +107,17 @@ struct mara::mhd::riemann_hlld_variables_t
 		auto bv_star =  vx_star * bx_star + vy_star * by_star + vz_star * bz_star;
 		auto e_star  = ((SL - ul) * e - pl * ul + pstar * SM + b_along * (bv - bv_star)) / (SL - SM);
 
+		if( beta==0 || zeta==0 ){
+			return mara::mhd::conserved_density_t{
+				dl * (SL - ul) / (SL - SM),
+				dl * SM * nhat[0] + v_perp_l[0],
+				dl * SM * nhat[1] + v_perp_l[1],
+				dl * SM * nhat[2] + v_perp_l[2],
+				b_para_l[0],
+				b_para_l[1],
+				b_para_l[2],
+			};
+		}
 		return mara::mhd::conserved_density_t{
 			dl * (SL - ul) / (SL - SM),
 			dl * vx_star,
@@ -138,6 +152,17 @@ struct mara::mhd::riemann_hlld_variables_t
 		auto bv_star =  vx_star * bx_star + vy_star * by_star + vz_star * bz_star;
 		auto e_star  = ((SR - ur) * e - pr * ur + pstar * SM + b_along * (bv - bv_star)) / (SR - SM);
 
+		if( beta==0 || zeta==0 ){
+			return mara::mhd::conserved_density_t{
+				dr * (SR - ur) / (SR - SM),
+				dr * SM * nhat[0] + v_perp_r[0],
+				dr * SM * nhat[1] + v_perp_r[1],
+				dr * SM * nhat[2] + v_perp_r[2],
+				b_para_r[0],
+				b_para_r[1],
+				b_para_r[2],
+			};
+		}
 		return mara::mhd::conserved_density_t{
 			dr * ( SR - ur ) / (SR - SM),
 			dr * vx_star,
@@ -290,6 +315,7 @@ struct mara::mhd::riemann_hlld_variables_t
         else if ( SM     <= 0.0 && 0.0 <= SRstar) return FR() - (UR_star() + UR()) * make_velocity(SR) + (UR_starstar() - UR_star()) * make_velocity(SR);
         else if ( SRstar <= 0.0 && 0.0 <= SR    ) return FR() + (UR_star() - UR()) * make_velocity(SR);
         else if ( SR     <= 0.0                 ) return FR();
+        printf("(SL, SLstar, SM, SRstar, SR):  (%f, %f, %f, %f, %f)\n", SL, SLstar, SM, SRstar, SR);
         throw std::invalid_argument("riemann_hlld_variables_t::interface_flux");
 	}
 
@@ -305,7 +331,7 @@ inline mara::mhd::flux_vector_t mara::mhd::conserved_to_flux(
 	const mara::unit_vector_t& nhat,
 	double gamma_law_index)
 {
-	auto   temp_floor = 0.0;
+	auto   temp_floor = 1e-4;
 	return mara::mhd::recover_primitive(U, gamma_law_index, temp_floor).flux(nhat, U);
 }
 
