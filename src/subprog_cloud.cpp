@@ -81,6 +81,7 @@ static auto config_template()
     .item("jet_gamma_beta",        10.0)   // jet gamma-beta on-axis
     .item("jet_opening_angle",      0.1)
     .item("jet_structure_exp",      2.0)
+    .item("rk_order",                 1)   // RK time stepping mode (1 or 2)
     .item("reconstruct_method",       2);  // spatial reconstruction method: 1 for PCM, 2 for PLM
 }
 
@@ -99,13 +100,37 @@ struct CloudProblem
 
 
     //=========================================================================
-    struct solution_state_t
+    struct solution_t
     {
-        double time = 0.0;
-        mara::rational_number_t iteration = mara::make_rational(0, 1);
-        radial_vertex_array_t radial_vertices;
-        polar_vertex_array_t polar_vertices;
+        double                                       time = 0.0;
+        mara::rational_number_t                      iteration = mara::make_rational(0, 1);
+        radial_vertex_array_t                        radial_vertices;
+        polar_vertex_array_t                         polar_vertices;
         nd::shared_array<mara::srhd::conserved_t, 2> conserved;
+
+
+        //=============================================================================
+        solution_t operator+(const solution_t& other) const
+        {
+            return {
+                time       + other.time,
+                iteration  + other.iteration,
+                radial_vertices,
+                polar_vertices,
+                (conserved + other.conserved).shared(),
+            };
+        }
+
+        solution_t operator*(mara::rational_number_t scale) const
+        {
+            return {
+                time       * scale.as_double(),
+                iteration  * scale,
+                radial_vertices,
+                polar_vertices,
+                (conserved * scale.as_double()).shared(),
+            };
+        }
     };
 
 
@@ -141,7 +166,7 @@ struct CloudProblem
     //=========================================================================
     struct app_state_t
     {
-        solution_state_t solution_state;
+        solution_t solution;
         mara::schedule_t schedule;
         mara::config_t run_config;
     };
@@ -173,7 +198,7 @@ struct CloudProblem
     static auto make_atmosphere_model(const mara::config_t& cfg);
     static auto make_jet_nozzle_model(const mara::config_t& cfg);
     static auto make_reference_units(const mara::config_t& cfg);
-    static auto make_diagnostic_fields(const solution_state_t& state, const mara::config_t& cfg);
+    static auto make_diagnostic_fields(const solution_t& state, const mara::config_t& cfg);
 
 
     //=========================================================================
@@ -189,10 +214,11 @@ struct CloudProblem
     static auto extend_zero_gradient_inner();
     static auto extend_zero_gradient_outer();
     static auto extend_inflow_nozzle_inner(const app_state_t& app_state);
+    static auto advance(const app_state_t& app_state, const solution_t& solution, mara::unit_time<double> dt);
 
 
     //=============================================================================
-    static void write_solution(h5::Group&& group, const solution_state_t& state);
+    static void write_solution(h5::Group&& group, const solution_t& state);
     static auto read_solution(h5::Group&& group);
     static auto new_solution(const mara::config_t& cfg);
     static auto create_solution(const mara::config_t& cfg);
@@ -216,7 +242,7 @@ struct CloudProblem
 
 
     //=========================================================================
-    static void print_run_loop_message(const solution_state_t& solution, mara::perf_diagnostics_t perf);
+    static void print_run_loop_message(const solution_t& solution, mara::perf_diagnostics_t perf);
     static void print_run_dimensions(std::ostream& output, const mara::config_t& cfg);
     static void prepare_filesystem(const mara::config_t& cfg);
 
@@ -296,7 +322,7 @@ auto CloudProblem::make_reference_units(const mara::config_t& cfg)
     .with_time(atmosphere_model.r0 / light_speed_cgs);
 }
 
-auto CloudProblem::make_diagnostic_fields(const solution_state_t& state, const mara::config_t& cfg)
+auto CloudProblem::make_diagnostic_fields(const solution_t& state, const mara::config_t& cfg)
 {
     using namespace std::placeholders;
 
@@ -429,8 +455,8 @@ auto CloudProblem::extend_inflow_nozzle_inner(const app_state_t& app_state)
 {
     auto jet         = make_jet_nozzle_model(app_state.run_config);
     auto reference   = make_reference_units(app_state.run_config);
-    auto polar_cells = app_state.solution_state.polar_vertices | nd::midpoint_on_axis(0);
-    auto t_seconds   = app_state.solution_state.time * reference.time();
+    auto polar_cells = app_state.solution.polar_vertices | nd::midpoint_on_axis(0);
+    auto t_seconds   = app_state.solution.time * reference.time();
 
     auto inflow_function = [jet, t=t_seconds, reference_density=reference.mass_density()] (double q)
     {
@@ -468,11 +494,84 @@ auto CloudProblem::extend_zero_gradient_outer()
     };
 }
 
+auto CloudProblem::advance(const app_state_t& app_state, const solution_t& solution, mara::unit_time<double> dt)
+{
+    using namespace std::placeholders;
+
+    auto source_terms = [] (auto primitive, auto position)
+    {
+        auto r = std::get<0>(position).value;
+        auto q = std::get<1>(position);
+        return primitive.spherical_geometry_source_terms(r, q, gamma_law_index);
+    };
+
+    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index, temperature_floor);
+    auto extend_bc    = mara::compose(extend_inflow_nozzle_inner(app_state), extend_zero_gradient_outer());
+    auto evaluate     = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
+
+    auto rc  = cell_centroids   (solution.radial_vertices, solution.polar_vertices) | evaluate;
+    auto dv  = cell_volumes     (solution.radial_vertices, solution.polar_vertices) | evaluate;
+    auto dAr = radial_face_areas(solution.radial_vertices, solution.polar_vertices) | evaluate;
+    auto dAq = polar_face_areas (solution.radial_vertices, solution.polar_vertices) | evaluate;
+
+    auto u0 = solution.conserved;
+    auto p0 = u0 / dv | nd::map(cons_to_prim) | evaluate;
+    auto s0 = nd::zip(p0, rc) | nd::apply(source_terms) | nd::multiply(dv);
+
+    if (app_state.run_config.get_int("reconstruct_method") == 1)
+    {
+        auto extrapolate = nd::zip_adjacent2_on_axis;
+        auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux(0) | nd::multiply(-dAr) | nd::difference_on_axis(0);
+        auto lq = p0 | extrapolate(1) | intercell_flux(1) | nd::extend_zeros(1) | nd::multiply(-dAq) | nd::difference_on_axis(1);
+        auto u1 = u0 + (lr + lq + s0) * dt;
+
+        return solution_t {
+            solution.time + dt.value,
+            solution.iteration + 1,
+            solution.radial_vertices,
+            solution.polar_vertices,
+            u1 | evaluate };
+    }
+
+    if (app_state.run_config.get_int("reconstruct_method") == 2)
+    {
+        auto extrapolate = [] (std::size_t axis)
+        {
+            return [axis] (auto P)
+            {
+                auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
+                auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
+                auto G = P
+                | nd::zip_adjacent3_on_axis(axis)
+                | nd::apply(mara::lift(estimate_gradient_plm))
+                | nd::extend_zeros(axis)
+                | nd::to_shared();
+
+                return nd::zip(
+                    (P | L) + (G | L) * 0.5,
+                    (P | R) - (G | R) * 0.5);
+            };
+        };
+
+        auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux(0) | nd::multiply(-dAr) | nd::difference_on_axis(0);
+        auto lq = p0 | extrapolate(1) | intercell_flux(1) | nd::extend_zeros(1) | nd::multiply(-dAq) | nd::difference_on_axis(1);
+        auto u1 = u0 + (lr + lq + s0) * dt;
+
+        return solution_t {
+            solution.time + dt.value,
+            solution.iteration + 1,
+            solution.radial_vertices,
+            solution.polar_vertices,
+            u1 | evaluate };
+    }
+    throw std::invalid_argument("reconstruct_method must be 1 or 2");
+}
+
 
 
 
 //=============================================================================
-void CloudProblem::write_solution(h5::Group&& group, const solution_state_t& state)
+void CloudProblem::write_solution(h5::Group&& group, const solution_t& state)
 {
     group.write("time", state.time);
     group.write("iteration", state.iteration);
@@ -483,7 +582,7 @@ void CloudProblem::write_solution(h5::Group&& group, const solution_state_t& sta
 
 auto CloudProblem::read_solution(h5::Group&& group)
 {
-    auto state = solution_state_t();
+    auto state = solution_t();
     group.read("time", state.time);
     group.read("iteration", state.iteration);
     group.read("radial_vertices", state.radial_vertices);
@@ -517,7 +616,7 @@ auto CloudProblem::new_solution(const mara::config_t& cfg)
 
     auto q_vertices = nd::linspace(0.0, M_PI, nr + 1) | nd::to_shared();
     auto dv = cell_volumes(r_vertices, q_vertices);
-    auto state = solution_state_t();
+    auto state = solution_t();
 
     state.time = 0.0;
     state.iteration = 0;
@@ -542,78 +641,25 @@ auto CloudProblem::create_solution(const mara::config_t& cfg)
 
 auto CloudProblem::next_solution(const app_state_t& app_state)
 {
-    using namespace std::placeholders;
+    auto dr_min = app_state.solution.radial_vertices | nd::difference_on_axis(0) | nd::read_index(0);
+    auto dt = dr_min / mara::make_velocity(1.0) * cfl_number;
+    auto s0 = app_state.solution;
 
-    auto source_terms = [] (auto primitive, auto position)
+    switch (app_state.run_config.get_int("rk_order"))
     {
-        auto r = std::get<0>(position).value;
-        auto q = std::get<1>(position);
-        return primitive.spherical_geometry_source_terms(r, q, gamma_law_index);
-    };
-
-    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index, temperature_floor);
-    auto extend_bc    = mara::compose(extend_inflow_nozzle_inner(app_state), extend_zero_gradient_outer());
-    auto evaluate     = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
-    auto state        = app_state.solution_state;
-
-    auto dr_min = state.radial_vertices | nd::difference_on_axis(0) | nd::read_index(0);
-    auto dt  = dr_min / mara::make_velocity(1.0) * cfl_number;
-    auto rc  = cell_centroids   (state.radial_vertices, state.polar_vertices) | evaluate;
-    auto dv  = cell_volumes     (state.radial_vertices, state.polar_vertices) | evaluate;
-    auto dAr = radial_face_areas(state.radial_vertices, state.polar_vertices) | evaluate;
-    auto dAq = polar_face_areas (state.radial_vertices, state.polar_vertices) | evaluate;
-
-    auto u0 = state.conserved;
-    auto p0 = u0 / dv | nd::map(cons_to_prim) | evaluate;
-    auto s0 = nd::zip(p0, rc) | nd::apply(source_terms) | nd::multiply(dv);
-
-    if (app_state.run_config.get_int("reconstruct_method") == 1)
-    {
-        auto extrapolate = nd::zip_adjacent2_on_axis;
-        auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux(0) | nd::multiply(-dAr) | nd::difference_on_axis(0);
-        auto lq = p0 | extrapolate(1) | intercell_flux(1) | nd::extend_zeros(1) | nd::multiply(-dAq) | nd::difference_on_axis(1);
-        auto u1 = u0 + (lr + lq + s0) * dt;
-
-        return solution_state_t {
-            state.time + dt.value,
-            state.iteration + 1,
-            state.radial_vertices,
-            state.polar_vertices,
-            u1 | evaluate };
-    }
-
-    if (app_state.run_config.get_int("reconstruct_method") == 2)
-    {
-        auto extrapolate = [] (std::size_t axis)
+        case 1:
         {
-            return [axis] (auto P)
-            {
-                auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
-                auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
-                auto G = P
-                | nd::zip_adjacent3_on_axis(axis)
-                | nd::apply(mara::lift(estimate_gradient_plm))
-                | nd::extend_zeros(axis)
-                | nd::to_shared();
-
-                return nd::zip(
-                    (P | L) + (G | L) * 0.5,
-                    (P | R) - (G | R) * 0.5);
-            };
-        };
-
-        auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux(0) | nd::multiply(-dAr) | nd::difference_on_axis(0);
-        auto lq = p0 | extrapolate(1) | intercell_flux(1) | nd::extend_zeros(1) | nd::multiply(-dAq) | nd::difference_on_axis(1);
-        auto u1 = u0 + (lr + lq + s0) * dt;
-
-        return solution_state_t {
-            state.time + dt.value,
-            state.iteration + 1,
-            state.radial_vertices,
-            state.polar_vertices,
-            u1 | evaluate };
+            return advance(app_state, s0, dt);
+        }
+        case 2:
+        {
+            auto b0 = mara::make_rational(1, 2);
+            auto s1 = advance(app_state, s0, dt);
+            auto s2 = advance(app_state, s1, dt);
+            return s0 * b0 + s2 * (1 - b0);
+        }
     }
-    throw std::invalid_argument("reconstruct_method must be 1 or 2");
+    throw std::invalid_argument("cloud::next_solution (invalid rk_order)");    
 }
 
 
@@ -679,7 +725,7 @@ void CloudProblem::write_checkpoint(const app_state_t& state, std::string outdir
 {
     auto count = state.schedule.num_times_performed("write_checkpoint");
     auto file = h5::File(mara::filesystem::join(outdir, mara::create_numbered_filename("chkpt", count, "h5")), "w");
-    write_solution(file.require_group("solution"), state.solution_state);
+    write_solution(file.require_group("solution"), state.solution);
     mara::write_schedule(file.require_group("schedule"), state.schedule);
     mara::write_config(file.require_group("config"), state.run_config);
 
@@ -690,7 +736,7 @@ void CloudProblem::write_diagnostics(const app_state_t& state, std::string outdi
 {
     auto count = state.schedule.num_times_performed("write_diagnostics");
     auto file = h5::File(mara::filesystem::join(outdir, mara::create_numbered_filename("diagnostics", count, "h5")), "w");
-    auto diagnostics = make_diagnostic_fields(state.solution_state, state.run_config);
+    auto diagnostics = make_diagnostic_fields(state.solution, state.run_config);
 
     file.write("time",                  diagnostics.time);
     file.write("gas_pressure",          diagnostics.gas_pressure);
@@ -726,7 +772,7 @@ auto CloudProblem::create_app_state(mara::config_t cfg)
 {
     auto state = app_state_t();
     state.run_config     = cfg;
-    state.solution_state = create_solution(cfg);
+    state.solution       = create_solution(cfg);
     state.schedule       = create_schedule(cfg);
     return state;
 }
@@ -734,14 +780,14 @@ auto CloudProblem::create_app_state(mara::config_t cfg)
 auto CloudProblem::next(const app_state_t& state)
 {
     auto next_state = state;
-    next_state.solution_state = next_solution(state);
-    next_state.schedule       = next_schedule(state.schedule, state.run_config, state.solution_state.time);
+    next_state.solution = next_solution(state);
+    next_state.schedule = next_schedule(state.schedule, state.run_config, state.solution.time);
     return next_state;
 }
 
 auto CloudProblem::simulation_should_continue(const app_state_t& state)
 {
-    auto time = state.solution_state.time;
+    auto time = state.solution.time;
     auto tfinal = state.run_config.get_double("tfinal");
     return time < tfinal;
 }
@@ -773,7 +819,7 @@ auto CloudProblem::run_tasks(const app_state_t& state)
 
 
 //=============================================================================
-void CloudProblem::print_run_loop_message(const solution_state_t& solution, mara::perf_diagnostics_t perf)
+void CloudProblem::print_run_loop_message(const solution_t& solution, mara::perf_diagnostics_t perf)
 {
     auto kzps = solution.radial_vertices.size() * solution.polar_vertices.size() / perf.execution_time_ms;
     std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n", solution.iteration.as_integral(), solution.time, kzps);
@@ -843,7 +889,7 @@ public:
         while (prob::simulation_should_continue(state))
         {
             std::tie(state, perf) = mara::time_execution(run_tasks_on_next, state);
-            prob::print_run_loop_message(state.solution_state, perf);
+            prob::print_run_loop_message(state.solution, perf);
         }
 
         run_tasks_on_next(state);
