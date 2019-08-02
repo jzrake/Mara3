@@ -108,6 +108,8 @@ namespace binary
         mara::arithmetic_sequence_t<mara::unit_energy<double>, 2> work_done_on = {};
         mara::unit_mass  <double>                                 mass_ejected = {};
         mara::unit_angmom<double>                                 angular_momentum_ejected = {};
+        mara::orbital_parameters_t                                orbital_elements_acc;
+        mara::orbital_parameters_t                                orbital_elements_grav;
 
         solution_t operator+(const solution_t& other) const;
         solution_t operator*(mara::rational_number_t scale) const;
@@ -141,6 +143,8 @@ namespace binary
         mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> angular_momentum_accreted_on = {};
         mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> integrated_torque_on = {};
         mara::arithmetic_sequence_t<mara::unit_energy<double>, 2> work_done_on = {};
+        mara::orbital_parameters_t                                orbital_elements_acc;
+        mara::orbital_parameters_t                                orbital_elements_grav;
     };
 
 

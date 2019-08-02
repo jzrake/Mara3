@@ -52,6 +52,8 @@ namespace mara
     template<typename T> using unit_mass_density = dimensional_value_t<-3, 1, 0, T>;
     template<typename T> using unit_flow_density = dimensional_value_t<-3, 1,-1, T>;
     template<typename T> using unit_energy       = dimensional_value_t< 2, 1,-2, T>;
+    template<typename T> using unit_force        = dimensional_value_t< 1, 1,-2, T>;
+    template<typename T> using unit_momentum     = dimensional_value_t< 1, 1,-1, T>;
     template<typename T> using unit_torque       = dimensional_value_t< 2, 1,-2, T>;
     template<typename T> using unit_angmom       = dimensional_value_t< 2, 1,-1, T>;
 
@@ -68,6 +70,8 @@ namespace mara
     template<typename T> auto make_mass_density(T value);
     template<typename T> auto make_flow_density(T value);
     template<typename T> auto make_energy(T value);
+    template<typename T> auto make_force(T value);
+    template<typename T> auto make_momentum(T value);
     template<typename T> auto make_torque(T value);
     template<typename T> auto make_angmom(T value);
 
@@ -282,6 +286,8 @@ template<typename T> auto mara::make_flow        (T value) { return make_dimensi
 template<typename T> auto mara::make_mass_density(T value) { return make_dimensional<-3, 1, 0>(value); }
 template<typename T> auto mara::make_flow_density(T value) { return make_dimensional<-3, 1,-1>(value); }
 template<typename T> auto mara::make_energy      (T value) { return make_dimensional< 2, 1,-2>(value); }
+template<typename T> auto mara::make_force       (T value) { return make_dimensional< 1, 1,-2>(value); }
+template<typename T> auto mara::make_momentum    (T value) { return make_dimensional< 1, 1,-1>(value); }
 template<typename T> auto mara::make_torque      (T value) { return make_dimensional< 2, 1,-2>(value); }
 template<typename T> auto mara::make_angmom      (T value) { return make_dimensional< 2, 1,-1>(value); }
 

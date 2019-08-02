@@ -21,10 +21,14 @@ namespace binary
 {
     struct source_term_total_t
     {
-        mara::arithmetic_sequence_t<mara::unit_mass  <double>, 2> mass_accreted_on = {};
-        mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> angular_momentum_accreted_on = {};
-        mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> integrated_torque_on = {};
-        mara::arithmetic_sequence_t<mara::unit_energy<double>, 2> work_done_on = {};
+        mara::arithmetic_sequence_t<mara::unit_mass    <double>, 2> mass_accreted_on = {};
+        mara::arithmetic_sequence_t<mara::unit_angmom  <double>, 2> angular_momentum_accreted_on = {};
+        mara::arithmetic_sequence_t<mara::unit_angmom  <double>, 2> integrated_torque_on = {};
+        mara::arithmetic_sequence_t<mara::unit_momentum<double>, 2> momentum_x_accreted_on = {};
+        mara::arithmetic_sequence_t<mara::unit_momentum<double>, 2> momentum_y_accreted_on = {};
+        mara::arithmetic_sequence_t<mara::unit_momentum<double>, 2> integrated_force_x_on = {};
+        mara::arithmetic_sequence_t<mara::unit_momentum<double>, 2> integrated_force_y_on = {};
+        mara::arithmetic_sequence_t<mara::unit_energy  <double>, 2> work_done_on = {};
         mara::unit_mass  <double>                                 mass_ejected = {};
         mara::unit_angmom<double>                                 angular_momentum_ejected = {};
         source_term_total_t operator+(const source_term_total_t& other) const;
@@ -60,6 +64,10 @@ binary::source_term_total_t binary::source_term_total_t::operator+(const source_
         mass_accreted_on + other.mass_accreted_on,
         angular_momentum_accreted_on + other.angular_momentum_accreted_on,
         integrated_torque_on + other.integrated_torque_on,
+        momentum_x_accreted_on + other.momentum_x_accreted_on,
+        momentum_y_accreted_on + other.momentum_y_accreted_on,
+        integrated_force_x_on + other.integrated_force_x_on,
+        integrated_force_y_on + other.integrated_force_y_on,
         work_done_on + other.work_done_on,
         mass_ejected + other.mass_ejected,
         angular_momentum_ejected + other.angular_momentum_ejected,
@@ -288,15 +296,26 @@ static auto source_terms = [] (auto solver_data, auto solution, auto p0, auto tr
         return p.source_terms_conserved_angmom(cs2) * ramp * dt;
     });
 
+    auto dps1 = nd::zip(s_sink_1, xc) | nd::apply(mara::iso2d::to_conserved_per_area) | nd::map(mara::iso2d::momentum_vector);
+    auto dps2 = nd::zip(s_sink_2, xc) | nd::apply(mara::iso2d::to_conserved_per_area) | nd::map(mara::iso2d::momentum_vector);
+
     auto totals = binary::source_term_total_t();
-    totals.mass_accreted_on[0]             = -(s_sink_1 | component<0>() | nd::multiply(dA) | nd::sum());
-    totals.mass_accreted_on[1]             = -(s_sink_2 | component<0>() | nd::multiply(dA) | nd::sum());
-    totals.angular_momentum_accreted_on[0] = -(s_sink_1 | component<2>() | nd::multiply(dA) | nd::sum());
-    totals.angular_momentum_accreted_on[1] = -(s_sink_2 | component<2>() | nd::multiply(dA) | nd::sum());
-    totals.integrated_torque_on[0]         = -(s_grav_1 | component<2>() | nd::multiply(dA) | nd::sum());
-    totals.integrated_torque_on[1]         = -(s_grav_2 | component<2>() | nd::multiply(dA) | nd::sum());
-    totals.mass_ejected                    = -(s_buffer | component<0>() | nd::multiply(dA) | nd::sum());
-    totals.angular_momentum_ejected        = -(s_buffer | component<2>() | nd::multiply(dA) | nd::sum());
+    totals.mass_accreted_on[0]             = -(s_sink_1    | component<0>() | nd::multiply(dA) | nd::sum());
+    totals.mass_accreted_on[1]             = -(s_sink_2    | component<0>() | nd::multiply(dA) | nd::sum());
+    totals.angular_momentum_accreted_on[0] = -(s_sink_1    | component<2>() | nd::multiply(dA) | nd::sum());
+    totals.angular_momentum_accreted_on[1] = -(s_sink_2    | component<2>() | nd::multiply(dA) | nd::sum());
+    totals.integrated_torque_on[0]         = -(s_grav_1    | component<2>() | nd::multiply(dA) | nd::sum());
+    totals.integrated_torque_on[1]         = -(s_grav_2    | component<2>() | nd::multiply(dA) | nd::sum());
+    totals.mass_ejected                    = -(s_buffer    | component<0>() | nd::multiply(dA) | nd::sum());
+    totals.angular_momentum_ejected        = -(s_buffer    | component<2>() | nd::multiply(dA) | nd::sum());
+    totals.integrated_force_x_on[0]        = -(fg1 * dt    | component<0>() | nd::multiply(dA) | nd::sum());
+    totals.integrated_force_x_on[1]        = -(fg2 * dt    | component<0>() | nd::multiply(dA) | nd::sum());
+    totals.integrated_force_y_on[0]        = -(fg1 * dt    | component<1>() | nd::multiply(dA) | nd::sum());
+    totals.integrated_force_y_on[1]        = -(fg2 * dt    | component<1>() | nd::multiply(dA) | nd::sum());
+    totals.momentum_x_accreted_on[0]       = -(dps1        | component<0>() | nd::multiply(dA) | nd::sum());
+    totals.momentum_x_accreted_on[1]       = -(dps2        | component<0>() | nd::multiply(dA) | nd::sum());
+    totals.momentum_y_accreted_on[0]       = -(dps1        | component<1>() | nd::multiply(dA) | nd::sum());
+    totals.momentum_y_accreted_on[1]       = -(dps2        | component<1>() | nd::multiply(dA) | nd::sum());
 
     return std::make_pair(s_grav_1 + s_grav_2 + s_sink_1 + s_sink_2 + s_buffer + s_geom | nd::to_shared(), totals);
 };
@@ -572,6 +591,47 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     auto totals = block_results.map([] (const auto& t) { return t.second; }).sum();
 
 
+
+    auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
+
+    auto body1_acc = mara::point_mass_t{
+        binary.body1.mass       + totals.mass_accreted_on[0].value,
+        binary.body1.velocity_x + totals.momentum_x_accreted_on[0].value / binary.body1.mass,
+        binary.body1.velocity_y + totals.momentum_y_accreted_on[0].value / binary.body1.mass,
+        binary.body1.position_x,
+        binary.body1.position_y,
+    };
+
+    auto body2_acc = mara::point_mass_t{
+        binary.body2.mass       + totals.mass_accreted_on[1].value,
+        binary.body2.velocity_x + totals.momentum_x_accreted_on[1].value / binary.body2.mass,
+        binary.body2.velocity_y + totals.momentum_y_accreted_on[1].value / binary.body2.mass,
+        binary.body2.position_x,
+        binary.body2.position_y,
+    };
+
+    auto body1_grav = mara::point_mass_t{
+        binary.body1.mass,
+        binary.body1.velocity_x + totals.integrated_force_x_on[0].value / binary.body1.mass,
+        binary.body1.velocity_y + totals.integrated_force_y_on[0].value / binary.body1.mass,
+        binary.body1.position_x,
+        binary.body1.position_y,
+    };
+
+    auto body2_grav = mara::point_mass_t{
+        binary.body2.mass,
+        binary.body2.velocity_x + totals.integrated_force_x_on[1].value / binary.body2.mass,
+        binary.body2.velocity_y + totals.integrated_force_y_on[1].value / binary.body2.mass,
+        binary.body2.position_x,
+        binary.body2.position_y,
+    };
+
+    auto E0 = mara::compute_orbital_elements(binary);
+    auto delta_E_prime_acc   = mara::compute_orbital_elements({body1_acc,  body2_acc})  - E0;
+    auto delta_E_prime_grav  = mara::compute_orbital_elements({body1_grav, body2_grav}) - E0;
+
+
+
     // The full updated solution state
     //=========================================================================
     return validate(solution_t{
@@ -584,6 +644,9 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         solution.work_done_on,
         solution.mass_ejected                 + totals.mass_ejected,
         solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
+        solution.orbital_elements_acc         + delta_E_prime_acc,
+        solution.orbital_elements_grav        + delta_E_prime_grav,
+
     }, solver_data);
 }
 

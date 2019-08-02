@@ -340,6 +340,8 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         sample.angular_momentum_ejected     = state.solution.angular_momentum_ejected;
         sample.disk_mass                    = disk_mass            (state.solution, solver_data);
         sample.disk_angular_momentum        = disk_angular_momentum(state.solution, solver_data);
+        sample.orbital_elements_acc         = state.solution.orbital_elements_acc;
+        sample.orbital_elements_grav        = state.solution.orbital_elements_grav;
 
         state.time_series = state.time_series.prepend(sample);
         return mara::complete_task_in(state, "record_time_series");
@@ -357,20 +359,6 @@ void binary::prepare_filesystem(const mara::config_t& run_config)
     auto outdir = run_config.get_string("outdir");
     mara::filesystem::require_dir(outdir);
 }
-
-// void binary::print_zones_with_negative_density(const solution_t& solution, const solver_data_t& solver_data)
-// {
-//     solution.conserved.indexes().sink([solution, solver_data] (auto index)
-//     {
-//         std::printf("printing it...\n");
-
-//         auto XQ = nd::zip(solver_data.cell_centers.at(index), solution.conserved.at(index));
-
-//         for (auto [x, q] : XQ)
-//             if (mara::get<0>(q) < 0.0)
-//                 std::printf("negative density %e (at position [%lf %lf])\n", mara::get<0>(q).value, x[0].value, x[1].value);
-//     });
-// }
 
 void binary::print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf)
 {
