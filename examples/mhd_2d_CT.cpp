@@ -39,6 +39,7 @@
 #include "core_ndarray_ops.hpp"
 #include "core_hdf5.hpp"
 #include "physics_mhd.hpp"
+#include "physics_mhd_hlld.hpp"
 
 #define gamma_law_index 1.4
 
@@ -448,7 +449,7 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution, mara::unit_t
      */
     auto intercell_flux = [] (std::size_t axis)
     {
-        return [axis, riemann_solver=mara::mhd::riemann_hlle] (auto left_and_right_states)
+        return [axis, riemann_solver=mara::mhd::riemann_hlld] (auto left_and_right_states)
         {
             using namespace std::placeholders;
             auto nh = mara::unit_vector_t::on_axis(axis);
@@ -537,11 +538,6 @@ auto mhd_2dCT::simulation_should_continue( const state_t& state )
 
 mara::unit_time<double> get_timestep( const mhd_2dCT::solution_t& s, double cfl )
 {
-    //return 0.01;
-
-    //auto recover_primitive = std::bind(mara::mhd::recover_primitive, std::placeholders::_1, 0.0);
-
-    
     //=========================================================================
     auto u0 = s.conserved;
     auto B  = nd::zip(s.bfield_x|nd::midpoint_on_axis(0), s.bfield_y|nd::midpoint_on_axis(1), s.bfield_z) | nd::apply(to_magnetic_vector);
@@ -555,7 +551,7 @@ mara::unit_time<double> get_timestep( const mhd_2dCT::solution_t& s, double cfl 
     auto fast_wave_x = primitive  | nd::map([nx] (auto p ) { return p.fast_wave_speeds(nx, gamma_law_index); });
     auto fast_wave_y = primitive  | nd::map([ny] (auto p ) { return p.fast_wave_speeds(ny, gamma_law_index); });
     auto s_x = fast_wave_x | nd::map([] (auto fw) {return std::max( std::abs(fw.p.value), std::abs(fw.m.value) );}) | nd::max();
-    auto s_y = fast_wave_x | nd::map([] (auto fw) {return std::max( std::abs(fw.p.value), std::abs(fw.m.value) );}) | nd::max();
+    auto s_y = fast_wave_y | nd::map([] (auto fw) {return std::max( std::abs(fw.p.value), std::abs(fw.m.value) );}) | nd::max();
     
     auto s_max = mara::make_velocity( std::max(s_x, s_y) );
     return std::min(min_dx, min_dy) / s_max * cfl;
@@ -585,8 +581,6 @@ mara::unit_time<double> get_timestep( const mhd_2dCT::solution_t& s, double cfl 
 mhd_2dCT::solution_t mhd_2dCT::next_solution( const state_t& state )
 {
     auto s0 = state.solution;
-
-    int n = 0;
     auto dt = get_timestep( s0, state.run_config.get_double("cfl") );
 
     switch( state.run_config.get_int("rk_order") )
