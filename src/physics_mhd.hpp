@@ -547,6 +547,14 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
     auto d = U[0].value;
     auto P = primitive_t();
 
+    double dfloor = 1e-5;
+    if( d < dfloor )
+    {
+        // This doesn't actually fix anything....
+        printf(" Hit density floor.... \n");
+        d = dfloor;
+    }
+
     P[0] =  d;
     P[1] =  U[1].value / d;
     P[2] =  U[2].value / d;
@@ -586,7 +594,7 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
     if (P[4] < 0.0 && temperature_floor > 0.0)
     {
         P[4] = temperature_floor * d;
-        printf("Temp. Floor triggered\n");
+        // printf("Temp. Floor triggered\n");
     }
     if( d<0 ) printf("Negative density\n");
     return P;
