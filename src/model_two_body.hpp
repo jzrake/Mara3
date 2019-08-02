@@ -38,7 +38,7 @@ namespace mara
 
 
     //=========================================================================
-    struct two_body_parameters_t
+    struct orbital_elements_t
     {
         double separation     = 1.0;
         double total_mass     = 1.0;
@@ -48,7 +48,7 @@ namespace mara
 
 
     //=========================================================================
-    struct orbital_parameters_t
+    struct full_orbital_elements_t
     {
         double pomega = 0.0;
         double phi = 0.0; // true anomoly + pi
@@ -56,10 +56,10 @@ namespace mara
         double cm_position_y = 0.0;
         double cm_velocity_x = 0.0;
         double cm_velocity_y = 0.0;
-        two_body_parameters_t two_body_parameters;
+        orbital_elements_t elements;
 
-        inline orbital_parameters_t operator+(const orbital_parameters_t&) const;
-        inline orbital_parameters_t operator-(const orbital_parameters_t&) const;
+        inline full_orbital_elements_t operator+(const full_orbital_elements_t&) const;
+        inline full_orbital_elements_t operator-(const full_orbital_elements_t&) const;
     };
 
 
@@ -83,8 +83,10 @@ namespace mara
 
 
     //=========================================================================
-    inline two_body_state_t compute_two_body_state(const two_body_parameters_t& params, double t);
-    inline orbital_parameters_t compute_orbital_elements(const two_body_state_t& two_body);
+    inline two_body_state_t compute_two_body_state(const orbital_elements_t& params, double t);
+    inline full_orbital_elements_t compute_orbital_elements(const two_body_state_t& two_body);
+    inline double orbital_energy(orbital_elements_t elements);
+    inline double orbital_angular_momentum(orbital_elements_t elements);
 }
 
 
@@ -146,7 +148,7 @@ double mara::two_body::detail::clamp(double x0, double x1, double x)
 
 
 //=============================================================================
-mara::two_body_state_t mara::compute_two_body_state(const two_body_parameters_t& params, double t)
+mara::two_body_state_t mara::compute_two_body_state(const orbital_elements_t& params, double t)
 {
     double e = params.eccentricity;
     double q = params.mass_ratio;
@@ -193,7 +195,7 @@ mara::two_body_state_t mara::compute_two_body_state(const two_body_parameters_t&
 
 
 //=============================================================================
-mara::orbital_parameters_t mara::compute_orbital_elements(const two_body_state_t& two_body)
+mara::full_orbital_elements_t mara::compute_orbital_elements(const two_body_state_t& two_body)
 {
     auto c1 = two_body.body1;
     auto c2 = two_body.body2;
@@ -241,8 +243,8 @@ mara::orbital_parameters_t mara::compute_orbital_elements(const two_body_state_t
     double a = -0.5 * M1 * M2 / E;
     double b = std::sqrt(-0.5 * L * L / E * (M1 + M2) / (M1 * M2));
     double e = std::sqrt(1.0 - b * b / a / a);
-    // double rmin = a - std::sqrt(a * a + b * b);
-    // double rmax = a + std::sqrt(a * a + b * b);
+    // double rmin = a - std::sqrt(a * a - b * b);
+    // double rmax = a + std::sqrt(a * a - b * b);
 
 
     // Eccentricity angle (pomega)
@@ -254,17 +256,17 @@ mara::orbital_parameters_t mara::compute_orbital_elements(const two_body_state_t
 
 
     // Store results
-    auto P = orbital_parameters_t();
+    auto P = full_orbital_elements_t();
     P.phi = std::acos(two_body::detail::clamp(-1.0, 1.0, cf));
     P.pomega = two_body::detail::wrap(0.0, 2 * M_PI, pomega);
     P.cm_position_x = x_cm;
     P.cm_position_y = y_cm;
     P.cm_velocity_x = vx_cm;
     P.cm_velocity_y = vy_cm;
-    P.two_body_parameters.separation = a;
-    P.two_body_parameters.total_mass = M;
-    P.two_body_parameters.mass_ratio = q;
-    P.two_body_parameters.eccentricity = e;
+    P.elements.separation = a;
+    P.elements.total_mass = M;
+    P.elements.mass_ratio = q;
+    P.elements.eccentricity = e;
 
 
     // Check that it was a valid orbit
@@ -277,7 +279,32 @@ mara::orbital_parameters_t mara::compute_orbital_elements(const two_body_state_t
     return P;
 }
 
-mara::orbital_parameters_t mara::orbital_parameters_t::operator+(const orbital_parameters_t& other) const
+double mara::orbital_energy(orbital_elements_t elements)
+{
+    double a = elements.separation;
+    double q = elements.mass_ratio;
+    double M = elements.total_mass;
+    double M1 = M / (1 + q);
+    double M2 = M - M1;
+    double E = -0.5 * M1 * M2 / a;
+    return E;
+}
+
+double mara::orbital_angular_momentum(orbital_elements_t elements)
+{
+    double a = elements.separation;
+    double q = elements.mass_ratio;
+    double e = elements.eccentricity;
+    double M = elements.total_mass;
+    double M1 = M / (1 + q);
+    double M2 = M - M1;
+    double mu = M1 * M2 / M;
+    double b2 = a * a * (1.0 - e * e);
+    double L2 = -2.0 * orbital_energy(elements) * b2 * mu;
+    return std::sqrt(L2);
+}
+
+mara::full_orbital_elements_t mara::full_orbital_elements_t::operator+(const full_orbital_elements_t& other) const
 {
     return {
         pomega + other.pomega,
@@ -287,15 +314,15 @@ mara::orbital_parameters_t mara::orbital_parameters_t::operator+(const orbital_p
         cm_velocity_x + other.cm_velocity_x,
         cm_velocity_y + other.cm_velocity_y,
         {
-            two_body_parameters.separation + other.two_body_parameters.separation,
-            two_body_parameters.total_mass + other.two_body_parameters.total_mass,
-            two_body_parameters.mass_ratio + other.two_body_parameters.mass_ratio,
-            two_body_parameters.eccentricity + other.two_body_parameters.eccentricity,
+            elements.separation + other.elements.separation,
+            elements.total_mass + other.elements.total_mass,
+            elements.mass_ratio + other.elements.mass_ratio,
+            elements.eccentricity + other.elements.eccentricity,
         },
     };
 }
 
-mara::orbital_parameters_t mara::orbital_parameters_t::operator-(const orbital_parameters_t& other) const
+mara::full_orbital_elements_t mara::full_orbital_elements_t::operator-(const full_orbital_elements_t& other) const
 {
     return {
         pomega - other.pomega,
@@ -305,10 +332,10 @@ mara::orbital_parameters_t mara::orbital_parameters_t::operator-(const orbital_p
         cm_velocity_x - other.cm_velocity_x,
         cm_velocity_y - other.cm_velocity_y,
         {
-            two_body_parameters.separation - other.two_body_parameters.separation,
-            two_body_parameters.total_mass - other.two_body_parameters.total_mass,
-            two_body_parameters.mass_ratio - other.two_body_parameters.mass_ratio,
-            two_body_parameters.eccentricity - other.two_body_parameters.eccentricity,
+            elements.separation - other.elements.separation,
+            elements.total_mass - other.elements.total_mass,
+            elements.mass_ratio - other.elements.mass_ratio,
+            elements.eccentricity - other.elements.eccentricity,
         },
     };
 }

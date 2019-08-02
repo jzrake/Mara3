@@ -180,9 +180,9 @@ binary::quad_tree_t<binary::location_2d_t> binary::create_vertices(const mara::c
     });
 }
 
-mara::two_body_parameters_t binary::create_binary_params(const mara::config_t& run_config)
+mara::orbital_elements_t binary::create_binary_params(const mara::config_t& run_config)
 {
-    auto binary = mara::two_body_parameters_t();
+    auto binary = mara::orbital_elements_t();
     binary.total_mass   = 1.0;
     binary.separation   = run_config.get_double("separation");
     binary.mass_ratio   = run_config.get_double("mass_ratio");

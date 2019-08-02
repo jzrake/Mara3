@@ -41,9 +41,9 @@ struct h5::hdf5_type_info<mara::iso2d::conserved_angmom_per_area_t>
 
 //=============================================================================
 template<>
-struct h5::hdf5_type_info<mara::two_body_parameters_t>
+struct h5::hdf5_type_info<mara::orbital_elements_t>
 {
-    using native_type = mara::two_body_parameters_t;
+    using native_type = mara::orbital_elements_t;
     static auto make_datatype_for(const native_type& value)
     {
         return h5::Datatype::compound<native_type>({
@@ -66,9 +66,9 @@ struct h5::hdf5_type_info<mara::two_body_parameters_t>
 
 //=============================================================================
 template<>
-struct h5::hdf5_type_info<mara::orbital_parameters_t>
+struct h5::hdf5_type_info<mara::full_orbital_elements_t>
 {
-    using native_type = mara::orbital_parameters_t;
+    using native_type = mara::full_orbital_elements_t;
     static auto make_datatype_for(const native_type& value)
     {
         return h5::Datatype::compound<native_type>({
@@ -78,7 +78,7 @@ struct h5::hdf5_type_info<mara::orbital_parameters_t>
             h5_compound_type_member(native_type, cm_position_y),
             h5_compound_type_member(native_type, cm_velocity_x),
             h5_compound_type_member(native_type, cm_velocity_y),
-            h5_compound_type_member(native_type, two_body_parameters),
+            h5_compound_type_member(native_type, elements),
         });
     }
     static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
