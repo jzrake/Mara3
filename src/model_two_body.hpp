@@ -60,6 +60,7 @@ namespace mara
 
         inline full_orbital_elements_t operator+(const full_orbital_elements_t&) const;
         inline full_orbital_elements_t operator-(const full_orbital_elements_t&) const;
+        inline full_orbital_elements_t operator*(double scale) const;
     };
 
 
@@ -83,6 +84,7 @@ namespace mara
 
 
     //=========================================================================
+    inline full_orbital_elements_t make_full_orbital_elements_with_zeros();
     inline two_body_state_t compute_two_body_state(const orbital_elements_t& params, double t);
     inline full_orbital_elements_t compute_orbital_elements(const two_body_state_t& two_body);
     inline double orbital_energy(orbital_elements_t elements);
@@ -195,6 +197,19 @@ mara::two_body_state_t mara::compute_two_body_state(const orbital_elements_t& pa
 
 
 //=============================================================================
+mara::full_orbital_elements_t mara::make_full_orbital_elements_with_zeros()
+{
+    auto result = full_orbital_elements_t{};
+    result.elements.mass_ratio = 0.0;
+    result.elements.separation = 0.0;
+    result.elements.total_mass = 0.0;
+    return result;
+}
+
+
+
+
+//=============================================================================
 mara::full_orbital_elements_t mara::compute_orbital_elements(const two_body_state_t& two_body)
 {
     auto c1 = two_body.body1;
@@ -242,12 +257,12 @@ mara::full_orbital_elements_t mara::compute_orbital_elements(const two_body_stat
     // Semi-major, semi-minor axes; eccentricity, apsides
     double a = -0.5 * M1 * M2 / E;
     double b = std::sqrt(-0.5 * L * L / E * (M1 + M2) / (M1 * M2));
-    double e = std::sqrt(1.0 - b * b / a / a);
+    double e = std::sqrt(1.0 - std::min(1.0, b * b / a / a));
     // double rmin = a - std::sqrt(a * a - b * b);
     // double rmax = a + std::sqrt(a * a - b * b);
 
 
-    // Eccentricity angle (pomega)
+    // Argument of periapsis (pomega)
     double a2 = a / (1.0 + q);
     double b2 = b / (1.0 + q);
     double cf = e == 0.0 ? -1.0 : -(a2 - r2) / (a2 * e);
@@ -336,6 +351,24 @@ mara::full_orbital_elements_t mara::full_orbital_elements_t::operator-(const ful
             elements.total_mass - other.elements.total_mass,
             elements.mass_ratio - other.elements.mass_ratio,
             elements.eccentricity - other.elements.eccentricity,
+        },
+    };
+}
+
+mara::full_orbital_elements_t mara::full_orbital_elements_t::operator*(double scale) const
+{
+    return {
+        pomega * scale,
+        phi * scale,
+        cm_position_x * scale,
+        cm_position_y * scale,
+        cm_velocity_x * scale,
+        cm_velocity_y * scale,
+        {
+            elements.separation * scale,
+            elements.total_mass * scale,
+            elements.mass_ratio * scale,
+            elements.eccentricity * scale,
         },
     };
 }

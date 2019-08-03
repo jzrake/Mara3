@@ -61,7 +61,7 @@ def get_ranges(args):
     @return     The vmin/vmax values
     """
     return dict(
-        sigma_range=eval(args.sigma, dict(default=[ -2.0, 0.0])),
+        sigma_range=eval(args.sigma, dict(default=[ -6.5,-4.5])),
         vr_range   =eval(args.vr,    dict(default=[ -0.5, 0.5])),
         vp_range   =eval(args.vp,    dict(default=[  0.0, 2.0])))
 
@@ -304,11 +304,42 @@ def time_series(args):
 
 
 
+def time_series_orbital_elements(args):
+
+    fname = args.filenames[0]
+    h5f = h5py.File(fname, 'r')
+    ts = unzip_time_series(h5f['time_series'])
+
+
+    fig = plt.figure(figsize=[15, 9])
+    ax1 = fig.add_subplot(2, 1, 1)
+    ax2 = fig.add_subplot(2, 1, 2)
+
+    orbits = h5f['time_series']['time'] / 2 / np.pi
+    a_acc  = h5f['time_series']['orbital_elements_acc' ]['elements']['separation']
+    a_grav = h5f['time_series']['orbital_elements_grav']['elements']['separation']
+    e_acc  = h5f['time_series']['orbital_elements_acc' ]['elements']['eccentricity']
+    e_grav = h5f['time_series']['orbital_elements_grav']['elements']['eccentricity']
+    M_acc  = h5f['time_series']['orbital_elements_acc' ]['elements']['total_mass']
+    M_grav = h5f['time_series']['orbital_elements_grav']['elements']['total_mass']
+
+    ax1.plot(orbits, e_acc, '-o')
+    ax2.plot(orbits, e_grav, '-o')
+
+    ax1.set_ylabel(r'Accretion')
+    ax2.set_ylabel(r'Gravity')
+    ax2.set_xlabel("Orbits")
+    plt.show()
+
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("filenames", nargs='+')
     parser.add_argument("--movie", action='store_true')
     parser.add_argument("--time-series", '-t', action='store_true')
+    parser.add_argument("--orbital-elements", '-e', action='store_true')
     parser.add_argument("--avg-only", action='store_true')
     parser.add_argument("--show-total", action='store_true')
     parser.add_argument("--saturation-time", type=float, default=150.0)
@@ -325,6 +356,8 @@ if __name__ == "__main__":
 
     if args.time_series:
         time_series(args)
+    elif args.orbital_elements:
+        time_series_orbital_elements(args)
     elif args.movie:
         make_movie(args)
     else:

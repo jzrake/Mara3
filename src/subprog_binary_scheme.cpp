@@ -1,4 +1,3 @@
-#include <iostream>
 #include "core_ndarray_ops.hpp"
 #include "math_interpolation.hpp"
 #include "mesh_prolong_restrict.hpp"
@@ -626,10 +625,9 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         binary.body2.position_y,
     };
 
-    auto E0 = mara::compute_orbital_elements(binary);
+    auto E0                  = mara::compute_orbital_elements(binary);
     auto delta_E_prime_acc   = mara::compute_orbital_elements({body1_acc,  body2_acc})  - E0;
     auto delta_E_prime_grav  = mara::compute_orbital_elements({body1_grav, body2_grav}) - E0;
-
 
 
     // The full updated solution state
@@ -646,7 +644,6 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
         solution.orbital_elements_acc         + delta_E_prime_acc,
         solution.orbital_elements_grav        + delta_E_prime_grav,
-
     }, solver_data);
 }
 
@@ -667,6 +664,8 @@ binary::solution_t binary::solution_t::operator+(const solution_t& other) const
         work_done_on                   + other.work_done_on,
         mass_ejected                   + other.mass_ejected,
         angular_momentum_ejected       + other.angular_momentum_ejected,
+        orbital_elements_acc           + other.orbital_elements_acc,
+        orbital_elements_grav          + other.orbital_elements_grav,
     };
 }
 
@@ -683,6 +682,8 @@ binary::solution_t binary::solution_t::operator*(mara::rational_number_t scale) 
         work_done_on                   * scale.as_double(),
         mass_ejected                   * scale.as_double(),
         angular_momentum_ejected       * scale.as_double(),
+        orbital_elements_acc           * scale.as_double(),
+        orbital_elements_grav          * scale.as_double(),
     };
 }
 

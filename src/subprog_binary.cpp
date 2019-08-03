@@ -80,6 +80,7 @@ mara::config_template_t binary::create_config_template()
     .item("buffer_damping_rate", 10.0)          // maximum rate of buffer zone, where solution is driven to initial state
     .item("domain_radius",       24.0)          // half-size of square domain
     .item("disk_radius",          2.0)          // characteristic disk radius (in units of binary separation)
+    .item("disk_mass",           1e-3)          // total disk mass (in units of the binary mass)
     .item("ambient_density",     1e-4)          // surface density beyond torus
     .item("separation",           1.0)          // binary separation: 0.0 or 1.0 (zero emulates a single body)
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
@@ -98,6 +99,7 @@ binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_
     auto softening_radius  = run_config.get_double("softening_radius");
     auto disk_radius       = run_config.get_double("disk_radius");
     auto mach_number       = run_config.get_double("mach_number");
+    auto disk_mass         = run_config.get_double("disk_mass");
     auto ambient_density   = run_config.get_double("ambient_density");
     auto counter_rotate    = run_config.get_int("counter_rotate");
     auto rc = disk_radius;
@@ -105,15 +107,10 @@ binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_
 
     auto sigma = [=] (double r)
     {
+        auto sigma0 = disk_mass / (17.0618 * rc * rc); // see mathematica notebook
         auto x = r / rc;
-        return std::exp(-0.5 * (x - 1) * (x - 1)) + s1;
+        return sigma0 * (std::exp(-0.5 * (x - 1) * (x - 1)) + s1);
     };
-
-    // auto dlogsigma_dlogr = [=] (double r)
-    // {
-    //     auto x = r / rc;
-    //     return x * (1 - x) * (1 - s1 / sigma(r));
-    // };
 
     auto dp_dr = [=] (double r)
     {
@@ -132,15 +129,9 @@ binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_
         auto r              = std::sqrt(r2);
         auto rs             = softening_radius;
         auto GM             = 1.0;
-        // auto cs2            = 1.0 / mach_number / mach_number; // constant sound-speed
-        // auto gradp_term     = dp_dr(r) * r / sigma(r);
-        // auto vp             = std::sqrt(GM / (r + rs) + cs2 * dlogsigma_dlogr(r)) * (counter_rotate ? -1 : 1);
         auto vp             = std::sqrt(GM / (r + rs) + dp_dr(r)) * (counter_rotate ? -1 : 1);
         auto vx             = vp * (-y / r);
         auto vy             = vp * ( x / r);
-
-        // if (GM / (r + rs) + gradp_term < 0.0)
-        //     throw std::invalid_argument("no disk solution: increase mach_number or ambient_density");
 
         return mara::iso2d::primitive_t()
             .with_sigma(sigma(r))
@@ -200,7 +191,12 @@ binary::solution_t binary::create_solution(const mara::config_t& run_config)
         | nd::apply([] (auto x, auto p) { return p.to_conserved_angmom_per_area(x); })
         | nd::to_shared();
     });
-    return solution_t{0, 0.0, conserved, {}, {}, {}, {}, {}, {}};
+
+    return solution_t{
+        0, 0.0, conserved, {}, {}, {}, {}, {}, {},
+        mara::make_full_orbital_elements_with_zeros(),
+        mara::make_full_orbital_elements_with_zeros(),
+    };
 }
 
 mara::schedule_t binary::create_schedule(const mara::config_t& run_config)
