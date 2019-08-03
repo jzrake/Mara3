@@ -323,11 +323,14 @@ def time_series_orbital_elements(args):
     M_acc  = h5f['time_series']['orbital_elements_acc' ]['elements']['total_mass']
     M_grav = h5f['time_series']['orbital_elements_grav']['elements']['total_mass']
 
-    ax1.plot(orbits, e_acc, '-o')
-    ax2.plot(orbits, e_grav, '-o')
+    ax1.plot(orbits, a_acc)
+    ax1.plot(orbits, a_grav)
 
-    ax1.set_ylabel(r'Accretion')
-    ax2.set_ylabel(r'Gravity')
+    ax2.plot(orbits, e_acc)
+    ax2.plot(orbits, e_grav)
+
+    ax1.set_ylabel(r'Separation')
+    ax2.set_ylabel(r'Eccentricity')
     ax2.set_xlabel("Orbits")
     plt.show()
 

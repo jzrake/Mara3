@@ -81,7 +81,7 @@ mara::config_template_t binary::create_config_template()
     .item("domain_radius",       24.0)          // half-size of square domain
     .item("disk_radius",          2.0)          // characteristic disk radius (in units of binary separation)
     .item("disk_mass",           1e-3)          // total disk mass (in units of the binary mass)
-    .item("ambient_density",     1e-4)          // surface density beyond torus
+    .item("ambient_density",     1e-4)          // surface density beyond torus (relative to mas sigma)
     .item("separation",           1.0)          // binary separation: 0.0 or 1.0 (zero emulates a single body)
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
@@ -103,13 +103,13 @@ binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_
     auto ambient_density   = run_config.get_double("ambient_density");
     auto counter_rotate    = run_config.get_int("counter_rotate");
     auto rc = disk_radius;
-    auto s1 = ambient_density;
+    auto s0 = disk_mass / (17.0618 * rc * rc); // see mathematica notebook
+    auto s1 = ambient_density * s0;
 
     auto sigma = [=] (double r)
     {
-        auto sigma0 = disk_mass / (17.0618 * rc * rc); // see mathematica notebook
         auto x = r / rc;
-        return sigma0 * (std::exp(-0.5 * (x - 1) * (x - 1)) + s1);
+        return s0 * std::exp(-0.5 * (x - 1) * (x - 1)) + s1;
     };
 
     auto dp_dr = [=] (double r)
