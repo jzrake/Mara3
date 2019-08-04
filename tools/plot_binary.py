@@ -320,18 +320,18 @@ def time_series_orbital_elements(args):
     a_grav = h5f['time_series']['orbital_elements_grav']['elements']['separation']
     e_acc  = h5f['time_series']['orbital_elements_acc' ]['elements']['eccentricity']
     e_grav = h5f['time_series']['orbital_elements_grav']['elements']['eccentricity']
-    M_acc  = h5f['time_series']['orbital_elements_acc' ]['elements']['total_mass']
-    M_grav = h5f['time_series']['orbital_elements_grav']['elements']['total_mass']
+    dx_acc  = h5f['time_series']['orbital_elements_acc' ]['cm_position_x']
+    dx_grav = h5f['time_series']['orbital_elements_grav']['cm_position_x']
 
-    ax1.plot(orbits, a_acc)
-    ax1.plot(orbits, a_grav)
-
-    ax2.plot(orbits, e_acc)
-    ax2.plot(orbits, e_grav)
+    ax1.plot(orbits, a_acc,  label='Accretion')
+    ax1.plot(orbits, a_grav, label='Gravitational')
+    ax2.plot(orbits, e_acc,  label='Accretion')
+    ax2.plot(orbits, e_grav, label='Gravitational')
 
     ax1.set_ylabel(r'Separation')
     ax2.set_ylabel(r'Eccentricity')
     ax2.set_xlabel("Orbits")
+    ax1.legend()
     plt.show()
 
 

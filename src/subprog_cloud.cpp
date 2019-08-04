@@ -50,9 +50,6 @@
 
 
 #define gamma_law_index (4. / 3)
-#define cfl_number 0.4
-#define plm_theta 1.2
-#define temperature_floor 1e-8
 #define light_speed_cgs 3e10
 #define solar_mass_cgs 2e33
 
@@ -79,10 +76,14 @@ static auto config_template()
     .item("jet_total_energy",      1e50)   // total energy (solid-angle and time-integrated) to be injected (erg)
     .item("jet_duration",           1.0)   // engine duration (in seconds)
     .item("jet_gamma_beta",        10.0)   // jet gamma-beta on-axis
-    .item("jet_opening_angle",      0.1)
-    .item("jet_structure_exp",      2.0)
+    .item("jet_opening_angle",      0.1)   // jet opening-angle, theta_j
+    .item("jet_structure_exp",      2.0)   // jet structure exponent alpha: exp[-(theta/theta_j)^alpha]
+    .item("cfl_number",             0.4)   // CLF parameter
     .item("rk_order",                 1)   // RK time stepping mode (1 or 2)
-    .item("reconstruct_method",       2);  // spatial reconstruction method: 1 for PCM, 2 for PLM
+    .item("reconstruct_method",       2)   // spatial reconstruction method: 1 for PCM, 2 for PLM
+    .item("plm_theta",              1.2)   // PLM theta parameter
+    .item("temperature_floor",     1e-8);  // temperature floor (0.0 means no floor is applied)
+
 }
 
 
@@ -210,7 +211,7 @@ struct CloudProblem
 
     //=========================================================================
     static auto intercell_flux(std::size_t axis);
-    static auto estimate_gradient_plm(double ul, double u0, double ur);
+    static auto estimate_gradient_plm(double plm_theta);
     static auto extend_zero_gradient_inner();
     static auto extend_zero_gradient_outer();
     static auto extend_inflow_nozzle_inner(const app_state_t& app_state);
@@ -330,7 +331,7 @@ auto CloudProblem::make_diagnostic_fields(const solution_t& state, const mara::c
     auto dv           = cell_volumes     (state.radial_vertices, state.polar_vertices);
     auto dAr          = radial_face_areas(state.radial_vertices, state.polar_vertices);
     auto rhat         = mara::unit_vector_t::on_axis_1();
-    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, _1, gamma_law_index, temperature_floor);
+    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, _1, gamma_law_index, cfg.get_double("temperature_floor"));
     auto radial_cells = state.radial_vertices | nd::midpoint_on_axis(0);
     auto primitive    = state.conserved | nd::divide(dv) | nd::map(cons_to_prim);
 
@@ -438,17 +439,20 @@ auto CloudProblem::intercell_flux(std::size_t axis)
     };
 }
 
-auto CloudProblem::estimate_gradient_plm(double ul, double u0, double ur)
+auto CloudProblem::estimate_gradient_plm(double plm_theta)
 {
-    using std::min;
-    using std::fabs;
-    auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
-    auto sgn = [] (auto x) { return std::copysign(1, x); };
+    return [plm_theta] (double ul, double u0, double ur)
+    {
+        using std::min;
+        using std::fabs;
+        auto min3abs = [] (auto a, auto b, auto c) { return min(min(fabs(a), fabs(b)), fabs(c)); };
+        auto sgn = [] (auto x) { return std::copysign(1, x); };
 
-    auto a = plm_theta * (u0 - ul);
-    auto b =       0.5 * (ur - ul);
-    auto c = plm_theta * (ur - u0);
-    return 0.25 * fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
+        auto a = plm_theta * (u0 - ul);
+        auto b =       0.5 * (ur - ul);
+        auto c = plm_theta * (ur - u0);
+        return 0.25 * fabs(sgn(a) + sgn(b)) * (sgn(a) + sgn(c)) * min3abs(a, b, c);
+    };
 }
 
 auto CloudProblem::extend_inflow_nozzle_inner(const app_state_t& app_state)
@@ -505,7 +509,8 @@ auto CloudProblem::advance(const app_state_t& app_state, const solution_t& solut
         return primitive.spherical_geometry_source_terms(r, q, gamma_law_index);
     };
 
-    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index, temperature_floor);
+    auto temp_floor   = app_state.run_config.get_double("temperature_floor");
+    auto cons_to_prim = std::bind(mara::srhd::recover_primitive, std::placeholders::_1, gamma_law_index, temp_floor);
     auto extend_bc    = mara::compose(extend_inflow_nozzle_inner(app_state), extend_zero_gradient_outer());
     auto evaluate     = mara::evaluate_on<MARA_PREFERRED_THREAD_COUNT>();
 
@@ -521,8 +526,9 @@ auto CloudProblem::advance(const app_state_t& app_state, const solution_t& solut
     if (app_state.run_config.get_int("reconstruct_method") == 1)
     {
         auto extrapolate = nd::zip_adjacent2_on_axis;
-        auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux(0) | nd::multiply(-dAr) | nd::difference_on_axis(0);
-        auto lq = p0 | extrapolate(1) | intercell_flux(1) | nd::extend_zeros(1) | nd::multiply(-dAq) | nd::difference_on_axis(1);
+
+        auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux(0)                       | nd::multiply(-dAr) | nd::difference_on_axis(0);
+        auto lq = p0 |             extrapolate(1) | intercell_flux(1) | nd::extend_zeros(1) | nd::multiply(-dAq) | nd::difference_on_axis(1);
         auto u1 = u0 + (lr + lq + s0) * dt;
 
         return solution_t {
@@ -535,15 +541,15 @@ auto CloudProblem::advance(const app_state_t& app_state, const solution_t& solut
 
     if (app_state.run_config.get_int("reconstruct_method") == 2)
     {
-        auto extrapolate = [] (std::size_t axis)
+        auto extrapolate = [plm_theta=app_state.run_config.get_double("plm_theta")] (std::size_t axis)
         {
-            return [axis] (auto P)
+            return [axis, plm_theta] (auto P)
             {
                 auto L = nd::select_axis(axis).from(0).to(1).from_the_end();
                 auto R = nd::select_axis(axis).from(1).to(0).from_the_end();
                 auto G = P
                 | nd::zip_adjacent3_on_axis(axis)
-                | nd::apply(mara::lift(estimate_gradient_plm))
+                | nd::apply(mara::lift(estimate_gradient_plm(plm_theta)))
                 | nd::extend_zeros(axis)
                 | nd::to_shared();
 
@@ -553,8 +559,8 @@ auto CloudProblem::advance(const app_state_t& app_state, const solution_t& solut
             };
         };
 
-        auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux(0) | nd::multiply(-dAr) | nd::difference_on_axis(0);
-        auto lq = p0 | extrapolate(1) | intercell_flux(1) | nd::extend_zeros(1) | nd::multiply(-dAq) | nd::difference_on_axis(1);
+        auto lr = p0 | extend_bc | extrapolate(0) | intercell_flux(0)                       | nd::multiply(-dAr) | nd::difference_on_axis(0);
+        auto lq = p0 |             extrapolate(1) | intercell_flux(1) | nd::extend_zeros(1) | nd::multiply(-dAq) | nd::difference_on_axis(1);
         auto u1 = u0 + (lr + lq + s0) * dt;
 
         return solution_t {
@@ -642,7 +648,7 @@ auto CloudProblem::create_solution(const mara::config_t& cfg)
 auto CloudProblem::next_solution(const app_state_t& app_state)
 {
     auto dr_min = app_state.solution.radial_vertices | nd::difference_on_axis(0) | nd::read_index(0);
-    auto dt = dr_min / mara::make_velocity(1.0) * cfl_number;
+    auto dt = dr_min / mara::make_velocity(1.0) * app_state.run_config.get_double("cfl_number");
     auto s0 = app_state.solution;
 
     switch (app_state.run_config.get_int("rk_order"))
