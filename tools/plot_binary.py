@@ -320,14 +320,18 @@ def time_series_orbital_elements(args):
     a_grav = h5f['time_series']['orbital_elements_grav']['elements']['separation']
     e_acc  = h5f['time_series']['orbital_elements_acc' ]['elements']['eccentricity']
     e_grav = h5f['time_series']['orbital_elements_grav']['elements']['eccentricity']
-    dx_acc  = h5f['time_series']['orbital_elements_acc' ]['cm_position_x']
-    dx_grav = h5f['time_series']['orbital_elements_grav']['cm_position_x']
+    M_disk = h5f['time_series']['disk_mass']
 
-    ax1.plot(orbits, a_acc,  label='Accretion')
-    ax1.plot(orbits, a_grav, label='Gravitational')
-    ax2.plot(orbits, e_acc,  label='Accretion')
-    ax2.plot(orbits, e_grav, label='Gravitational')
+    # dx_acc  = h5f['time_series']['orbital_elements_acc' ]['cm_position_x']
+    # dx_grav = h5f['time_series']['orbital_elements_grav']['cm_position_x']
 
+    ax1.plot(orbits, a_acc  / M_disk * M_disk[0], label='Accretion')
+    ax1.plot(orbits, a_grav / M_disk * M_disk[0], label='Gravitational')
+    ax2.plot(orbits, e_acc  / M_disk * M_disk[0], label='Accretion')
+    ax2.plot(orbits, e_grav / M_disk * M_disk[0], label='Gravitational')
+    # ax2.plot(orbits, 0.0008 * orbits**0.5, c='k', ls='--')
+    # ax2.set_xscale('log')
+    # ax2.set_yscale('log')
     ax1.set_ylabel(r'Separation')
     ax2.set_ylabel(r'Eccentricity')
     ax2.set_xlabel("Orbits")
