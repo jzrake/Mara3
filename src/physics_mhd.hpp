@@ -157,7 +157,6 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     primitive_t with_bfield_3(double v)     const { auto res = *this; res[7] = v; return res; }
 
 
-
     //=========================================================================
     /**
      * @brief      Return the square of the four-velocity magnitude.
@@ -405,6 +404,25 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     }
 
     /**
+     * @brief         Force longitudinal fields to be equal
+     *
+     */
+    primitive_t no_bfield_jump(primitive_t other, mara::unit_vector_t nhat) const
+    {
+        const auto& _ = *this;
+
+        auto b1   =     _.bfield_along(nhat);
+        auto b2   = other.bfield_along(nhat);
+        auto bavg = 0.5 * (b1 + b2);
+        if( nhat[0]==1.0 ) return _.with_bfield_1(bavg);
+        if( nhat[1]==1.0 ) return _.with_bfield_2(bavg);
+        if( nhat[2]==1.0 ) return _.with_bfield_3(bavg);
+        else
+            throw std::invalid_argument("mara::mhd::no_bfield_jump (only works for cartesion fluxes)");
+    }
+
+
+    /**
      * @brief      Return the flux of conserved quantities in the given
      *             direction.
      *
@@ -619,12 +637,19 @@ mara::mhd::flux_vector_t mara::mhd::riemann_hlle(
     const unit_vector_t& nhat,
     double gamma_law_index)
 {
-    auto Ul = Pl.to_conserved_density(gamma_law_index);
-    auto Ur = Pr.to_conserved_density(gamma_law_index);
-    auto Al = Pl.fast_wave_speeds(nhat, gamma_law_index ); 
-    auto Ar = Pr.fast_wave_speeds(nhat, gamma_law_index );
-    auto Fl = Pl.flux(nhat, Ul);
-    auto Fr = Pr.flux(nhat, Ur);
+    primitive_t Pl_twiddle, Pr_twiddle;
+    auto b_along = 0.5 * (Pl.bfield_along(nhat) + Pr.bfield_along(nhat));
+    
+    if( nhat[0]==1.0 ) { Pl_twiddle = Pl.with_bfield_1(b_along); Pr_twiddle = Pr.with_bfield_1(b_along);}
+    if( nhat[1]==1.0 ) { Pl_twiddle = Pl.with_bfield_2(b_along); Pr_twiddle = Pr.with_bfield_2(b_along);}
+    if( nhat[2]==1.0 ) { Pl_twiddle = Pl.with_bfield_3(b_along); Pr_twiddle = Pr.with_bfield_3(b_along);}
+    
+    auto Ul = Pl_twiddle.to_conserved_density(gamma_law_index);
+    auto Ur = Pr_twiddle.to_conserved_density(gamma_law_index);
+    auto Al = Pl_twiddle.fast_wave_speeds(nhat, gamma_law_index ); 
+    auto Ar = Pr_twiddle.fast_wave_speeds(nhat, gamma_law_index );
+    auto Fl = Pl_twiddle.flux(nhat, Ul);
+    auto Fr = Pr_twiddle.flux(nhat, Ur);
 
     auto ap = std::max(make_velocity(0.0), std::max(Al.p, Ar.p));
     auto am = std::min(make_velocity(0.0), std::min(Al.m, Ar.m));

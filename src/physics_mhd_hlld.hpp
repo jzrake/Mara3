@@ -323,6 +323,16 @@ struct mara::mhd::riemann_hlld_variables_t
 
     mara::mhd::flux_vector_t interface_flux() const
     {
+    	// If internal pressure negative, use HLL FLux
+    	// ====================================================================
+    	// if( pstar < 0.0 )
+    	// {
+    	// 	printf("Fluxes in safe mode\n");
+    	// 	auto ap = mara::make_velocity(std::max(0.0,SR));
+    	// 	auto am = mara::make_velocity(std::max(0.0,SL));
+    	// 	return (FL() * ap - FR() * am - (UL() - UR()) * ap * am) / (ap - am);
+    	// }
+
         if      (0.0     <= SL                  ) return FL();
         else if ( SL     <= 0.0 && 0.0 <= SLstar) return FL_star();
         else if ( SLstar <= 0.0 && 0.0 <= SM    ) return FL_starstar();
@@ -451,8 +461,8 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     auto pstar_one = (SR - ur) * dr * plT - (SL - ul) * dl * prT;
     auto pstar_two = (SR - ur) * (SL - ul) * (ur - ul) * dl * dr;
     auto pstar_bot = (SR - ur) * dr - (SL - ul) * dl;
-    auto pstar     = std::max( 0.0, (pstar_one + pstar_two)/pstar_bot );
-    // auto pstar = (pstar_one + pstar_two) / pstar_bot;
+    // auto pstar     = std::max( 0.0, (pstar_one + pstar_two)/pstar_bot );
+    auto pstar = (pstar_one + pstar_two) / pstar_bot;
 
 
     if (pstar < 0.0)
@@ -502,7 +512,14 @@ inline mara::mhd::flux_vector_t mara::mhd::riemann_hlld(
         const unit_vector_t& nhat,
         double gamma_law_index)
 {
-    return compute_hlld_variables(Pl, Pr, nhat, gamma_law_index).interface_flux();
+	primitive_t Pl_twiddle, Pr_twiddle;
+    auto b_along = 0.5 * (Pl.bfield_along(nhat) + Pr.bfield_along(nhat));
+    
+    if( nhat[0]==1.0 ) { Pl_twiddle = Pl.with_bfield_1(b_along); Pr_twiddle = Pr.with_bfield_1(b_along);}
+    if( nhat[1]==1.0 ) { Pl_twiddle = Pl.with_bfield_2(b_along); Pr_twiddle = Pr.with_bfield_2(b_along);}
+    if( nhat[2]==1.0 ) { Pl_twiddle = Pl.with_bfield_3(b_along); Pr_twiddle = Pr.with_bfield_3(b_along);}
+
+    return compute_hlld_variables(Pl_twiddle, Pr_twiddle, nhat, gamma_law_index).interface_flux();
 }
 
 
