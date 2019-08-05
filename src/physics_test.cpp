@@ -226,6 +226,9 @@ TEST_CASE("Two body model perturbation works as expected", "[model_two_body]")
         REQUIRE(std::fabs(binary1.cm_velocity_x) < 1e-12);
         REQUIRE(std::fabs(binary1.cm_velocity_y) < 1e-12);
         REQUIRE(binary1.elements.total_mass == Approx(binary.total_mass));
+        REQUIRE(binary1.elements.mass_ratio == Approx(binary.mass_ratio));
+        REQUIRE(binary1.elements.separation == Approx(binary.separation));
+        REQUIRE(binary1.elements.eccentricity == Approx(binary.eccentricity));
     }
     SECTION("radial kick to both components at periapsis does not change energy, eccentricity, or angular momentum")
     {

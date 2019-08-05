@@ -595,34 +595,34 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     auto body1_acc = mara::point_mass_t{
         binary.body1.mass       + totals.mass_accreted_on[0].value,
-        binary.body1.velocity_x + totals.momentum_x_accreted_on[0].value / binary.body1.mass,
-        binary.body1.velocity_y + totals.momentum_y_accreted_on[0].value / binary.body1.mass,
         binary.body1.position_x,
         binary.body1.position_y,
+        binary.body1.velocity_x + totals.momentum_x_accreted_on[0].value / binary.body1.mass,
+        binary.body1.velocity_y + totals.momentum_y_accreted_on[0].value / binary.body1.mass,
     };
 
     auto body2_acc = mara::point_mass_t{
         binary.body2.mass       + totals.mass_accreted_on[1].value,
-        binary.body2.velocity_x + totals.momentum_x_accreted_on[1].value / binary.body2.mass,
-        binary.body2.velocity_y + totals.momentum_y_accreted_on[1].value / binary.body2.mass,
         binary.body2.position_x,
         binary.body2.position_y,
+        binary.body2.velocity_x + totals.momentum_x_accreted_on[1].value / binary.body2.mass,
+        binary.body2.velocity_y + totals.momentum_y_accreted_on[1].value / binary.body2.mass,
     };
 
     auto body1_grav = mara::point_mass_t{
         binary.body1.mass,
-        binary.body1.velocity_x + totals.integrated_force_x_on[0].value / binary.body1.mass,
-        binary.body1.velocity_y + totals.integrated_force_y_on[0].value / binary.body1.mass,
         binary.body1.position_x,
         binary.body1.position_y,
+        binary.body1.velocity_x + totals.integrated_force_x_on[0].value / binary.body1.mass,
+        binary.body1.velocity_y + totals.integrated_force_y_on[0].value / binary.body1.mass,
     };
 
     auto body2_grav = mara::point_mass_t{
         binary.body2.mass,
-        binary.body2.velocity_x + totals.integrated_force_x_on[1].value / binary.body2.mass,
-        binary.body2.velocity_y + totals.integrated_force_y_on[1].value / binary.body2.mass,
         binary.body2.position_x,
         binary.body2.position_y,
+        binary.body2.velocity_x + totals.integrated_force_x_on[1].value / binary.body2.mass,
+        binary.body2.velocity_y + totals.integrated_force_y_on[1].value / binary.body2.mass,
     };
 
     auto E0                  = mara::compute_orbital_elements(binary);
