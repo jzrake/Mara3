@@ -39,8 +39,9 @@
 #include "core_ndarray_ops.hpp"
 #include "core_hdf5.hpp"
 #include "physics_mhd.hpp"
+#include "physics_mhd_hlld.hpp"
 
-#define gamma_law_index 2.0
+#define gamma_law_index 1.4
 
 // ============================================================================
 //                                  Header 
@@ -307,8 +308,69 @@ auto blast_wave(mhd_2d::location_2d_t position)
     auto blast    = r < 0.1;
     auto pressure = blast ? 1000. : 0.1;
 
-    auto bx = 28.2;  // = 100/sqrt(4*pi)
+    auto bx = 0.0; //28.2;  // = 100/sqrt(4*pi)
     auto by = 0.0;
+    auto bz = 0.0;
+    
+    return mara::mhd::primitive_t()
+     .with_mass_density(density)
+     .with_gas_pressure(pressure)
+     .with_velocity_1(0.0)
+     .with_velocity_2(0.0)
+     .with_velocity_3(0.0)
+     .with_bfield_1(bx)
+     .with_bfield_2(by)
+     .with_bfield_3(bz);
+}
+
+auto test_hlld_1(mhd_2d::location_2d_t position)
+{
+    if( gamma_law_index!= 1.4 )
+        throw std::invalid_argument("wrong gamma: for this problem gamma=1.4");
+
+    auto x = position[0].value;
+    auto y = position[1].value;
+
+    auto r = std::sqrt(x * x + y * y);
+    auto theta = std::atan2(y , x);
+    auto sinth = std::sin(theta);
+    auto costh = std::cos(theta);
+
+    auto density  = 1.0;
+    auto pressure = 1.0;
+
+    auto B  =  2.0;
+    auto b0 =  B * r * std::exp(-r);
+    auto bx = -b0 * sinth;
+    auto by =  b0 * costh;
+    auto bz =  0.0;
+    
+    return mara::mhd::primitive_t()
+     .with_mass_density(density)
+     .with_gas_pressure(pressure)
+     .with_velocity_1(0.0)
+     .with_velocity_2(0.0)
+     .with_velocity_3(0.0)
+     .with_bfield_1(bx)
+     .with_bfield_2(by)
+     .with_bfield_3(bz);
+}
+
+
+auto test_hlld_2(mhd_2d::location_2d_t position)
+{
+    if( gamma_law_index!= 1.4 )
+        throw std::invalid_argument("wrong gamma: for this problem gamma=1.4");
+
+    auto x = position[0].value;
+    auto y = position[1].value;
+
+    auto density  = 1.0;
+    auto pressure = 1.0;
+
+    auto b0 = 1.0;
+    auto by = x<0 ? -b0 : b0;
+    auto bx = 0.0;
     auto bz = 0.0;
     
     return mara::mhd::primitive_t()
@@ -373,7 +435,7 @@ mhd_2d::solution_t mhd_2d::create_solution( const mara::config_t& run_config )
     auto conserved = vertices
          | nd::midpoint_on_axis(0)
          | nd::midpoint_on_axis(1)
-         | nd::map(duffel_flywheel)
+         | nd::map(test_hlld_1)
          | nd::map([] (auto p) { return p.to_conserved_density(gamma_law_index); }) // prim2cons
          | nd::to_shared();
     return solution_t{ 0.0, 0, vertices, conserved };
@@ -429,12 +491,37 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution, mara::unit_time<
      */
     auto intercell_flux = [] (std::size_t axis)
     {
-        return [axis, riemann_solver=mara::mhd::riemann_hlle] (auto left_and_right_states)
+        return [axis, riemann_solver=mara::mhd::riemann_hlld] (auto left_and_right_states)
         {
             using namespace std::placeholders;
             auto nh = mara::unit_vector_t::on_axis(axis);
             auto riemann = std::bind(riemann_solver, _1, _2, nh, gamma_law_index);
             return left_and_right_states | nd::apply(riemann);
+        };
+    };
+
+    /**
+     * @brief           Get average longitudinal field between two states 
+     *                    - Required for flux calculation with constant B_parallel
+     *
+     * @param[in]  dir  The direction
+     *
+     * return           An operator that returns tuples of post-averaged state
+     */
+    auto average_longitudinal_field = [] (int dir)
+    {
+        return [dir] (auto left_and_right_states)
+        {
+            auto average_field = [dir] (auto Pl, auto Pr)
+            {
+                mara::mhd::primitive_t Pl_twiddle, Pr_twiddle;
+                auto nh = mara::unit_vector_t::on_axis(dir);
+                auto b_along = 0.5 * (Pl.bfield_along(nh) + Pr.bfield_along(nh));                
+                if( dir==0 ) { Pl_twiddle = Pl.with_bfield_1(b_along); Pr_twiddle = Pr.with_bfield_1(b_along);}
+                if( dir==1 ) { Pl_twiddle = Pl.with_bfield_2(b_along); Pr_twiddle = Pr.with_bfield_2(b_along);}
+                return std::make_tuple(Pl_twiddle, Pr_twiddle);
+            };
+            return left_and_right_states | nd::apply(average_field);
         };
     };
 
@@ -448,10 +535,10 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution, mara::unit_time<
 
     // Extend for ghost-cells and get fluxes with specified riemann solver
     // ========================================================================
-    // auto fx  =  w0 | nd::extend_zero_gradient(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0);
-    // auto fy  =  w0 | nd::extend_zero_gradient(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1);
-    auto fx  =  w0 | nd::extend_periodic_on_axis(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0);
-    auto fy  =  w0 | nd::extend_periodic_on_axis(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1);
+    auto fx  =  w0 | nd::extend_zero_gradient(0) | nd::zip_adjacent2_on_axis(0) | average_longitudinal_field(0) | intercell_flux(0);
+    auto fy  =  w0 | nd::extend_zero_gradient(1) | nd::zip_adjacent2_on_axis(1) | average_longitudinal_field(1) | intercell_flux(1);
+    // auto fx  =  w0 | nd::extend_periodic_on_axis(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0);
+    // auto fy  =  w0 | nd::extend_periodic_on_axis(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1);
     auto lx  =  fx | nd::multiply(dy) | nd::difference_on_axis(0);
     auto ly  =  fy | nd::multiply(dx) | nd::difference_on_axis(1);
 

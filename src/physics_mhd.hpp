@@ -636,20 +636,13 @@ mara::mhd::flux_vector_t mara::mhd::riemann_hlle(
     const primitive_t& Pr,
     const unit_vector_t& nhat,
     double gamma_law_index)
-{
-    primitive_t Pl_twiddle, Pr_twiddle;
-    auto b_along = 0.5 * (Pl.bfield_along(nhat) + Pr.bfield_along(nhat));
-    
-    if( nhat[0]==1.0 ) { Pl_twiddle = Pl.with_bfield_1(b_along); Pr_twiddle = Pr.with_bfield_1(b_along);}
-    if( nhat[1]==1.0 ) { Pl_twiddle = Pl.with_bfield_2(b_along); Pr_twiddle = Pr.with_bfield_2(b_along);}
-    if( nhat[2]==1.0 ) { Pl_twiddle = Pl.with_bfield_3(b_along); Pr_twiddle = Pr.with_bfield_3(b_along);}
-    
-    auto Ul = Pl_twiddle.to_conserved_density(gamma_law_index);
-    auto Ur = Pr_twiddle.to_conserved_density(gamma_law_index);
-    auto Al = Pl_twiddle.fast_wave_speeds(nhat, gamma_law_index ); 
-    auto Ar = Pr_twiddle.fast_wave_speeds(nhat, gamma_law_index );
-    auto Fl = Pl_twiddle.flux(nhat, Ul);
-    auto Fr = Pr_twiddle.flux(nhat, Ur);
+{  
+    auto Ul = Pl.to_conserved_density(gamma_law_index);
+    auto Ur = Pr.to_conserved_density(gamma_law_index);
+    auto Al = Pl.fast_wave_speeds(nhat, gamma_law_index ); 
+    auto Ar = Pr.fast_wave_speeds(nhat, gamma_law_index );
+    auto Fl = Pl.flux(nhat, Ul);
+    auto Fr = Pr.flux(nhat, Ur);
 
     auto ap = std::max(make_velocity(0.0), std::max(Al.p, Ar.p));
     auto am = std::min(make_velocity(0.0), std::min(Al.m, Ar.m));
