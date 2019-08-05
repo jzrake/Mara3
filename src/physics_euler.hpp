@@ -317,7 +317,7 @@ struct mara::euler::primitive_t : public mara::derivable_sequence_t<double, 5, p
 
 
 
-    /**
+    /*
      * @brief      Special case of the above for 1d radial flow
      *
      * @param[in]  spherical_radius  The spherical radius
