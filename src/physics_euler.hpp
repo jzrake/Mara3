@@ -317,14 +317,14 @@ struct mara::euler::primitive_t : public mara::derivable_sequence_t<double, 5, p
 
 
 
-    *
+    /*
      * @brief      Special case of the above for 1d radial flow
      *
      * @param[in]  spherical_radius  The spherical radius
      * @param[in]  gamma_law_index   The gamma law index
      *
      * @return     Source terms in units of mass / volume / time
-     
+     */
     auto spherical_geometry_source_terms_radial(double spherical_radius, double gamma_law_index)
     {
         auto vq = velocity_2();
