@@ -57,11 +57,11 @@ struct mara::mhd::riemann_hlld_variables_t
     mara::arithmetic_sequence_t<double, 3> b_perp_l;
     mara::arithmetic_sequence_t<double, 3> b_perp_r;
 
-    double dl;  //density
+    double dl;   // density
     double dr;
-    double ul;  //velocity along nhat
+    double ul;   // velocity along nhat
     double ur;
-    double plT;  //total pressure = p + B^2 / 2
+    double plT;  // total pressure = p + B^2 / 2
     double prT;
     double pstar;
     double b_along;
@@ -72,7 +72,6 @@ struct mara::mhd::riemann_hlld_variables_t
     double SRstar;
     double SM;
 
-
     auto UL() const { return PL.to_conserved_density(gamma_law_index); }
     auto UR() const { return PR.to_conserved_density(gamma_law_index); }
     auto FL() const { return PL.flux(nhat, gamma_law_index); }
@@ -80,11 +79,12 @@ struct mara::mhd::riemann_hlld_variables_t
 
     mara::mhd::conserved_density_t UL_star() const
     {
-        auto d_star = dl * (SL - ul) / (SL - SM);
-        
+        auto d_star  = dl * (SL - ul) / (SL - SM);
         auto beta    = (SM - ul) / ( dl * (SL - ul) * (SL - SM) - b_along * b_along );
-        if( std::abs( dl * (SL - ul) * (SL - SM) - b_along * b_along )<1e-10)
-            printf("Need that condition\n");
+
+        if (std::abs(dl * (SL - ul) * (SL - SM) - b_along * b_along ) < 1e-10)
+            std::printf("Need that condition\n");
+
         auto vx_star = SM * nhat[0] + v_perp_l[0] - beta * b_along * b_perp_l[0];
         auto vy_star = SM * nhat[1] + v_perp_l[1] - beta * b_along * b_perp_l[1];
         auto vz_star = SM * nhat[2] + v_perp_l[2] - beta * b_along * b_perp_l[2];
@@ -92,8 +92,10 @@ struct mara::mhd::riemann_hlld_variables_t
         auto num     = dl * (SL - ul) * (SL - ul) - b_along * b_along;
         auto denom   = dl * (SL - ul) * (SL - SM) - b_along * b_along;
         auto zeta    = num / denom;
-        if( std::abs(denom)<1e-10 )
-            printf("need that condition\n");
+
+        if (std::abs(denom) < 1e-10)
+            std::printf("need that condition\n");
+
         auto bx_star = zeta * b_perp_l[0] + b_para_l[0];
         auto by_star = zeta * b_perp_l[1] + b_para_l[1];
         auto bz_star = zeta * b_perp_l[2] + b_para_l[2];
@@ -175,7 +177,8 @@ struct mara::mhd::riemann_hlld_variables_t
         auto sgn = [] (double x) { return std::copysign(1.0, x); };
         auto b_sign  = sgn(b_along);
 
-        if( b_along != 0.0 ){  //use b_along or b_sign??
+        if (b_along != 0.0)
+        {
             auto Ul_star = UL_star();
             auto d_star  = Ul_star[0].value;
             auto vx_star = Ul_star[1].value / d_star;
@@ -209,9 +212,7 @@ struct mara::mhd::riemann_hlld_variables_t
                 bz_starstar
             };
         }
-        else{
-            return UL_star();
-        }
+        return UL_star();
     }
 
     mara::mhd::conserved_density_t UR_starstar() const
@@ -219,7 +220,8 @@ struct mara::mhd::riemann_hlld_variables_t
         auto sgn = [] (double x) { return std::copysign(1.0, x); };
         auto b_sign  = sgn(b_along);
 
-        if( b_along != 0.0 ){  //use b_along or b_sign??
+        if (b_along != 0.0)
+        {
             auto Ur_star = UR_star();
             auto d_star  = Ur_star[0].value;
             auto vx_star = Ur_star[1].value / d_star;
@@ -253,12 +255,10 @@ struct mara::mhd::riemann_hlld_variables_t
                 bz_starstar 
             };
         }
-        else{
-            return UR_star();
-        }
+        return UR_star();
     }
 
-    mara::arithmetic_sequence_t<double,3> get_v_starstar(const mara::mhd::conserved_density_t& UL_star, const mara::mhd::conserved_density_t& UR_star, int b_sign) const
+    mara::arithmetic_sequence_t<double,3> get_v_starstar(const mara::mhd::conserved_density_t& UL_star, const mara::mhd::conserved_density_t& UR_star, double b_sign) const
     {
         auto dl_star  = UL_star[0].value;
         auto dr_star  = UR_star[0].value;
@@ -277,7 +277,7 @@ struct mara::mhd::riemann_hlld_variables_t
 
         auto rt_dl_star = std::sqrt(dl_star);
         auto rt_dr_star = std::sqrt(dr_star);
-        
+
         auto eta        =  rt_dl_star + rt_dr_star;
         auto u_starstar = (rt_dl_star * ul_star + rt_dr_star * ur_star + (bxr_star - bxl_star) * b_sign) / eta;
         auto v_starstar = (rt_dl_star * vl_star + rt_dr_star * vr_star + (byr_star - byl_star) * b_sign) / eta;
@@ -286,7 +286,7 @@ struct mara::mhd::riemann_hlld_variables_t
         return mara::arithmetic_sequence_t<double, 3>{u_starstar, v_starstar, w_starstar};
     }
 
-    mara::arithmetic_sequence_t<double,3> get_b_starstar(const conserved_density_t& UL_star, const conserved_density_t& UR_star, int b_sign) const
+    mara::arithmetic_sequence_t<double,3> get_b_starstar(const conserved_density_t& UL_star, const conserved_density_t& UR_star, double b_sign) const
     {
         auto dl_star  = UL_star[0].value;
         auto dr_star  = UR_star[0].value;
@@ -305,16 +305,14 @@ struct mara::mhd::riemann_hlld_variables_t
 
         auto rt_dl_star = std::sqrt(dl_star);
         auto rt_dr_star = std::sqrt(dr_star);
-        
+
         auto eta         = rt_dl_star + rt_dr_star;
         auto bx_starstar = rt_dl_star * bxr_star + rt_dr_star * bxl_star + rt_dl_star * rt_dr_star * (ur_star - ul_star) * b_sign;
         auto by_starstar = rt_dl_star * byr_star + rt_dr_star * byl_star + rt_dl_star * rt_dr_star * (vr_star - vl_star) * b_sign;
         auto bz_starstar = rt_dl_star * bzr_star + rt_dr_star * bzl_star + rt_dl_star * rt_dr_star * (wr_star - wl_star) * b_sign;
-        
-        
+
         return mara::arithmetic_sequence_t<double, 3>{bx_starstar/eta, by_starstar/eta, bz_starstar/eta};
     }
-
 
     auto FL_star()     const { return FL() + (UL_star() - UL()) * make_velocity(SL); }
     auto FR_star()     const { return FR() + (UR_star() - UR()) * make_velocity(SR); }
@@ -324,15 +322,19 @@ struct mara::mhd::riemann_hlld_variables_t
     mara::mhd::flux_vector_t interface_flux() const
     {
         if      (0.0     <= SL                  ) return FL();
-        else if ( SL     <= 0.0 && 0.0 <= SLstar) return FL_star();
-        else if ( SLstar <= 0.0 && 0.0 <= SM    ) return FL_starstar();
-        else if ( SM     <= 0.0 && 0.0 <= SRstar) return FR_starstar();
-        else if ( SRstar <= 0.0 && 0.0 <= SR    ) return FR_star();
-        else if ( SR     <= 0.0                 ) return FR();
-        printf("ERROR... (SL, SLstar, SM, SRstar, SR):  (%f, %f, %f, %f, %f)\n", SL, SLstar, SM, SRstar, SR);
+        else if (SL      <= 0.0 && 0.0 <= SLstar) return FL_star();
+        else if (SLstar  <= 0.0 && 0.0 <= SM    ) return FL_starstar();
+        else if (SM      <= 0.0 && 0.0 <= SRstar) return FR_starstar();
+        else if (SRstar  <= 0.0 && 0.0 <= SR    ) return FR_star();
+        else if (SR      <= 0.0                 ) return FR();
+
+        std::printf("ERROR... (SL, SLstar, SM, SRstar, SR):  (%f, %f, %f, %f, %f)\n", SL, SLstar, SM, SRstar, SR);
+
         throw std::invalid_argument("riemann_hlld_variables_t::interface_flux");
     }
 };
+
+
 
 
 /**
@@ -344,13 +346,15 @@ inline mara::mhd::flux_vector_t mara::mhd::conserved_to_flux(
     const mara::unit_vector_t& nhat,
     double gamma_law_index)
 {
-    auto   temp_floor = 1e-4;
+    auto temp_floor = 1e-4;
     return mara::mhd::recover_primitive(U, gamma_law_index, temp_floor).flux(nhat, U);
 }
 
 
+
+
 /**
- * @brief     Compute quantities for hlld riemann solver
+ * @brief     Compute quantities for HLLD riemann solver
  * 
  */
 inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
@@ -362,11 +366,10 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     auto throw_if_nan = [] (double x, const char* what)
     {
         if (std::isnan(x))
-        {
             throw std::invalid_argument(what);
-        }
         return x;
     };
+
 
     // Left and Right prims for calculations
     // ========================================================================
@@ -376,22 +379,7 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     auto ul  = throw_if_nan(Pl.velocity_along(nhat), "mara::mhd::compute_hlld_variables (nan velocity_l)");
     auto prT = Pr.gas_pressure() + 0.5 * Pr.bfield_squared();
     auto plT = Pl.gas_pressure() + 0.5 * Pl.bfield_squared();
-
-    if (dl <= 0.0 || dr <= 0.0)
-        throw std::invalid_argument("mara::mhd::compute_hlld_variables (negative density)");
-
-    if (plT <= 0.0 || prT <= 0.0)
-        throw std::invalid_argument("mara::mhd::compute_hlld_variables (negative pressure)");
-
-
-    // Force bfield in direction of nhat to be the same on left and right
-    // ========================================================================
-    if (Pr.bfield_along(nhat) != Pl.bfield_along(nhat))
-    {
-        throw std::invalid_argument("mara::mhd::compute_hlld_variables (jump in longitudinal B-field)");
-    }
-
-    auto b_along = 0.5 * (Pr.bfield_along(nhat) + Pl.bfield_along(nhat));
+    auto b_along = Pl.bfield_along(nhat);
 
 
     // Left and Right parallel and perpendicular velocity and field vectors
@@ -408,28 +396,17 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
 
     // Get fast waves and the outermost signal speeds
     // ========================================================================
-    // auto FWl = Pl.fast_wave_speeds(nhat, gamma_law_index ); 
-    // auto FWr = Pr.fast_wave_speeds(nhat, gamma_law_index );
-    // auto SL  = std::min(FWl.m.value, FWr.m.value);
-    // auto SR  = std::max(FWl.p.value, FWr.p.value);
     auto cfl = Pl.magnetosonic_speed_squared_fast(nhat, gamma_law_index);
     auto cfr = Pr.magnetosonic_speed_squared_fast(nhat, gamma_law_index);
     auto SL  = std::min(ul, ur) - std::max(cfl, cfr);
     auto SR  = std::max(ul, ur) + std::max(cfl, cfr);
     
 
-    if (std::isnan(SL) || std::isnan(SR))
-        throw std::invalid_argument("mara::mhd::compute_hlld_variables (nan left or right wave speeds)");
-
-
     // Get signal speed associated with the entropy wave: Eq.(38)
     // ========================================================================
     auto SM_top = (SR - ur) * dr * ur - (SL - ul) * dl * ul - prT + plT; 
     auto SM_bot = (SR - ur) * dr - (SL - ul) * dl;
     auto SM     = SM_top / SM_bot;
-
-    if (std::isnan(SM))
-        throw std::invalid_argument("mara::mhd::compute_hlld_variables (nan contact speed)");
 
 
     // Get signal speed associated with internal alfven waves: Eqs.(43) & (51)
@@ -439,26 +416,44 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     auto SLstar = SM - std::abs(b_along) / std::sqrt(dstar_l);
     auto SRstar = SM + std::abs(b_along) / std::sqrt(dstar_r);
 
-    if (dstar_l < 0.0 || dstar_r < 0.0)
-        throw std::invalid_argument("mara::mhd::compute_hlld_variables (negative intermediate density)");
-
-    if (std::isnan(SLstar) || std::isnan(SRstar))
-        throw std::invalid_argument("mara::mhd::compute_hlld_variables (nan intermediate wavespeed)");
-
 
     // Get the average-total-pressure in Riemann fan: Eq.(41)
     // ========================================================================
     auto pstar_one = (SR - ur) * dr * plT - (SL - ul) * dl * prT;
     auto pstar_two = (SR - ur) * (SL - ul) * (ur - ul) * dl * dr;
     auto pstar_bot = (SR - ur) * dr - (SL - ul) * dl;
-    auto pstar     = std::max( 0.0, (pstar_one + pstar_two)/pstar_bot );
-    // auto pstar = (pstar_one + pstar_two) / pstar_bot;
+    auto pstar = (pstar_one + pstar_two) / pstar_bot;
 
 
-    if (pstar < 0.0)
-        throw std::invalid_argument("mara::mhd::compute_hlld_variables (negative intermediate pressure)");
+    // Validate a bunch of things
+    // ========================================================================
+    if (Pr.bfield_along(nhat) != Pl.bfield_along(nhat))
+        throw std::invalid_argument("mara::mhd::compute_hlld_variables (jump in longitudinal B-field)");
+
+    if (std::isnan(SL) || std::isnan(SR))
+        throw std::invalid_argument("mara::mhd::compute_hlld_variables (nan left or right wave speeds)");
+
+    if (std::isnan(SLstar) || std::isnan(SRstar))
+        throw std::invalid_argument("mara::mhd::compute_hlld_variables (nan intermediate wavespeed)");
+
+    if (std::isnan(SM))
+        throw std::invalid_argument("mara::mhd::compute_hlld_variables (nan contact speed)");
+
+    if (dl <= 0.0 || dr <= 0.0)
+        throw std::invalid_argument("mara::mhd::compute_hlld_variables (negative density)");
+
+    if (dstar_l < 0.0 || dstar_r < 0.0)
+        throw std::invalid_argument("mara::mhd::compute_hlld_variables (negative intermediate density)");
+
+    // if (plT <= 0.0 || prT <= 0.0)
+    //     throw std::invalid_argument("mara::mhd::compute_hlld_variables (negative pressure)");
+
+    // if (pstar < 0.0)
+    //     throw std::invalid_argument("mara::mhd::compute_hlld_variables (negative intermediate pressure)");
 
 
+    // Assemble the results
+    // ========================================================================
     auto r     = riemann_hlld_variables_t();
     r.nhat     = nhat;
     r.PL       = Pl;
@@ -485,6 +480,7 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     r.SRstar   = SRstar;
     r.SM       = SM;
     r.gamma_law_index = gamma_law_index;
+
     return r;
 }
 
@@ -504,13 +500,3 @@ inline mara::mhd::flux_vector_t mara::mhd::riemann_hlld(
 {
     return compute_hlld_variables(Pl, Pr, nhat, gamma_law_index).interface_flux();
 }
-
-
-
-
-
-
-
-
-
-//=============================================================================
