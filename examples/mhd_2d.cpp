@@ -338,7 +338,7 @@ auto test_hlld_1(mhd_2d::location_2d_t position)
     auto density  = 1.0;
     auto pressure = 1.0;
 
-    auto B  =  2.0;
+    auto B  =  5.0;
     auto b0 =  B * r * std::exp(-r);
     auto bx = -b0 * sinth;
     auto by =  b0 * costh;
@@ -371,6 +371,36 @@ auto test_hlld_2(mhd_2d::location_2d_t position)
     auto by = x<0 ? -b0 : b0;
     auto bx = 0.0;
     auto bz = 0.0;
+    
+    return mara::mhd::primitive_t()
+     .with_mass_density(density)
+     .with_gas_pressure(pressure)
+     .with_velocity_1(0.0)
+     .with_velocity_2(0.0)
+     .with_velocity_3(0.0)
+     .with_bfield_1(bx)
+     .with_bfield_2(by)
+     .with_bfield_3(bz);
+}
+
+auto test_hlld_3(mhd_2d::location_2d_t position)
+{
+    if( gamma_law_index!= 1.4 )
+        throw std::invalid_argument("wrong gamma: for this problem gamma=1.4");
+
+    auto sig = 0.2;
+    auto x = position[0].value;
+    auto y = position[1].value;
+
+    auto r = std::sqrt(x * x + y * y);
+
+    auto B        = 1.0;
+    auto density  = 1.0;
+    auto pressure = 2 * B * exp(-r * r / (2 * sig * sig));
+
+    auto bx =  B;
+    auto by =  0.0;
+    auto bz =  0.0;
     
     return mara::mhd::primitive_t()
      .with_mass_density(density)
@@ -434,7 +464,7 @@ mhd_2d::solution_t mhd_2d::create_solution( const mara::config_t& run_config )
     auto conserved = vertices
          | nd::midpoint_on_axis(0)
          | nd::midpoint_on_axis(1)
-         | nd::map(test_hlld_1)
+         | nd::map(blast_wave)
          | nd::map([] (auto p) { return p.to_conserved_density(gamma_law_index); }) // prim2cons
          | nd::to_shared();
     return solution_t{ 0.0, 0, vertices, conserved };
@@ -490,7 +520,7 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution, mara::unit_time<
      */
     auto intercell_flux = [] (std::size_t axis)
     {
-        return [axis, riemann_solver=mara::mhd::riemann_hlle] (auto left_and_right_states)
+        return [axis, riemann_solver=mara::mhd::riemann_hlld] (auto left_and_right_states)
         {
             using namespace std::placeholders;
             auto nh = mara::unit_vector_t::on_axis(axis);
@@ -506,17 +536,17 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution, mara::unit_time<
      *
      * return           An operator that returns tuples of post-averaged state
      */
-    auto average_longitudinal_field = [] (int dir)
+    auto average_longitudinal_field = [] (std::size_t axis)
     {
-        return [dir] (auto left_and_right_states)
+        return [axis] (auto left_and_right_states)
         {
-            auto average_field = [dir] (auto Pl, auto Pr)
+            auto average_field = [axis] (auto Pl, auto Pr)
             {
                 mara::mhd::primitive_t Pl_, Pr_;
-                auto nh = mara::unit_vector_t::on_axis(dir);
-                auto b_along = 0.5 * (Pl.bfield_along(nh) + Pr.bfield_along(nh));                
-                if( dir==0 ) { Pl_ = Pl.with_bfield_1(b_along); Pr_ = Pr.with_bfield_1(b_along);}
-                if( dir==1 ) { Pl_ = Pl.with_bfield_2(b_along); Pr_ = Pr.with_bfield_2(b_along);}
+                auto nh = mara::unit_vector_t::on_axis(axis);
+                auto b_along = 0.5 * (Pl.bfield_along(nh) + Pr.bfield_along(nh));
+                if     ( axis==0 ) { Pl_ = Pl.with_bfield_1(b_along); Pr_ = Pr.with_bfield_1(b_along);}
+                else if( axis==1 ) { Pl_ = Pl.with_bfield_2(b_along); Pr_ = Pr.with_bfield_2(b_along);}
                 else {throw std::invalid_argument("mara::mhd::average_longitudinal_field (invalid direction)");}
                 return std::make_tuple(Pl_, Pr_);
             };

@@ -391,6 +391,36 @@ auto test_hlld_1(mhd_2dCT::location_2d_t position)
      .with_bfield_3(bz);
 }
 
+auto test_hlld_2(mhd_2dCT::location_2d_t position)
+{
+    if( gamma_law_index!= 1.4 )
+        throw std::invalid_argument("wrong gamma: for this problem gamma=1.4");
+
+    auto sig = 0.2;
+    auto x = position[0].value;
+    auto y = position[1].value;
+
+    auto r = std::sqrt(x * x + y * y);
+
+    auto B        = 1.0;
+    auto density  = 1.0;
+    auto pressure = 2 * B * exp(-r * r / (2 * sig * sig));
+
+    auto bx =  B;
+    auto by =  0.0;
+    auto bz =  0.0;
+    
+    return mara::mhd::primitive_t()
+     .with_mass_density(density)
+     .with_gas_pressure(pressure)
+     .with_velocity_1(0.0)
+     .with_velocity_2(0.0)
+     .with_velocity_3(0.0)
+     .with_bfield_1(bx)
+     .with_bfield_2(by)
+     .with_bfield_3(bz);
+}
+
 /**
  * @brief             Create an initial solution object according to initial_condition()
  *                      
@@ -412,7 +442,7 @@ mhd_2dCT::solution_t mhd_2dCT::create_solution( const mara::config_t& run_config
     auto primitive = vertices 
             | nd::midpoint_on_axis(0) 
             | nd::midpoint_on_axis(1) 
-            | nd::map(test_hlld_1);
+            | nd::map(blast_wave);
     
     auto conserved = primitive 
             | nd::map(to_conserved)
@@ -482,7 +512,7 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution, mara::unit_t
      */
     auto intercell_flux = [] (std::size_t axis)
     {
-        return [axis, riemann_solver=mara::mhd::riemann_hlld] (auto left_and_right_states)
+        return [axis, riemann_solver=mara::mhd::riemann_hlle] (auto left_and_right_states)
         {
             using namespace std::placeholders;
             auto nh = mara::unit_vector_t::on_axis(axis);

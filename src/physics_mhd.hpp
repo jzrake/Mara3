@@ -162,8 +162,7 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         if( axis==0 ) return _.with_bfield_1(the_b.value);
         if( axis==1 ) return _.with_bfield_2(the_b.value);
         if( axis==2 ) return _.with_bfield_3(the_b.value);
-        else
-            throw std::invalid_argument("mara::mhd::no_bfield_jump (only works for cartesion fluxes)");
+        throw std::invalid_argument("mara::mhd::no_bfield_jump (only works for cartesion fluxes)");
     }
 
 
