@@ -303,12 +303,11 @@ auto blast_wave(mhd_2d::location_2d_t position)
     auto y = position[1];
     auto r = std::sqrt(x.value * x.value + y.value * y.value);
 
-    auto density = 1.0;
-
     auto blast    = r < 0.1;
-    auto pressure = blast ? 1000. : 0.1;
+    auto pressure = blast ? 2.0 : 1.0;
+    auto density  = blast ? 2.0 : 1.0;
 
-    auto bx = 0.0; //28.2;  // = 100/sqrt(4*pi)
+    auto bx = 5.0; //28.2;  // = 100/sqrt(4*pi)
     auto by = 0.0;
     auto bz = 0.0;
     
@@ -491,7 +490,7 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution, mara::unit_time<
      */
     auto intercell_flux = [] (std::size_t axis)
     {
-        return [axis, riemann_solver=mara::mhd::riemann_hlld] (auto left_and_right_states)
+        return [axis, riemann_solver=mara::mhd::riemann_hlle] (auto left_and_right_states)
         {
             using namespace std::placeholders;
             auto nh = mara::unit_vector_t::on_axis(axis);
@@ -502,7 +501,6 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution, mara::unit_time<
 
     /**
      * @brief           Get average longitudinal field between two states 
-     *                    - Required for flux calculation with constant B_parallel
      *
      * @param[in]  dir  The direction
      *
@@ -514,12 +512,13 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution, mara::unit_time<
         {
             auto average_field = [dir] (auto Pl, auto Pr)
             {
-                mara::mhd::primitive_t Pl_twiddle, Pr_twiddle;
+                mara::mhd::primitive_t Pl_, Pr_;
                 auto nh = mara::unit_vector_t::on_axis(dir);
                 auto b_along = 0.5 * (Pl.bfield_along(nh) + Pr.bfield_along(nh));                
-                if( dir==0 ) { Pl_twiddle = Pl.with_bfield_1(b_along); Pr_twiddle = Pr.with_bfield_1(b_along);}
-                if( dir==1 ) { Pl_twiddle = Pl.with_bfield_2(b_along); Pr_twiddle = Pr.with_bfield_2(b_along);}
-                return std::make_tuple(Pl_twiddle, Pr_twiddle);
+                if( dir==0 ) { Pl_ = Pl.with_bfield_1(b_along); Pr_ = Pr.with_bfield_1(b_along);}
+                if( dir==1 ) { Pl_ = Pl.with_bfield_2(b_along); Pr_ = Pr.with_bfield_2(b_along);}
+                else {throw std::invalid_argument("mara::mhd::average_longitudinal_field (invalid direction)");}
+                return std::make_tuple(Pl_, Pr_);
             };
             return left_and_right_states | nd::apply(average_field);
         };

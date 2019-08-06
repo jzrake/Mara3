@@ -156,6 +156,16 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     primitive_t with_bfield_2(double v)     const { auto res = *this; res[6] = v; return res; }
     primitive_t with_bfield_3(double v)     const { auto res = *this; res[7] = v; return res; }
 
+    primitive_t with_b_along(unit_field the_b, std::size_t axis) const
+    {
+        const auto& _ = *this;
+        if( axis==0 ) return _.with_bfield_1(the_b.value);
+        if( axis==1 ) return _.with_bfield_2(the_b.value);
+        if( axis==2 ) return _.with_bfield_3(the_b.value);
+        else
+            throw std::invalid_argument("mara::mhd::no_bfield_jump (only works for cartesion fluxes)");
+    }
+
 
     //=========================================================================
     /**
@@ -401,24 +411,6 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         B[1].value = _[6];
         B[2].value = _[7];
         return B;
-    }
-
-    /**
-     * @brief         Force longitudinal fields to be equal
-     *
-     */
-    primitive_t no_bfield_jump(primitive_t other, mara::unit_vector_t nhat) const
-    {
-        const auto& _ = *this;
-
-        auto b1   =     _.bfield_along(nhat);
-        auto b2   = other.bfield_along(nhat);
-        auto bavg = 0.5 * (b1 + b2);
-        if( nhat[0]==1.0 ) return _.with_bfield_1(bavg);
-        if( nhat[1]==1.0 ) return _.with_bfield_2(bavg);
-        if( nhat[2]==1.0 ) return _.with_bfield_3(bavg);
-        else
-            throw std::invalid_argument("mara::mhd::no_bfield_jump (only works for cartesion fluxes)");
     }
 
 
