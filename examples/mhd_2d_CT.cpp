@@ -337,12 +337,13 @@ auto blast_wave(mhd_2dCT::location_2d_t position)
     auto y = position[1];
     auto r = std::sqrt(x.value * x.value + y.value * y.value);
 
-    auto density = 1.0;
+    //auto density = 1.0;
 
     auto blast    = r < 0.1;
-    auto pressure = blast ? 1000. : 0.1;
+    auto pressure = blast ? 2.0 : 1.0;
+    auto density  = blast ? 2.0 : 1.0;
 
-    auto bx = 28.2;  // = 100/sqrt(4*pi)
+    auto bx = 5.0;  // = 100/sqrt(4*pi)
     auto by = 0.0;
     auto bz = 0.0;
     
@@ -357,6 +358,68 @@ auto blast_wave(mhd_2dCT::location_2d_t position)
      .with_bfield_3(bz);
 }
 
+auto test_hlld_1(mhd_2dCT::location_2d_t position)
+{
+    if( gamma_law_index!= 1.4 )
+        throw std::invalid_argument("wrong gamma: for this problem gamma=1.4");
+
+    auto x = position[0].value;
+    auto y = position[1].value;
+
+    auto r = std::sqrt(x * x + y * y);
+    auto theta = std::atan2(y , x);
+    auto sinth = std::sin(theta);
+    auto costh = std::cos(theta);
+
+    auto density  = 1.0;
+    auto pressure = 1.0;
+
+    auto B  =  5.0;
+    auto b0 =  B * r * std::exp(-r);
+    auto bx = -b0 * sinth;
+    auto by =  b0 * costh;
+    auto bz =  0.0;
+    
+    return mara::mhd::primitive_t()
+     .with_mass_density(density)
+     .with_gas_pressure(pressure)
+     .with_velocity_1(0.0)
+     .with_velocity_2(0.0)
+     .with_velocity_3(0.0)
+     .with_bfield_1(bx)
+     .with_bfield_2(by)
+     .with_bfield_3(bz);
+}
+
+auto test_hlld_2(mhd_2dCT::location_2d_t position)
+{
+    if( gamma_law_index!= 1.4 )
+        throw std::invalid_argument("wrong gamma: for this problem gamma=1.4");
+
+    auto sig = 0.2;
+    auto x = position[0].value;
+    auto y = position[1].value;
+
+    auto r = std::sqrt(x * x + y * y);
+
+    auto B        = 1.0;
+    auto density  = 1.0;
+    auto pressure = 2 * B * exp(-r * r / (2 * sig * sig));
+
+    auto bx =  B;
+    auto by =  0.0;
+    auto bz =  0.0;
+    
+    return mara::mhd::primitive_t()
+     .with_mass_density(density)
+     .with_gas_pressure(pressure)
+     .with_velocity_1(0.0)
+     .with_velocity_2(0.0)
+     .with_velocity_3(0.0)
+     .with_bfield_1(bx)
+     .with_bfield_2(by)
+     .with_bfield_3(bz);
+}
 
 /**
  * @brief             Create an initial solution object according to initial_condition()
@@ -379,7 +442,7 @@ mhd_2dCT::solution_t mhd_2dCT::create_solution( const mara::config_t& run_config
     auto primitive = vertices 
             | nd::midpoint_on_axis(0) 
             | nd::midpoint_on_axis(1) 
-            | nd::map(orzsag_tang_vortex);
+            | nd::map(blast_wave);
     
     auto conserved = primitive 
             | nd::map(to_conserved)
@@ -439,17 +502,17 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution, mara::unit_t
 
 
     /*
-     * @brief      Return an array of intercell fluxes by calling the specified
-     *             riemann solver
+     * @brief                      Return an array of intercell fluxes by calling the specified
+     *                             riemann solver
      *
      * @param[in]  riemann_solver  The riemann solver to use
      * @param[in]  axis            The axis to get the fluxes on
      *
-     * @return     An array operator that returns arrays of fluxes
+     * @return                     An array operator that returns arrays of fluxes
      */
     auto intercell_flux = [] (std::size_t axis)
     {
-        return [axis, riemann_solver=mara::mhd::riemann_hlld] (auto left_and_right_states)
+        return [axis, riemann_solver=mara::mhd::riemann_hlle] (auto left_and_right_states)
         {
             using namespace std::placeholders;
             auto nh = mara::unit_vector_t::on_axis(axis);
@@ -458,8 +521,61 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution, mara::unit_t
         };
     };
 
-    // Separate out only the hydro components of a flux array
+    // Method 1 -- likely too complex
     // ========================================================================
+    // auto zip_adjacent2_CT = [] (auto b_along, std::size_t axis)
+    // {
+    //     return [axis, b_along] (auto array)
+    //     {
+    //         return nd::zip(
+    //             array | nd::select_axis(axis).from(0).to(1).from_the_end(),
+    //             array | nd::select_axis(axis).from(1).to(0).from_the_end(),
+    //             b_along );
+    //     };
+    // }
+    // auto set2_longitudinal_field = [] (int axis)
+    // {
+    //     return [axis] (auto left_and_right_states)
+    //     {
+    //         auto average_field = [axis] (auto Pl, auto Pr, auto b_along)
+    //         {
+    //             mara::mhd::primitive_t Pl_, Pr_;
+    //             auto nh = mara::unit_vector_t::on_axis(axis);
+    //             if( axis==0 ) { Pl_ = Pl.with_bfield_1(b_along); Pr_ = Pr.with_bfield_1(b_along);}
+    //             if( axis==1 ) { Pl_ = Pl.with_bfield_2(b_along); Pr_ = Pr.with_bfield_2(b_along);}
+    //             else {throw std::invalid_argument("mara::mhd::average_longitudinal_field (invalid direction)");}
+    //             return std::make_tuple(Pl_, Pr_);
+    //         };
+    //         return left_and_right_states | nd::apply(average_field);
+    //     };
+    // };
+
+    // Simpler method -- new zip that also sets longitudinal field
+    // ========================================================================
+    auto zip_adjacent2_CT = [] (auto b_face, std::size_t axis)
+    {
+        auto set_parallel_field = [] (std::size_t axis) 
+        {
+            return nd::apply( [axis] (auto P, auto b) {return P.with_b_along(b, axis);} );
+        };
+
+        return [axis, b_face, set_parallel_field] (auto array)
+        {
+            auto Pl  = array | nd::select_axis(axis).from(0).to(1).from_the_end();
+            auto Pr  = array | nd::select_axis(axis).from(1).to(0).from_the_end();
+            auto Plp = nd::zip(Pl, b_face) | set_parallel_field(axis);
+            auto Prp = nd::zip(Pr, b_face) | set_parallel_field(axis);
+            return zip(Plp,Prp);
+        };
+    };
+
+
+
+    /**
+     * @brief     Extract just fluxes of hydro quantities
+     *
+     * @return    Array operatro that returns fluxes of hydro quantities
+     */
     auto just_euler_fluxes = [] ()
     {
         return nd::map([] (auto f) { return mara::mhd::flux_vector_euler_t{f[0], f[1], f[2], f[3], f[4]}; });
@@ -478,14 +594,17 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution, mara::unit_t
     auto dy  =  v0 | component(1) | nd::difference_on_axis(1);
     auto dA  =  v0 | area_from_vertices;
 
-    auto B   =  nd::zip(bx0|nd::midpoint_on_axis(0), by0|nd::midpoint_on_axis(1), bz0) | nd::apply(to_magnetic_vector);
-    auto w0  =  nd::zip(u0,B) | nd::apply(recover_primitive);
 
-
-    // Extend for ghost-cells and get fluxes with specified riemann solver
+    // 1. Average face-centered fields to cell-centered and calculate fluxes
+    //    on cell-centered values
     // ========================================================================
-    auto FX    =  w0 | nd::extend_periodic_on_axis(0) | nd::zip_adjacent2_on_axis(0) | intercell_flux(0);
-    auto FY    =  w0 | nd::extend_periodic_on_axis(1) | nd::zip_adjacent2_on_axis(1) | intercell_flux(1);
+    auto B     =  nd::zip(bx0|nd::midpoint_on_axis(0), by0|nd::midpoint_on_axis(1), bz0) | nd::apply(to_magnetic_vector);
+    auto w0    =  nd::zip(u0,B) | nd::apply(recover_primitive);
+    auto FX    =  w0 | nd::extend_zero_gradient(0) | zip_adjacent2_CT(bx0, 0) | intercell_flux(0);
+    auto FY    =  w0 | nd::extend_zero_gradient(1) | zip_adjacent2_CT(by0, 1) | intercell_flux(1);
+    // auto FX    =  w0 | nd::extend_periodic_on_axis(0) | zip_adjacent2_CT(bx0, 0) | intercell_flux(0);
+    // auto FY    =  w0 | nd::extend_periodic_on_axis(1) | zip_adjacent2_CT(by0, 1) | intercell_flux(1);
+
     auto lx    =  FX | just_euler_fluxes() | nd::multiply(dy) | nd::difference_on_axis(0);
     auto ly    =  FY | just_euler_fluxes() | nd::multiply(dx) | nd::difference_on_axis(1);
     auto lx_bz =  FX | component(7) | nd::multiply(dy) | nd::difference_on_axis(0);
@@ -499,8 +618,10 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution, mara::unit_t
 
     // Get z-directed electric fields and calculate corner-centered EMFs
     //=========================================================================
-    auto emf_x_edges  = -FX | component(6) | nd::extend_periodic_on_axis(1) | nd::midpoint_on_axis(1); //avg flux of By in x-direction
-    auto emf_y_edges  =  FY | component(5) | nd::extend_periodic_on_axis(0) | nd::midpoint_on_axis(0); //avg flux of Bx in y-direction
+    auto emf_x_edges  = -FX | component(6) | nd::extend_zero_gradient(1) | nd::midpoint_on_axis(1); //avg flux of By in x-direction
+    auto emf_y_edges  =  FY | component(5) | nd::extend_zero_gradient(0) | nd::midpoint_on_axis(0); //avg flux of Bx in y-direction
+    // auto emf_x_edges  = -FX | component(6) | nd::extend_periodic_on_axis(1) | nd::midpoint_on_axis(1); //avg flux of By in x-direction
+    // auto emf_y_edges  =  FY | component(5) | nd::extend_periodic_on_axis(0) | nd::midpoint_on_axis(0); //avg flux of Bx in y-direction
     auto emf_edges    = (emf_x_edges + emf_y_edges) * 0.5 * e; 
 
 

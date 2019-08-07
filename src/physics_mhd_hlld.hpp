@@ -37,10 +37,12 @@
 
 
 
-//=============================================================================
+
+/**
+ * @brief      HLLD is implemeted following Miyoshi & Kusano, 2005
+ */
 struct mara::mhd::riemann_hlld_variables_t 
 {
-    // HLLD is implemeted following Miyoshi & Kusano, 2005
     double gamma_law_index;
 
     mara::unit_vector_t nhat;
@@ -57,11 +59,11 @@ struct mara::mhd::riemann_hlld_variables_t
     mara::arithmetic_sequence_t<double, 3> b_perp_l;
     mara::arithmetic_sequence_t<double, 3> b_perp_r;
 
-    double dl;   // density
+    double dl;
     double dr;
-    double ul;   // velocity along nhat
+    double ul;
     double ur;
-    double plT;  // total pressure = p + B^2 / 2
+    double plT;
     double prT;
     double pstar;
     double b_along;
@@ -77,25 +79,30 @@ struct mara::mhd::riemann_hlld_variables_t
     auto FL() const { return PL.flux(nhat, gamma_law_index); }
     auto FR() const { return PR.flux(nhat, gamma_law_index); }
 
+
+
+
+    /**
+     * @brief      { function_description }
+     *
+     * @return     { description_of_the_return_value }
+     */
     mara::mhd::conserved_density_t UL_star() const
     {
-        auto d_star  = dl * (SL - ul) / (SL - SM);
-        auto beta    = (SM - ul) / ( dl * (SL - ul) * (SL - SM) - b_along * b_along );
+        auto safe_divide = [] (double a, double b, const char* what)
+        {
+            if (std::abs(b) < 1e-8) throw std::invalid_argument(what); return a / b;
+        };
 
-        if (std::abs(dl * (SL - ul) * (SL - SM) - b_along * b_along ) < 1e-10)
-            std::printf("Need that condition\n");
-
-        auto vx_star = SM * nhat[0] + v_perp_l[0] - beta * b_along * b_perp_l[0];
-        auto vy_star = SM * nhat[1] + v_perp_l[1] - beta * b_along * b_perp_l[1];
-        auto vz_star = SM * nhat[2] + v_perp_l[2] - beta * b_along * b_perp_l[2];
+        auto d_star = dl * safe_divide(SL - ul, SL - SM, "UL_star: d_star");
+        auto denom  = dl * (SL - ul) * (SL - SM) - b_along * b_along;        
+        auto beta    = (SM - ul) / denom;
+        auto vx_star =  SM * nhat[0] + v_perp_l[0] - beta * b_along * b_perp_l[0];
+        auto vy_star =  SM * nhat[1] + v_perp_l[1] - beta * b_along * b_perp_l[1];
+        auto vz_star =  SM * nhat[2] + v_perp_l[2] - beta * b_along * b_perp_l[2];
 
         auto num     = dl * (SL - ul) * (SL - ul) - b_along * b_along;
-        auto denom   = dl * (SL - ul) * (SL - SM) - b_along * b_along;
         auto zeta    = num / denom;
-
-        if (std::abs(denom) < 1e-10)
-            std::printf("need that condition\n");
-
         auto bx_star = zeta * b_perp_l[0] + b_para_l[0];
         auto by_star = zeta * b_perp_l[1] + b_para_l[1];
         auto bz_star = zeta * b_perp_l[2] + b_para_l[2];
@@ -103,19 +110,22 @@ struct mara::mhd::riemann_hlld_variables_t
         auto e       = (PL.to_conserved_density(gamma_law_index))[4].value;
         auto bv      =  PL.bfield_dot_velocity();
         auto bv_star =  vx_star * bx_star + vy_star * by_star + vz_star * bz_star;
-        auto e_star  = ((SL - ul) * e - plT * ul + pstar * SM + b_along * (bv - bv_star)) / (SL - SM);
+        auto e_one   = (SL - ul) * e - plT * ul + pstar * SM;
+        auto e_star  = safe_divide(e_one + b_along * (bv - bv_star), SL - SM, "mara::mhd::riemann_hlld_variables_t::UL_star (e_star)");
 
-        // if( beta==0 || zeta==0 ){
-        //  return mara::mhd::conserved_density_t{
-        //      dl * (SL - ul) / (SL - SM),
-        //      dl * SM * nhat[0] + v_perp_l[0],
-        //      dl * SM * nhat[1] + v_perp_l[1],
-        //      dl * SM * nhat[2] + v_perp_l[2],
-        //      b_para_l[0],
-        //      b_para_l[1],
-        //      b_para_l[2],
-        //  };
-        // }
+        if (std::abs(denom) < 1e-8)
+        {
+            return mara::mhd::conserved_density_t{
+                dl,
+                dl * (SM * nhat[0] + v_perp_l[0]),
+                dl * (SM * nhat[1] + v_perp_l[1]),
+                dl * (SM * nhat[2] + v_perp_l[2]),
+                e_one / (SL - SM),
+                b_para_l[0],
+                b_para_l[1],
+                b_para_l[2],
+            };
+        }
         return mara::mhd::conserved_density_t{
             d_star,
             d_star * vx_star,
@@ -128,17 +138,29 @@ struct mara::mhd::riemann_hlld_variables_t
         };
     }
 
+
+
+
+    /**
+     * @brief      { function_description }
+     *
+     * @return     { description_of_the_return_value }
+     */
     mara::mhd::conserved_density_t UR_star() const
     {
-        auto d_star = dr * ( SR - ur ) / (SR - SM);
+        auto safe_divide = [] (double a, double b, const char* what)
+        {
+            if (std::abs(b) < 1e-8) throw std::invalid_argument(what); return a / b;
+        };
 
-        auto beta    = (SM - ur) / ( dr * (SR - ur) * (SR - SM) - b_along * b_along );
-        auto vx_star = SM * nhat[0] + v_perp_r[0] - beta * b_along * b_perp_r[0];
-        auto vy_star = SM * nhat[1] + v_perp_r[1] - beta * b_along * b_perp_r[1];
-        auto vz_star = SM * nhat[2] + v_perp_r[2] - beta * b_along * b_perp_r[2];
+        auto d_star  = dr * safe_divide(SR - ur, (SR - SM), "UR_star: d_star");
+        auto denom   = dr * (SR - ur) * (SR - SM) - b_along * b_along;
+        auto beta    = (SM - ur) / denom;
+        auto vx_star =  SM * nhat[0] + v_perp_r[0] - beta * b_along * b_perp_r[0];
+        auto vy_star =  SM * nhat[1] + v_perp_r[1] - beta * b_along * b_perp_r[1];
+        auto vz_star =  SM * nhat[2] + v_perp_r[2] - beta * b_along * b_perp_r[2];
 
         auto num     = dr * (SR - ur) * (SR - ur) - b_along * b_along;
-        auto denom   = dr * (SR - ur) * (SR - SM) - b_along * b_along;
         auto zeta    = num / denom;
         auto bx_star = zeta * b_perp_r[0] + b_para_r[0];
         auto by_star = zeta * b_perp_r[1] + b_para_r[1];
@@ -147,19 +169,22 @@ struct mara::mhd::riemann_hlld_variables_t
         auto e       = (PR.to_conserved_density(gamma_law_index))[4].value;
         auto bv      =  PR.bfield_dot_velocity();
         auto bv_star =  vx_star * bx_star + vy_star * by_star + vz_star * bz_star;
-        auto e_star  = ((SR - ur) * e - prT * ur + pstar * SM + b_along * (bv - bv_star)) / (SR - SM);
+        auto e_one   = (SR - ur) * e - prT * ur + pstar * SM;
+        auto e_star  = safe_divide(e_one + b_along * (bv - bv_star), SR - SM, "mara::mhd::riemann_hlld_variables_t::UR_star (e_star)");
 
-        // if( beta==0 || zeta==0 ){
-        //  return mara::mhd::conserved_density_t{
-        //      dr * (SR - ur) / (SR - SM),
-        //      dr * SM * nhat[0] + v_perp_r[0],
-        //      dr * SM * nhat[1] + v_perp_r[1],
-        //      dr * SM * nhat[2] + v_perp_r[2],
-        //      b_para_r[0],
-        //      b_para_r[1],
-        //      b_para_r[2],
-        //  };
-        // }
+        if (std::abs(denom) < 1e-8)
+        {
+            return mara::mhd::conserved_density_t{
+                dr,
+                dr * (SM * nhat[0] + v_perp_r[0]),
+                dr * (SM * nhat[1] + v_perp_r[1]),
+                dr * (SM * nhat[2] + v_perp_r[2]),
+                e_one / (SR - SM),
+                b_para_r[0],
+                b_para_r[1],
+                b_para_r[2],
+            };
+        }
         return mara::mhd::conserved_density_t{
             d_star,
             d_star * vx_star,
@@ -172,6 +197,14 @@ struct mara::mhd::riemann_hlld_variables_t
         };
     }
 
+
+
+
+    /**
+     * @brief      { function_description }
+     *
+     * @return     { description_of_the_return_value }
+     */
     mara::mhd::conserved_density_t UL_starstar() const
     {
         auto sgn = [] (double x) { return std::copysign(1.0, x); };
@@ -215,6 +248,14 @@ struct mara::mhd::riemann_hlld_variables_t
         return UL_star();
     }
 
+
+
+
+    /**
+     * @brief      { function_description }
+     *
+     * @return     { description_of_the_return_value }
+     */
     mara::mhd::conserved_density_t UR_starstar() const
     {
         auto sgn = [] (double x) { return std::copysign(1.0, x); };
@@ -258,7 +299,22 @@ struct mara::mhd::riemann_hlld_variables_t
         return UR_star();
     }
 
-    mara::arithmetic_sequence_t<double,3> get_v_starstar(const mara::mhd::conserved_density_t& UL_star, const mara::mhd::conserved_density_t& UR_star, double b_sign) const
+
+
+
+    /**
+     * @brief      Gets the v starstar.
+     *
+     * @param[in]  UL_star  The ul star
+     * @param[in]  UR_star  The ur star
+     * @param[in]  b_sign   The b sign
+     *
+     * @return     The v starstar.
+     */
+    mara::arithmetic_sequence_t<double,3> get_v_starstar(
+        const mara::mhd::conserved_density_t& UL_star,
+        const mara::mhd::conserved_density_t& UR_star,
+        double b_sign) const
     {
         auto dl_star  = UL_star[0].value;
         auto dr_star  = UR_star[0].value;
@@ -283,10 +339,29 @@ struct mara::mhd::riemann_hlld_variables_t
         auto v_starstar = (rt_dl_star * vl_star + rt_dr_star * vr_star + (byr_star - byl_star) * b_sign) / eta;
         auto w_starstar = (rt_dl_star * wl_star + rt_dr_star * wr_star + (bzr_star - bzl_star) * b_sign) / eta;
 
-        return mara::arithmetic_sequence_t<double, 3>{u_starstar, v_starstar, w_starstar};
+        return mara::arithmetic_sequence_t<double, 3>{
+            u_starstar,
+            v_starstar,
+            w_starstar
+        };
     }
 
-    mara::arithmetic_sequence_t<double,3> get_b_starstar(const conserved_density_t& UL_star, const conserved_density_t& UR_star, double b_sign) const
+
+
+
+    /**
+     * @brief      Gets the b starstar.
+     *
+     * @param[in]  UL_star  The ul star
+     * @param[in]  UR_star  The ur star
+     * @param[in]  b_sign   The b sign
+     *
+     * @return     The b starstar.
+     */
+    mara::arithmetic_sequence_t<double,3> get_b_starstar(
+        const conserved_density_t& UL_star,
+        const conserved_density_t& UR_star,
+        double b_sign) const
     {
         auto dl_star  = UL_star[0].value;
         auto dr_star  = UR_star[0].value;
@@ -311,7 +386,11 @@ struct mara::mhd::riemann_hlld_variables_t
         auto by_starstar = rt_dl_star * byr_star + rt_dr_star * byl_star + rt_dl_star * rt_dr_star * (vr_star - vl_star) * b_sign;
         auto bz_starstar = rt_dl_star * bzr_star + rt_dr_star * bzl_star + rt_dl_star * rt_dr_star * (wr_star - wl_star) * b_sign;
 
-        return mara::arithmetic_sequence_t<double, 3>{bx_starstar/eta, by_starstar/eta, bz_starstar/eta};
+        return mara::arithmetic_sequence_t<double, 3>{
+            bx_starstar / eta,
+            by_starstar / eta,
+            bz_starstar / eta
+        };
     }
 
     auto FL_star()     const { return FL() + (UL_star() - UL()) * make_velocity(SL); }
@@ -319,6 +398,14 @@ struct mara::mhd::riemann_hlld_variables_t
     auto FL_starstar() const { return FL() + (UL_star() - UL()) * make_velocity(SL) + (UL_starstar() - UL_star()) * make_velocity(SLstar); }
     auto FR_starstar() const { return FR() + (UR_star() - UR()) * make_velocity(SR) + (UR_starstar() - UR_star()) * make_velocity(SRstar); }
 
+
+
+
+    /**
+     * @brief      { function_description }
+     *
+     * @return     { description_of_the_return_value }
+     */
     mara::mhd::flux_vector_t interface_flux() const
     {
         if      (0.0     <= SL                  ) return FL();
@@ -327,28 +414,9 @@ struct mara::mhd::riemann_hlld_variables_t
         else if (SM      <= 0.0 && 0.0 <= SRstar) return FR_starstar();
         else if (SRstar  <= 0.0 && 0.0 <= SR    ) return FR_star();
         else if (SR      <= 0.0                 ) return FR();
-
-        std::printf("ERROR... (SL, SLstar, SM, SRstar, SR):  (%f, %f, %f, %f, %f)\n", SL, SLstar, SM, SRstar, SR);
-
-        throw std::invalid_argument("riemann_hlld_variables_t::interface_flux");
+        throw std::invalid_argument("riemann_hlld_variables_t::interface_flux (unordered wave speeds)");
     }
 };
-
-
-
-
-/**
- * @brief     Get fluxes from an array of conserved values
- * 
- */
-inline mara::mhd::flux_vector_t mara::mhd::conserved_to_flux(
-    const mara::mhd::conserved_density_t& U,
-    const mara::unit_vector_t& nhat,
-    double gamma_law_index)
-{
-    auto temp_floor = 1e-4;
-    return mara::mhd::recover_primitive(U, gamma_law_index, temp_floor).flux(nhat, U);
-}
 
 
 
@@ -367,7 +435,12 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     {
         if (std::isnan(x))
             throw std::invalid_argument(what);
+
         return x;
+    };
+    auto safe_divide = [] (double a, double b, const char* what)
+    {
+        if (std::abs(b) < 1e-8) throw std::invalid_argument(what); return a / b;
     };
 
 
@@ -379,11 +452,11 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     auto ul  = throw_if_nan(Pl.velocity_along(nhat), "mara::mhd::compute_hlld_variables (nan velocity_l)");
     auto prT = Pr.gas_pressure() + 0.5 * Pr.bfield_squared();
     auto plT = Pl.gas_pressure() + 0.5 * Pl.bfield_squared();
-    auto b_along = Pl.bfield_along(nhat);
 
 
     // Left and Right parallel and perpendicular velocity and field vectors
     // ========================================================================
+    auto b_along  = Pl.bfield_along(nhat);
     auto v_para_l = nhat * ul;
     auto v_para_r = nhat * ur;
     auto b_para_l = nhat * b_along;
@@ -396,8 +469,8 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
 
     // Get fast waves and the outermost signal speeds
     // ========================================================================
-    auto cfl = Pl.magnetosonic_speed_squared_fast(nhat, gamma_law_index);
-    auto cfr = Pr.magnetosonic_speed_squared_fast(nhat, gamma_law_index);
+    auto cfl = std::sqrt(throw_if_nan(Pl.magnetosonic_speed_squared_fast(nhat, gamma_law_index), "mara::mhd::compute_hlld_variables (nan magnetoacoustic speed)"));
+    auto cfr = std::sqrt(throw_if_nan(Pr.magnetosonic_speed_squared_fast(nhat, gamma_law_index), "mara::mhd::compute_hlld_variables (nan magnetoacoustic speed)"));
     auto SL  = std::min(ul, ur) - std::max(cfl, cfr);
     auto SR  = std::max(ul, ur) + std::max(cfl, cfr);
     
@@ -406,15 +479,15 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     // ========================================================================
     auto SM_top = (SR - ur) * dr * ur - (SL - ul) * dl * ul - prT + plT; 
     auto SM_bot = (SR - ur) * dr - (SL - ul) * dl;
-    auto SM     = SM_top / SM_bot;
+    auto SM     = safe_divide(SM_top, SM_bot, "mara::mhd::compute_hlld_variables (SM)");
 
 
     // Get signal speed associated with internal alfven waves: Eqs.(43) & (51)
     // ========================================================================
-    auto dstar_l = dl * (SL - ul) / (SL - SM);
-    auto dstar_r = dr * (SR - ur) / (SR - SM);
-    auto SLstar = SM - std::abs(b_along) / std::sqrt(dstar_l);
-    auto SRstar = SM + std::abs(b_along) / std::sqrt(dstar_r);
+    auto dstar_l = dl * safe_divide(SL - ul, SL - SM, "mara::mhd::compute_hlld_variables (dstar_l)");
+    auto dstar_r = dr * safe_divide(SR - ur, SR - SM, "mara::mhd::compute_hlld_variables (dstar_r)");
+    auto SLstar  = SM - safe_divide(std::abs(b_along), std::sqrt(dstar_l), "mara::mhd::compute_hlld_variables (SLstar)");
+    auto SRstar  = SM + safe_divide(std::abs(b_along), std::sqrt(dstar_r), "mara::mhd::compute_hlld_variables (SRstar)");
 
 
     // Get the average-total-pressure in Riemann fan: Eq.(41)
@@ -422,7 +495,7 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     auto pstar_one = (SR - ur) * dr * plT - (SL - ul) * dl * prT;
     auto pstar_two = (SR - ur) * (SL - ul) * (ur - ul) * dl * dr;
     auto pstar_bot = (SR - ur) * dr - (SL - ul) * dl;
-    auto pstar = (pstar_one + pstar_two) / pstar_bot;
+    auto pstar = safe_divide(pstar_one + pstar_two, pstar_bot, "mara::mhd::compute_hlld_variables (pT_star)");
 
 
     // Validate a bunch of things
@@ -445,14 +518,8 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     if (dstar_l < 0.0 || dstar_r < 0.0)
         throw std::invalid_argument("mara::mhd::compute_hlld_variables (negative intermediate density)");
 
-    // if (plT <= 0.0 || prT <= 0.0)
-    //     throw std::invalid_argument("mara::mhd::compute_hlld_variables (negative pressure)");
 
-    // if (pstar < 0.0)
-    //     throw std::invalid_argument("mara::mhd::compute_hlld_variables (negative intermediate pressure)");
-
-
-    // Assemble the results
+    // Pack the results into a struct and return it
     // ========================================================================
     auto r     = riemann_hlld_variables_t();
     r.nhat     = nhat;

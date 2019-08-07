@@ -156,6 +156,14 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     primitive_t with_bfield_2(double v)     const { auto res = *this; res[6] = v; return res; }
     primitive_t with_bfield_3(double v)     const { auto res = *this; res[7] = v; return res; }
 
+    primitive_t with_b_along(unit_field the_b, std::size_t axis) const
+    {
+        const auto& _ = *this;
+        if( axis==0 ) return _.with_bfield_1(the_b.value);
+        if( axis==1 ) return _.with_bfield_2(the_b.value);
+        if( axis==2 ) return _.with_bfield_3(the_b.value);
+        throw std::invalid_argument("mara::mhd::no_bfield_jump (only works for cartesion fluxes)");
+    }
 
 
     //=========================================================================
@@ -275,6 +283,11 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
      */
     double sound_speed_squared(double gamma_law_index) const
     {
+        if( mass_density() < 1e-8 )
+            throw std::invalid_argument("mhd::sound_speed: density floor");
+        if( isnan(gas_pressure()) )
+            throw std::invalid_argument("mhd::sound_speed: pressure nan");
+
         return gamma_law_index * gas_pressure() / mass_density();
     }
 
@@ -297,7 +310,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
      */
     double alfven_speed_squared_along(const unit_vector_t& nhat) const
     {
-        const auto b_along = bfield_along(nhat);  
+        const auto b_along = bfield_along(nhat); 
+        if( mass_density() < 1e-8 )
+            throw std::invalid_argument("mhd::alfven_speed_squared: (zero density)") ;
         return b_along*b_along / mass_density();
     }
 
@@ -315,6 +330,15 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         const auto cs2 = sound_speed_squared(gamma_law_index);
         const auto one = cs2 + alfven_speed_squared();
         const auto two = 0.5 * std::sqrt(one * one - 4 * cs2 * alfven_speed_squared_along(nhat));
+        
+        if( 4*cs2*alfven_speed_squared_along(nhat) > one*one )
+            throw std::invalid_argument("mhd::magnetoacoustic_speed_fast: sqrt nan");
+        if( isnan(cs2) )
+            throw std::invalid_argument("mhd::sound speed: nan");
+        if( isnan(one) )
+            throw std::invalid_argument("mhd::alfven speed: nan");
+        if( isnan(two) )
+            throw std::invalid_argument("mhd::magnetoacoustic_speed_fast: nan");
 
         return 0.5 * one + two;
     }
@@ -403,6 +427,7 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         B[2].value = _[7];
         return B;
     }
+
 
     /**
      * @brief      Return the flux of conserved quantities in the given
@@ -564,9 +589,19 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
     P[6] =  U[6].value;
     P[7] =  U[7].value;
 
+    if( isnan(U[4].value) )
+        throw std::invalid_argument("mhd::recover_primitive: Energy nan");
+    if( isnan(p_squared) )
+        throw std::invalid_argument("mhd::recover_primitive: momentum nan");
+    if( isnan(b_squared) )
+        throw std::invalid_argument("mhd::recover_primitive: Bfield nan");
+    if( isnan(P[4]) )
+        throw std::invalid_argument("mhd::recover_primitive: pressure nan");
+
     if (P[4] < 0.0 && temperature_floor > 0.0)
     {
         P[4] = temperature_floor * d;
+        // printf("Temp. Floor triggered\n");
     }
     return P;
 }
@@ -618,7 +653,7 @@ mara::mhd::flux_vector_t mara::mhd::riemann_hlle(
     const primitive_t& Pr,
     const unit_vector_t& nhat,
     double gamma_law_index)
-{
+{  
     auto Ul = Pl.to_conserved_density(gamma_law_index);
     auto Ur = Pr.to_conserved_density(gamma_law_index);
     auto Al = Pl.fast_wave_speeds(nhat, gamma_law_index ); 
