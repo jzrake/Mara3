@@ -283,6 +283,11 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
      */
     double sound_speed_squared(double gamma_law_index) const
     {
+        if( mass_density() < 1e-8 )
+            throw std::invalid_argument("mhd::sound_speed: density floor");
+        if( isnan(gas_pressure()) )
+            throw std::invalid_argument("mhd::sound_speed: pressure nan");
+
         return gamma_law_index * gas_pressure() / mass_density();
     }
 
@@ -305,7 +310,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
      */
     double alfven_speed_squared_along(const unit_vector_t& nhat) const
     {
-        const auto b_along = bfield_along(nhat);  
+        const auto b_along = bfield_along(nhat); 
+        if( mass_density() < 1e-8 )
+            throw std::invalid_argument("mhd::alfven_speed_squared: (zero density)") ;
         return b_along*b_along / mass_density();
     }
 
@@ -323,6 +330,15 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         const auto cs2 = sound_speed_squared(gamma_law_index);
         const auto one = cs2 + alfven_speed_squared();
         const auto two = 0.5 * std::sqrt(one * one - 4 * cs2 * alfven_speed_squared_along(nhat));
+        
+        if( 4*cs2*alfven_speed_squared_along(nhat) > one*one )
+            throw std::invalid_argument("mhd::magnetoacoustic_speed_fast: sqrt nan");
+        if( isnan(cs2) )
+            throw std::invalid_argument("mhd::sound speed: nan");
+        if( isnan(one) )
+            throw std::invalid_argument("mhd::alfven speed: nan");
+        if( isnan(two) )
+            throw std::invalid_argument("mhd::magnetoacoustic_speed_fast: nan");
 
         return 0.5 * one + two;
     }
@@ -573,9 +589,19 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
     P[6] =  U[6].value;
     P[7] =  U[7].value;
 
+    if( isnan(U[4].value) )
+        throw std::invalid_argument("mhd::recover_primitive: Energy nan");
+    if( isnan(p_squared) )
+        throw std::invalid_argument("mhd::recover_primitive: momentum nan");
+    if( isnan(b_squared) )
+        throw std::invalid_argument("mhd::recover_primitive: Bfield nan");
+    if( isnan(P[4]) )
+        throw std::invalid_argument("mhd::recover_primitive: pressure nan");
+
     if (P[4] < 0.0 && temperature_floor > 0.0)
     {
         P[4] = temperature_floor * d;
+        // printf("Temp. Floor triggered\n");
     }
     return P;
 }

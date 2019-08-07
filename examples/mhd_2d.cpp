@@ -161,6 +161,7 @@ mara::config_template_t mhd_2d::create_config_template()
 {
     return mara::make_config_template()
      .item("outdir", "hydro_run")       // directory where data products are written
+     // .item("solver",      "hlle")       // riemann solver
      .item("cpi",             10)       // checkpoint interval
      .item("doi",             10)       // diagnostic output interval
      .item("rk_order",         1)		// timestepping order
@@ -338,7 +339,7 @@ auto test_hlld_1(mhd_2d::location_2d_t position)
     auto density  = 1.0;
     auto pressure = 1.0;
 
-    auto B  =  5.0;
+    auto B  =  2.0;
     auto b0 =  B * r * std::exp(-r);
     auto bx = -b0 * sinth;
     auto by =  b0 * costh;

@@ -35,6 +35,31 @@
 #include "physics_mhd.hpp"
 
 
+static double safe_divide( double a, double b, const char* what)
+{
+	double eps = 1e-8;
+	if(std::abs(b) < eps)
+		throw std::invalid_argument(what);
+	
+	return a / b;
+
+}
+
+static double throw_if_zero(double x, const char* what)
+{
+	if(x < 1e-12)
+		throw std::invalid_argument(what);
+	return x;
+};
+
+auto throw_if_nan(double x, const char* what)
+{
+    if (std::isnan(x))
+    {
+        throw std::invalid_argument(what);
+    }
+    return x;
+};
 
 
 //=============================================================================
@@ -80,17 +105,20 @@ struct mara::mhd::riemann_hlld_variables_t
 
     mara::mhd::conserved_density_t UL_star() const
     {
-        auto d_star = dl * (SL - ul) / (SL - SM);
+        // auto d_star = dl * (SL - ul) / (SL - SM);
+        auto d_star = dl * safe_divide(SL - ul, SL - SM, "UL_star: d_star");
         auto denom  = dl * (SL - ul) * (SL - SM) - b_along * b_along;
 
         
         auto beta    = (SM - ul) / denom;
+        // auto beta    = safe_divide(SM - ul, denom, "UL_star: beta");
         auto vx_star =  SM * nhat[0] + v_perp_l[0] - beta * b_along * b_perp_l[0];
         auto vy_star =  SM * nhat[1] + v_perp_l[1] - beta * b_along * b_perp_l[1];
         auto vz_star =  SM * nhat[2] + v_perp_l[2] - beta * b_along * b_perp_l[2];
 
         auto num     = dl * (SL - ul) * (SL - ul) - b_along * b_along;
         auto zeta    = num / denom;
+        // auto zeta    = safe_divide(num, denom, "UL_star: zeta");
         auto bx_star = zeta * b_perp_l[0] + b_para_l[0];
         auto by_star = zeta * b_perp_l[1] + b_para_l[1];
         auto bz_star = zeta * b_perp_l[2] + b_para_l[2];
@@ -98,20 +126,23 @@ struct mara::mhd::riemann_hlld_variables_t
         auto e       = (PL.to_conserved_density(gamma_law_index))[4].value;
         auto bv      =  PL.bfield_dot_velocity();
         auto bv_star =  vx_star * bx_star + vy_star * by_star + vz_star * bz_star;
-        auto e_star  = ((SL - ul) * e - plT * ul + pstar * SM + b_along * (bv - bv_star)) / (SL - SM);
+        // auto e_star  = ((SL - ul) * e - plT * ul + pstar * SM + b_along * (bv - bv_star)) / (SL - SM);
+        auto e_one   = (SL - ul) * e - plT * ul + pstar * SM + b_along;
+        auto e_star  = safe_divide((e_one * (bv - bv_star)), (SL - SM), "UL_star: e_star");
+        
 
-        // if( std::abs(denom) < 1e-12 ){
-        //  return mara::mhd::conserved_density_t{
-        //      dl * (SL - ul) / (SL - SM),
-        //      dl * (SM * nhat[0] + v_perp_l[0]),
-        //      dl * (SM * nhat[1] + v_perp_l[1]),
-        //      dl * (SM * nhat[2] + v_perp_l[2]),
-        //      e,
-        //      b_para_l[0],
-        //      b_para_l[1],
-        //      b_para_l[2],
-        //  };
-        // }
+        if( std::abs(denom) < 1e-8 ){
+	        return mara::mhd::conserved_density_t{
+	            dl,
+	            dl * (SM * nhat[0] + v_perp_l[0]),
+	            dl * (SM * nhat[1] + v_perp_l[1]),
+	            dl * (SM * nhat[2] + v_perp_l[2]),
+	            throw_if_nan(e_one / (SL - SM), "hlld:UL_star: special e nan"),
+	            b_para_l[0],
+	            b_para_l[1],
+	            b_para_l[2],
+	        };
+        }
         return mara::mhd::conserved_density_t{
             d_star,
             d_star * vx_star,
@@ -126,16 +157,19 @@ struct mara::mhd::riemann_hlld_variables_t
 
     mara::mhd::conserved_density_t UR_star() const
     {
-        auto d_star  = dr * ( SR - ur ) / (SR - SM);
+        // auto d_star  = dr * ( SR - ur ) / (SR - SM);
+        auto d_star  = dr * safe_divide(SR - ur, (SR - SM), "UR_star: d_star");
         auto denom   = dr * (SR - ur) * (SR - SM) - b_along * b_along;
 
         auto beta    = (SM - ur) / denom;
+        // auto beta    = safe_divide(SM - ur, denom, "UR_star: beta");
         auto vx_star =  SM * nhat[0] + v_perp_r[0] - beta * b_along * b_perp_r[0];
         auto vy_star =  SM * nhat[1] + v_perp_r[1] - beta * b_along * b_perp_r[1];
         auto vz_star =  SM * nhat[2] + v_perp_r[2] - beta * b_along * b_perp_r[2];
 
         auto num     = dr * (SR - ur) * (SR - ur) - b_along * b_along;
         auto zeta    = num / denom;
+        // auto zeta    = safe_divide(num, denom, "UR_star: zeta");
         auto bx_star = zeta * b_perp_r[0] + b_para_r[0];
         auto by_star = zeta * b_perp_r[1] + b_para_r[1];
         auto bz_star = zeta * b_perp_r[2] + b_para_r[2];
@@ -143,20 +177,22 @@ struct mara::mhd::riemann_hlld_variables_t
         auto e       = (PR.to_conserved_density(gamma_law_index))[4].value;
         auto bv      =  PR.bfield_dot_velocity();
         auto bv_star =  vx_star * bx_star + vy_star * by_star + vz_star * bz_star;
-        auto e_star  = ((SR - ur) * e - prT * ur + pstar * SM + b_along * (bv - bv_star)) / (SR - SM);
+        // auto e_star  = ((SR - ur) * e - prT * ur + pstar * SM + b_along * (bv - bv_star)) / (SR - SM);
+        auto e_one   = (SR - ur) * e - prT * ur + pstar * SM + b_along;
+        auto e_star  = safe_divide(e_one * (bv - bv_star), (SR - SM), "UR_star: e_star");
 
-        // if( std::abs(denom) < 1e-12 ){
-        //  return mara::mhd::conserved_density_t{
-        //      dr * (SR - ur) / (SR - SM),
-        //      dr * (SM * nhat[0] + v_perp_r[0]),
-        //      dr * (SM * nhat[1] + v_perp_r[1]),
-        //      dr * (SM * nhat[2] + v_perp_r[2]),
-        //      e
-        //      b_para_r[0],
-        //      b_para_r[1],
-        //      b_para_r[2],
-        //  };
-        // }
+        if( std::abs(denom) < 1e-8 ){
+	        return mara::mhd::conserved_density_t{
+	            dr,
+	            dr * (SM * nhat[0] + v_perp_r[0]),
+	            dr * (SM * nhat[1] + v_perp_r[1]),
+	            dr * (SM * nhat[2] + v_perp_r[2]),
+	            throw_if_nan(e_one / (SR - SM), "hlld:UL_star: special e nan"),
+	            b_para_r[0],
+	            b_para_r[1],
+	            b_para_r[2],
+	        };
+        }
         return mara::mhd::conserved_density_t{
             d_star,
             d_star * vx_star,
@@ -319,6 +355,8 @@ struct mara::mhd::riemann_hlld_variables_t
     auto FR_star()     const { return FR() + (UR_star() - UR()) * make_velocity(SR); }
     auto FL_starstar() const { return FL() + (UL_star() - UL()) * make_velocity(SL) + (UL_starstar() - UL_star()) * make_velocity(SLstar); }
     auto FR_starstar() const { return FR() + (UR_star() - UR()) * make_velocity(SR) + (UR_starstar() - UR_star()) * make_velocity(SRstar); }
+    // auto FL_starstar() const { return FL() + (UL_star() - UL()) * make_velocity(SL); }
+    // auto FR_starstar() const { return FR() + (UR_star() - UR()) * make_velocity(SR); }
 
     mara::mhd::flux_vector_t interface_flux() const
     {
@@ -367,15 +405,7 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     const mara::mhd::primitive_t& Pr,
     const mara::unit_vector_t& nhat,
     double gamma_law_index)
-{
-    auto throw_if_nan = [] (double x, const char* what)
-    {
-        if (std::isnan(x))
-        {
-            throw std::invalid_argument(what);
-        }
-        return x;
-    };
+{   
 
     // Left and Right prims for calculations
     // ========================================================================
@@ -406,8 +436,8 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     // auto FWr = Pr.fast_wave_speeds(nhat, gamma_law_index );
     // auto SL  = std::min(FWl.m.value, FWr.m.value);
     // auto SR  = std::max(FWl.p.value, FWr.p.value);
-    auto cfl = Pl.magnetosonic_speed_squared_fast(nhat, gamma_law_index);
-    auto cfr = Pr.magnetosonic_speed_squared_fast(nhat, gamma_law_index);
+    auto cfl = std::sqrt(throw_if_nan(Pl.magnetosonic_speed_squared_fast(nhat, gamma_law_index), "compute_hlld_variables: magnetoacoustic wave nan"));
+    auto cfr = std::sqrt(throw_if_nan(Pr.magnetosonic_speed_squared_fast(nhat, gamma_law_index), "compute_hlld_variables: magnetoacoustic wave nan"));
     auto SL  = std::min(ul, ur) - std::max(cfl, cfr);
     auto SR  = std::max(ul, ur) + std::max(cfl, cfr);
     
@@ -416,15 +446,21 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     // ========================================================================
     auto SM_top = (SR - ur) * dr * ur - (SL - ul) * dl * ul - prT + plT; 
     auto SM_bot = (SR - ur) * dr - (SL - ul) * dl;
-    auto SM     = SM_top / SM_bot;
+    // auto SM     = SM_top / SM_bot;
+    auto SM     = safe_divide(SM_top, SM_bot, "calculate_hlld_params: (SM)");
 
 
     // Get signal speed associated with internal alfven waves: Eqs.(43) & (51)
     // ========================================================================
-    auto dstar_l = dl * (SL - ul) / (SL - SM);
-    auto dstar_r = dr * (SR - ur) / (SR - SM);
-    auto SLstar  = SM - std::abs(b_along) / std::sqrt(dstar_l);
-    auto SRstar  = SM + std::abs(b_along) / std::sqrt(dstar_r);
+    // auto dstar_l = dl * (SL - ul) / (SL - SM);
+    // auto dstar_r = dr * (SR - ur) / (SR - SM);
+    // auto SLstar  = SM - std::abs(b_along) / std::sqrt(dstar_l);
+    // auto SRstar  = SM + std::abs(b_along) / std::sqrt(dstar_r);
+
+    auto dstar_l = dl * safe_divide(SL - ul, (SL - SM), "calculate_hlld_params: (dstar_l)");
+    auto dstar_r = dr * safe_divide(SR - ur, (SR - SM), "calculate_hlld_params: (dstar_r)");
+    auto SLstar  = SM - safe_divide(std::abs(b_along), std::sqrt(dstar_l), "calculate_hlld_params: (SLstar)");
+    auto SRstar  = SM + safe_divide(std::abs(b_along), std::sqrt(dstar_r), "calculate_hlld_params: (SRstar)");
 
 
     // Get the average-total-pressure in Riemann fan: Eq.(41)
@@ -432,7 +468,8 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     auto pstar_one = (SR - ur) * dr * plT - (SL - ul) * dl * prT;
     auto pstar_two = (SR - ur) * (SL - ul) * (ur - ul) * dl * dr;
     auto pstar_bot = (SR - ur) * dr - (SL - ul) * dl;
-    auto pstar     = (pstar_one + pstar_two) / pstar_bot;
+    // auto pstar     = (pstar_one + pstar_two) / pstar_bot;
+    auto pstar     = safe_divide(pstar_one + pstar_two, pstar_bot, "calculate_hlld_params: (pT_star)");
 
 
     // Validate a bunch of things
