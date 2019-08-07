@@ -486,11 +486,61 @@ mara::iso2d::flux_t mara::iso2d::riemann_hlle(
 
     auto ap = std::max(make_velocity(0.0), std::max(Al.p, Ar.p));
     auto am = std::min(make_velocity(0.0), std::min(Al.m, Ar.m));
-
+        
     return (Fl * ap - Fr * am - (Ul - Ur) * ap * am) / (ap - am);
 }
 
 
+
+
+/**
+ * @brief      Return the HLLE flux for the given pair of states
+ *
+ * @param[in]  Pl                     The state to the left of the interface
+ * @param[in]  Pr                     The state to the right
+ * @param[in]  sound_speed_squared_l  The sound speed squared to the left of the
+ *                                    interface
+ * @param[in]  sound_speed_squared_r  The sound speed squared to the right
+ * @param[in]  nhat                   The normal vector to the interface
+ *
+ * @return     A vector of fluxes
+ */
+mara::iso2d::flux_t mara::iso2d::riemann_hlle_moving_face(
+    const primitive_t& Pl,
+    const primitive_t& Pr,
+    double sound_speed_squared_l,
+    double sound_speed_squared_r,
+    const unit_vector_t& nhat,
+    mara::unit_velocity<double> face_speed)
+{
+    auto Ul = Pl.to_conserved_per_area();
+    auto Ur = Pr.to_conserved_per_area();
+    auto Al = Pl.wavespeeds(nhat, sound_speed_squared_l);
+    auto Ar = Pr.wavespeeds(nhat, sound_speed_squared_r);
+    auto Fl = Pl.flux(nhat, sound_speed_squared_l);
+    auto Fr = Pr.flux(nhat, sound_speed_squared_r);
+
+    auto ap = std::max(make_velocity(0.0), std::max(Al.p, Ar.p));
+    auto am = std::min(make_velocity(0.0), std::min(Al.m, Ar.m));
+
+    auto interface_flux = [=]()
+    {
+        if      (face_speed  <= am                  )     return  Fl;
+        else if (am    <= face_speed && face_speed <= ap) return (Fl * ap - Fr * am - (Ul - Ur) * ap * am) / (ap - am);
+        else if (ap    <= face_speed                )     return  Fr;
+        throw std::invalid_argument("riemann_hlle_moving_face::interface_flux");
+    }
+
+    auto interface_conserved_state = [=] ()
+    {
+        if      (face_speed  <= am                 )      return  Ul;
+        else if (am    <= face_speed && face_speed <= ap) return (Ur * ap - Ul * am + (Fl - Fr)) / (ap - am);
+        else if (ap    <= face_speed                )     return  Ur;
+        throw std::invalid_argument("riemann_hlle_moving_face::interface_flux");
+    }
+
+    return interface_flux() - interface_conserved_state() * face_speed;
+}
 
 
 /**
