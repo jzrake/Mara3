@@ -478,6 +478,7 @@ mhd_2dCT::solution_t mhd_2dCT::create_solution( const mara::config_t& run_config
             bz.shared()
         };
     }
+
     return solution_t{ 
         0.0,
         0,
@@ -792,18 +793,34 @@ mhd_2dCT::diagnostic_fields_t mhd_2dCT::diagnostic_fields(const solver_data_t& s
     auto dx  =  v0 | component(0) | nd::difference_on_axis(0);
     auto dy  =  v0 | component(1) | nd::difference_on_axis(1);
 
-    auto bx       =  solution.bfield_x;
-    auto by       =  solution.bfield_y;
-    auto div_b_x  =  bx | nd::difference_on_axis(0);
-    auto div_b_y  =  by | nd::difference_on_axis(1);
-    auto div_b    =  div_b_x + div_b_y;
+    auto bx  =  solution.bfield_x;
+    auto by  =  solution.bfield_y;
 
-    return diagnostic_fields_t{
-        run_config,
-        solution.time,
-        solver.vertices,
-        div_b.shared()
-    };
+    if( run_config.get_int("ct_flag") ){
+        auto div_b_x  =  bx | nd::difference_on_axis(0);
+        auto div_b_y  =  by | nd::difference_on_axis(1);
+        auto div_b    =  div_b_x + div_b_y;
+
+        return diagnostic_fields_t{
+            run_config,
+            solution.time,
+            solver.vertices,
+            div_b.shared()
+        };
+    }
+    else
+    {
+        auto div_b_x  =  bx | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
+        auto div_b_y  =  by | nd::difference_on_axis(1) | nd::midpoint_on_axis(0); 
+        auto div_b    =  div_b_x + div_b_y;
+
+        return diagnostic_fields_t{
+            run_config,
+            solution.time,
+            solver.vertices,
+            div_b.shared()
+        };
+    }
 }
 
 
@@ -867,23 +884,25 @@ int main(int argc, const char* argv[])
     auto state       = mhd_2dCT::create_state(run_config);
     auto diag        = mhd_2dCT::diagnostic_fields(state.solver_data, state.solution, run_config );
 
+
     mara::pretty_print  ( std::cout, "config", run_config );
     output_diagnostic_h5( diag,       "diagnostic_000.h5" );
     output_solution_h5  ( state.solution, state.solver_data, "checkpoint_000.h5" );
+
 
     int nout = 0;
     int dout = 0;
     double delta_n = run_config.get_double("tfinal") / run_config.get_int("cpi");
     double delta_d = run_config.get_double("tfinal") / run_config.get_int("doi");
 
+
     while( mhd_2dCT::simulation_should_continue(state) )
     {
         state = mhd_2dCT::next_state(state);
         diag  = mhd_2dCT::diagnostic_fields(state.solver_data, state.solution, run_config );
 
-        // if ( state.solution.time.value % 10 == 0 )
-        printf( " %d : t = %0.2f \n", state.solution.iteration.as_integral(), state.solution.time.value );
 
+        printf( " %d : t = %0.2f \n", state.solution.iteration.as_integral(), state.solution.time.value );
         if ( state.solution.time.value / delta_n - nout > 1.0  )
         {
             output_solution_h5( state.solution, state.solver_data, get_checkpoint_filename(++nout) );
@@ -895,10 +914,13 @@ int main(int argc, const char* argv[])
         }
     }
 
+
     output_solution_h5( state.solution, state.solver_data, "output.h5" );
+
     
     diag = mhd_2dCT::diagnostic_fields(state.solver_data, state.solution, run_config );
     output_diagnostic_h5( diag, get_diagnostic_filename(++dout) );
+
 
     return 0;
 }
