@@ -54,10 +54,9 @@ namespace mhd_2dCT
 
     // Type definitions for simplicity later
     // ========================================================================
-    using location_2d_t       = mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0,  0, double>, 2>;
-    using velocity_2d_t       = mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0, -1, double>, 2>;
-    // using primitive_field_t = std::function<mara::mhd::primitive_t(location_2d_t)>;
-    using flux_function_t     = std::function<mara::mhd::flux_vector_t(mara::mhd::primitive_t, mara::mhd::primitive_t, mara::unit_vector_t, double)>;
+    using location_2d_t    =  mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0,  0, double>, 2>;
+    using velocity_2d_t    =  mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0, -1, double>, 2>;
+    using flux_function_t  =  std::function<mara::mhd::flux_vector_t(mara::mhd::primitive_t, mara::mhd::primitive_t, mara::unit_vector_t, double)>;
 
     
     struct solver_data_t
@@ -68,17 +67,18 @@ namespace mhd_2dCT
         bool                                ct_flag;
     };
 
+
     // Solver structs
     // ========================================================================
     struct solution_t
     {
         mara::unit_time<double>                                     time=0.0;
         mara::rational_number_t                                     iteration=0;
-        // nd::shared_array<location_2d_t, 2>                          vertices;
         nd::shared_array<mara::mhd::conserved_density_euler_t, 2>   conserved;
         nd::shared_array<mara::mhd::unit_field,                2>   bfield_x;
         nd::shared_array<mara::mhd::unit_field,                2>   bfield_y;
         nd::shared_array<mara::mhd::unit_field,                2>   bfield_z;
+
 
         // Overload operators to manipulate solution_t types
         //=====================================================================
@@ -94,6 +94,8 @@ namespace mhd_2dCT
                 bfield_z   + other.bfield_z  | nd::to_shared(),
             };
         }
+
+
         solution_t operator*(mara::rational_number_t scale) const
         {
             return {
@@ -108,6 +110,7 @@ namespace mhd_2dCT
         }
     };
 
+
     struct diagnostic_fields_t
     {
         mara::config_t                                run_config;
@@ -115,6 +118,7 @@ namespace mhd_2dCT
         nd::shared_array<location_2d_t,         2>    vertices;
         nd::shared_array<mara::mhd::unit_field, 2>    div_b; 
     };
+
 
     struct state_t
     {
@@ -149,7 +153,7 @@ namespace mhd_2dCT
                              
 
 /**
- *    Create the config template
+ *    The template
  */
 mara::config_template_t mhd_2dCT::create_config_template()
 {
@@ -166,15 +170,21 @@ mara::config_template_t mhd_2dCT::create_config_template()
      .item("N",                 100);   // number of cells in each direction
 }
 
+
+/**
+ *    Create the config template
+ */
 mara::config_t mhd_2dCT::create_run_config( int argc, const char* argv[] )
 {
     auto args = mara::argv_to_string_map( argc, argv );
     return create_config_template().create().update(args);
 }
 
+
 // ============================================================================
 //                           Helper Functions 
 // ============================================================================
+
 
 /**
  *   Get array of components from array of tuples
@@ -186,6 +196,7 @@ auto component(std::size_t cmpnt)
     return nd::map([cmpnt] (auto p) { return p[cmpnt]; });
 }
 
+
 /**
  *   Create a magnetic field vector out of 3 field component arrays
  */
@@ -193,7 +204,6 @@ auto to_magnetic_vector(mara::mhd::unit_field b1, mara::mhd::unit_field b2, mara
 {
     return mara::mhd::magnetic_field_t{b1, b2, b3};
 };
-
 
 
 /**
@@ -205,7 +215,6 @@ auto recover_primitive(const mara::mhd::conserved_density_euler_t& conserved,
     double temp_floor = 1e-4;
     return mara::mhd::recover_primitive(conserved, B, gamma_law_index, temp_floor);
 }   
-
 
 
 /**
@@ -225,11 +234,14 @@ nd::shared_array<mhd_2dCT::location_2d_t, 2> mhd_2dCT::create_vertices( const ma
 }
 
 
-
 // ============================================================================
 //                        Initial Condition Functions 
 // ============================================================================
 
+
+/**
+ *     The Brio-Wu-Shocktube
+ */
 auto brio_wu_shocktube(mhd_2dCT::location_2d_t position)
 {
     auto x = position[0];
@@ -255,6 +267,10 @@ auto brio_wu_shocktube(mhd_2dCT::location_2d_t position)
      .with_bfield_3(bz);
 }
 
+
+/**
+ *     MHD Kelvin-Helmoltz Instability
+ */
 auto kelvin_helmholtz(mhd_2dCT::location_2d_t position)
 {
     if ( gamma_law_index!= 1.4 )
@@ -288,6 +304,10 @@ auto kelvin_helmholtz(mhd_2dCT::location_2d_t position)
      .with_bfield_3(bz);
 }
 
+
+/**
+ *     The Orszag-Tang Vortex
+ */
 auto orzsag_tang_vortex(mhd_2dCT::location_2d_t position)
 {
     auto x = position[0];
@@ -318,6 +338,10 @@ auto orzsag_tang_vortex(mhd_2dCT::location_2d_t position)
      .with_bfield_3(bz);
 }
 
+
+/**
+ *     An MHD Blast-Wave
+ */
 auto mhd_blast_wave(mhd_2dCT::location_2d_t position)
 {
     if ( gamma_law_index!= 1.4 )
@@ -346,6 +370,12 @@ auto mhd_blast_wave(mhd_2dCT::location_2d_t position)
      .with_bfield_3(bz);
 }
 
+
+/**
+ *    The MHD Flywheel Test for HLLD and CT
+ *    
+ *       - from DISCO code paper (Duffel, 2016)
+ */
 auto duffel_flywheel(mhd_2dCT::location_2d_t position)
 {
     auto x = position[0].value;
@@ -385,9 +415,12 @@ auto duffel_flywheel(mhd_2dCT::location_2d_t position)
 
 
 // ============================================================================
-//                                Body 
+//                              The Solver
 // ============================================================================
 
+/**
+ *     Create The Solver Data
+ */
 mhd_2dCT::solver_data_t mhd_2dCT::create_solver_data( const mara::config_t& run_config )
 {
     std::map<std::string, flux_function_t> solver_map;
@@ -407,6 +440,10 @@ mhd_2dCT::solver_data_t mhd_2dCT::create_solver_data( const mara::config_t& run_
     };
 }
 
+
+/**
+ *     Create The Solution
+ */
 mhd_2dCT::solution_t mhd_2dCT::create_solution( const mara::config_t& run_config )
 {
     // helper function to do cons2prim
@@ -452,14 +489,8 @@ mhd_2dCT::solution_t mhd_2dCT::create_solution( const mara::config_t& run_config
 }
 
 
-
-
 /**
- * @brief               Creates state object
- * 
- * @param   run_config  configuration object
- * 
- * @return              a state object
+ *     Create The State
  */
 mhd_2dCT::state_t mhd_2dCT::create_state( const mara::config_t& run_config )
 {
@@ -472,7 +503,9 @@ mhd_2dCT::state_t mhd_2dCT::create_state( const mara::config_t& run_config )
 
 
 
-
+/**
+ *     Advnace The Solution one timestep
+ */
 mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution,
                                         const solver_data_t& solver,
                                         mara::unit_time<double> dt )
@@ -483,9 +516,7 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution,
 
 
     /**
-     * @brief     Extract just fluxes of hydro quantities
-     *
-     * @return    Array operatro that returns fluxes of hydro quantities
+     *     Extract fluxes of just hydro quantities
      */
     auto just_euler_fluxes = [] ()
     {
@@ -493,15 +524,8 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution,
     };
 
 
-
-
     /**
-     * @brief      Return an array of areas dx * dy from the given vertex
-     *             locations.
-     *
-     * @param[in]  vertices  An array of vertices
-     *
-     * @return     A new array
+     *     Grid areas calculated from the vertices
      */
     auto area_from_vertices = [] (auto vertices)
     {
@@ -511,16 +535,8 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution,
     };
 
 
-
-
     /*
-     * @brief                      Return an array of intercell fluxes by calling the specified
-     *                             riemann solver
-     *
-     * @param[in]  riemann_solver  The riemann solver to use
-     * @param[in]  axis            The axis to get the fluxes on
-     *
-     * @return                     An array operator that returns arrays of fluxes
+     *     Calculate flux between cells
      */
     auto intercell_flux = [riemann_solver=solver.riemann_solver] (std::size_t axis)
     {
@@ -534,9 +550,11 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution,
     };
 
 
-
-    // New zip that also sets longitudinal field
-    // ========================================================================
+    /**
+     *     Zip_adjacent function specifically for MHD solvers
+     *
+     *        - includes longitudinal field as solver parameter
+     */
     auto zip_adjacent2_mhd = [] (auto b_face, std::size_t axis)
     {
         auto set_parallel_field = [] (std::size_t axis) 
@@ -609,6 +627,9 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution,
         auto bx1 = bx0 - ( emf_edges|nd::difference_on_axis(1) ) / dy * dt;
         auto by1 = by0 + ( emf_edges|nd::difference_on_axis(0) ) / dx * dt;
 
+
+        //    6. Return new solution
+        //=========================================================================
         return solution_t{
             solution.time + dt,
             solution.iteration + 1,
@@ -649,6 +670,9 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution,
         auto by1 = by0 - (lx_by + ly_by) * dt / dA * e;
         auto bz1 = bz0 - (lx_bz + ly_bz) * dt / dA * e;
 
+
+        //    4. Return new solution
+        //=========================================================================
         return solution_t{
             solution.time + dt,
             solution.iteration + 1,
@@ -656,7 +680,7 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution,
             bx1.shared(),
             by1.shared(),
             bz1.shared(),
-    };
+        };
     }
 
 
@@ -665,15 +689,18 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution,
 }
 
 
-
-
-// ============================================================================
+/**
+ *     Check if simulations has ended
+ */
 auto mhd_2dCT::simulation_should_continue( const state_t& state )
 {
     return state.solution.time.value < state.run_config.get_double("tfinal");
 }
 
 
+/**
+ *     Calculate maximum tolerable timestep
+ */
 mara::unit_time<double> get_timestep( const mhd_2dCT::solution_t& s, const mhd_2dCT::solver_data_t& solver )
 {
     //=========================================================================
@@ -713,6 +740,9 @@ mara::unit_time<double> get_timestep( const mhd_2dCT::solution_t& s, const mhd_2
 }
 
 
+/**
+ *     Update the solution one timestep
+ */
 mhd_2dCT::solution_t mhd_2dCT::next_solution( const state_t& state )
 {
     auto s0    = state.solution;
@@ -736,6 +766,10 @@ mhd_2dCT::solution_t mhd_2dCT::next_solution( const state_t& state )
     throw std::invalid_argument("mhd::next_solution");
 }
 
+
+/**
+ *     Calculate the next State
+ */
 mhd_2dCT::state_t mhd_2dCT::next_state( const mhd_2dCT::state_t& state )
 {
     return mhd_2dCT::state_t{
@@ -746,9 +780,10 @@ mhd_2dCT::state_t mhd_2dCT::next_state( const mhd_2dCT::state_t& state )
 }
 
 
-// Diagnostics -> right now just div_b
 //=============================================================================
-
+//                             Diagnostics 
+//                                 -> right now just div_b
+//=============================================================================
 mhd_2dCT::diagnostic_fields_t mhd_2dCT::diagnostic_fields(const solver_data_t& solver, 
                                                           const solution_t& solution,
                                                           mara::config_t& run_config)
@@ -772,8 +807,10 @@ mhd_2dCT::diagnostic_fields_t mhd_2dCT::diagnostic_fields(const solver_data_t& s
 }
 
 
-// Outputting
 //=============================================================================
+//                              Outputting
+//=============================================================================
+
 
 void output_solution_h5( const mhd_2dCT::solution_t& s, const mhd_2dCT::solver_data_t solver, std::string fname )
 {	
@@ -793,6 +830,7 @@ void output_solution_h5( const mhd_2dCT::solution_t& s, const mhd_2dCT::solver_d
 	h5f.close();
 }
 
+
 void output_diagnostic_h5( const mhd_2dCT::diagnostic_fields_t& diag, std::string fname )
 {
     auto h5f = h5::File( fname, "w" );
@@ -800,6 +838,7 @@ void output_diagnostic_h5( const mhd_2dCT::diagnostic_fields_t& diag, std::strin
     h5f.write("time" , diag.time );
     h5f.write("div_b", diag.div_b);
 }
+
 
 std::string get_checkpoint_filename( int nout )
 {
@@ -809,6 +848,7 @@ std::string get_checkpoint_filename( int nout )
 
     return "checkpoint_" + num + ".h5";
 }
+
 
 std::string get_diagnostic_filename( int dout )
 {
