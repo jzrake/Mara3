@@ -23,7 +23,8 @@
  ==============================================================================
 */
 
-
+#include "app_compile_opts.hpp"
+#if MARA_COMPILE_SUBPROGRAM_MHD2D_SAND
 
 
 #include <iomanip>
@@ -32,14 +33,24 @@
 #include <cstdio>
 #include <cassert>
 #include <cmath>
+
 #include "app_config.hpp"
+#include "app_schedule.hpp"
 #include "app_serialize.hpp"
+#include "app_subprogram.hpp"
+#include "app_filesystem.hpp"
 #include "app_performance.hpp"
-#include "core_ndarray.hpp"
-#include "core_ndarray_ops.hpp"
+#include "app_compile_opts.hpp"
+
 #include "core_hdf5.hpp"
+#include "core_ndarray.hpp"
+#include "core_rational.hpp"
+#include "core_ndarray_ops.hpp"
+#include "core_linked_list.hpp"
+
 #include "physics_mhd.hpp"
 #include "physics_mhd_hlld.hpp"
+
 
 #define gamma_law_index 1.4
 
@@ -48,10 +59,8 @@
 // ============================================================================
 
 
-namespace mhd_2dCT
+namespace mhd_2d
 {
-
-
     // Type definitions for simplicity later
     // ========================================================================
     using location_2d_t    =  mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0,  0, double>, 2>;
@@ -59,6 +68,8 @@ namespace mhd_2dCT
     using flux_function_t  =  std::function<mara::mhd::flux_vector_t(mara::mhd::primitive_t, mara::mhd::primitive_t, mara::unit_vector_t, double)>;
 
     
+    // Solver structs
+    // ========================================================================
     struct solver_data_t
     {
         double                              cfl;
@@ -68,8 +79,6 @@ namespace mhd_2dCT
     };
 
 
-    // Solver structs
-    // ========================================================================
     struct solution_t
     {
         mara::unit_time<double>                                     time=0.0;
@@ -94,8 +103,6 @@ namespace mhd_2dCT
                 bfield_z   + other.bfield_z  | nd::to_shared(),
             };
         }
-
-
         solution_t operator*(mara::rational_number_t scale) const
         {
             return {
@@ -111,6 +118,13 @@ namespace mhd_2dCT
     };
 
 
+    struct time_series_sample_t
+    {
+        mara::unit_time<double>  time;
+        mara::mhd::unit_field    max_div_b;
+    };
+
+
     struct diagnostic_fields_t
     {
         mara::config_t                                run_config;
@@ -122,9 +136,15 @@ namespace mhd_2dCT
 
     struct state_t
     {
-        solver_data_t       solver_data;
-        solution_t          solution;
-        mara::config_t      run_config;
+        solution_t                                solution;
+        mara::schedule_t                          schedule;
+        mara::linked_list_t<time_series_sample_t> time_series;
+        mara::config_t                            run_config;
+
+        state_t with(const solution_t&                                new_solution)    const { return {new_solution, schedule, time_series, run_config}; }
+        state_t with(const mara::schedule_t&                          new_schedule)    const { return {solution, new_schedule, time_series, run_config}; }
+        state_t with(const mara::config_t&                            new_run_config)  const { return {solution, schedule, time_series, new_run_config}; }
+        state_t with(const mara::linked_list_t<time_series_sample_t>& new_time_series) const { return {solution, schedule, new_time_series, run_config}; }
     };
 
 
@@ -135,15 +155,21 @@ namespace mhd_2dCT
     nd::shared_array<location_2d_t, 2>  create_vertices       (const mara::config_t&);
     solver_data_t                       create_solver_data    (const mara::config_t&);
     solution_t                          create_solution       (const mara::config_t&);
+    mara::schedule_t                    create_schedule       (const mara::config_t&);
     state_t                             create_state          (const mara::config_t&);
-    
-    state_t                             next_state            (const state_t&);
-    solution_t                          next_solution         (const state_t&);
-    solution_t                          advance               (const solution_t&, const solver_data_t&, mara::unit_time<double>);
-    diagnostic_fields_t                 diagnostic_fields     (const solver_data_t&, const solution_t&, mara::config_t&);
 
-    auto simulation_should_continue( const state_t&);
-    void print_run_loop_message    ( const state_t&);
+    
+    state_t                             next_state            (const state_t&, const solver_data_t&);
+    solution_t                          next_solution         (const state_t&, const solver_data_t&);
+    mara::schedule_t                    next_schedule         (const state_t&);
+    solution_t                          advance               (const solution_t&, const solver_data_t&, mara::unit_time<double>);
+    diagnostic_fields_t                 diagnostic_fields     (const solver_data_t&, const solution_t&, const mara::config_t&);
+
+
+    auto run_tasks                 (const state_t&, const solver_data_t&);
+    void prepare_filesystem        (const mara::config_t&);
+    void print_run_loop_message    (const state_t&, mara::perf_diagnostics_t);
+    auto simulation_should_continue(const state_t&);
 }
 
 
@@ -152,15 +178,13 @@ namespace mhd_2dCT
 // ============================================================================
                              
 
-/**
- *    The template
- */
-mara::config_template_t mhd_2dCT::create_config_template()
+mara::config_template_t mhd_2d::create_config_template()
 {
     return mara::make_config_template()
-     .item("outdir", "hydro_run")       // directory where data products are written
-     .item("cpi",                10)    // checkpoint interval
-     .item("doi",                10)    // diagnostic output interval
+     .item("outdir",           "./")    // directory where data products are written
+     .item("cpi",                10)    // checkpoint interval (orbits; chkpt.????.h5 - snapshot of app_state)
+     .item("dfi",                10)    // diagnostic field interval (orbits; diagnostics.????.h5)
+     .item("tsi",                10)    // time series interval (orbits)
      .item("ct_flag",             0)    // flag for CT
      .item("rk_order",            1)    // timestepping order
      .item("riemann_solver", "hlle")    // riemann solver (hlle or hlld)
@@ -171,10 +195,7 @@ mara::config_template_t mhd_2dCT::create_config_template()
 }
 
 
-/**
- *    Create the config template
- */
-mara::config_t mhd_2dCT::create_run_config( int argc, const char* argv[] )
+mara::config_t mhd_2d::create_run_config( int argc, const char* argv[] )
 {
     auto args = mara::argv_to_string_map( argc, argv );
     return create_config_template().create().update(args);
@@ -185,14 +206,13 @@ mara::config_t mhd_2dCT::create_run_config( int argc, const char* argv[] )
 //                           Helper Functions 
 // ============================================================================
 
-
 /**
  *   Get array of components from array of tuples
  */
 auto component(std::size_t cmpnt)
 {
-	//WHEN PULL NEW VERSION:
-	//   going to need to become a template that instead of std::size_t will need something else...
+    //WHEN PULL NEW VERSION:
+    //   going to need to become a template that instead of std::size_t will need something else...
     return nd::map([cmpnt] (auto p) { return p[cmpnt]; });
 }
 
@@ -220,7 +240,7 @@ auto recover_primitive(const mara::mhd::conserved_density_euler_t& conserved,
 /**
  *   Create grid vertices
  */
-nd::shared_array<mhd_2dCT::location_2d_t, 2> mhd_2dCT::create_vertices( const mara::config_t& run_config )
+nd::shared_array<mhd_2d::location_2d_t, 2> mhd_2d::create_vertices( const mara::config_t& run_config )
 {
     auto N      = run_config.get_int("N");
     auto radius = run_config.get_double("domain_radius");
@@ -229,7 +249,7 @@ nd::shared_array<mhd_2dCT::location_2d_t, 2> mhd_2dCT::create_vertices( const ma
     auto y_points = nd::linspace(-radius, radius, N+1);
 
     return nd::cartesian_product( x_points, y_points )
-    | nd::apply([] (double x, double y) { return mhd_2dCT::location_2d_t{x, y}; })
+    | nd::apply([] (double x, double y) { return mhd_2d::location_2d_t{x, y}; })
     | nd::to_shared();
 }
 
@@ -242,7 +262,7 @@ nd::shared_array<mhd_2dCT::location_2d_t, 2> mhd_2dCT::create_vertices( const ma
 /**
  *     The Brio-Wu-Shocktube
  */
-auto brio_wu_shocktube(mhd_2dCT::location_2d_t position)
+auto brio_wu_shocktube(mhd_2d::location_2d_t position)
 {
     auto x = position[0];
     auto nexus = x < 0.0;
@@ -271,7 +291,7 @@ auto brio_wu_shocktube(mhd_2dCT::location_2d_t position)
 /**
  *     MHD Kelvin-Helmoltz Instability
  */
-auto kelvin_helmholtz(mhd_2dCT::location_2d_t position)
+auto kelvin_helmholtz(mhd_2d::location_2d_t position)
 {
     if ( gamma_law_index!= 1.4 )
         throw std::invalid_argument("wrong gamma: for this problem gamma=1.4");
@@ -308,7 +328,7 @@ auto kelvin_helmholtz(mhd_2dCT::location_2d_t position)
 /**
  *     The Orszag-Tang Vortex
  */
-auto orzsag_tang_vortex(mhd_2dCT::location_2d_t position)
+auto orzsag_tang_vortex(mhd_2d::location_2d_t position)
 {
     auto x = position[0];
     auto y = position[1];
@@ -342,7 +362,7 @@ auto orzsag_tang_vortex(mhd_2dCT::location_2d_t position)
 /**
  *     An MHD Blast-Wave
  */
-auto mhd_blast_wave(mhd_2dCT::location_2d_t position)
+auto mhd_blast_wave(mhd_2d::location_2d_t position)
 {
     if ( gamma_law_index!= 1.4 )
         throw std::invalid_argument("wrong gamma: for this problem gamma=1.4");
@@ -376,7 +396,7 @@ auto mhd_blast_wave(mhd_2dCT::location_2d_t position)
  *    
  *       - from DISCO code paper (Duffel, 2016)
  */
-auto duffel_flywheel(mhd_2dCT::location_2d_t position)
+auto duffel_flywheel(mhd_2d::location_2d_t position)
 {
     auto x = position[0].value;
     auto y = position[1].value;
@@ -415,13 +435,11 @@ auto duffel_flywheel(mhd_2dCT::location_2d_t position)
 
 
 // ============================================================================
-//                              The Solver
+//                              Create Solver
 // ============================================================================
 
-/**
- *     Create The Solver Data
- */
-mhd_2dCT::solver_data_t mhd_2dCT::create_solver_data( const mara::config_t& run_config )
+
+mhd_2d::solver_data_t mhd_2d::create_solver_data( const mara::config_t& run_config )
 {
     std::map<std::string, flux_function_t> solver_map;
     solver_map.insert(std::make_pair("hlle", mara::mhd::riemann_hlle));
@@ -441,10 +459,7 @@ mhd_2dCT::solver_data_t mhd_2dCT::create_solver_data( const mara::config_t& run_
 }
 
 
-/**
- *     Create The Solution
- */
-mhd_2dCT::solution_t mhd_2dCT::create_solution( const mara::config_t& run_config )
+mhd_2d::solution_t mhd_2d::create_solution( const mara::config_t& run_config )
 {
     // helper function to do cons2prim
     // ========================================================================
@@ -458,7 +473,7 @@ mhd_2dCT::solution_t mhd_2dCT::create_solution( const mara::config_t& run_config
     auto primitive = vertices 
             | nd::midpoint_on_axis(0) 
             | nd::midpoint_on_axis(1) 
-            | nd::map(kelvin_helmholtz);
+            | nd::map(orzsag_tang_vortex);
     
     auto conserved = primitive 
             | nd::map(to_conserved)
@@ -490,27 +505,37 @@ mhd_2dCT::solution_t mhd_2dCT::create_solution( const mara::config_t& run_config
 }
 
 
-/**
- *     Create The State
- */
-mhd_2dCT::state_t mhd_2dCT::create_state( const mara::config_t& run_config )
+mara::schedule_t mhd_2d::create_schedule(const mara::config_t& run_config)
+{
+    auto schedule = mara::schedule_t();
+    schedule.create_and_mark_as_due("write_checkpoint");
+    schedule.create_and_mark_as_due("write_diagnostics");
+    schedule.create_and_mark_as_due("record_time_series");
+    return schedule;
+}
+
+
+mhd_2d::state_t mhd_2d::create_state( const mara::config_t& run_config )
 {
     return state_t{
-        create_solver_data(run_config),
-        create_solution   (run_config),
+        create_solution(run_config),
+        create_schedule(run_config),
+        {},
         run_config
     };
 }
 
 
+// ============================================================================
+//                              The Solver
+// ============================================================================
+ 
 
-/**
- *     Advnace The Solution one timestep
- */
-mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution,
+mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
                                         const solver_data_t& solver,
                                         mara::unit_time<double> dt )
 {
+
     // Meaningless 'charge' to convert from units of flux to units of field/force
     //=========================================================================
     auto e = mara::make_dimensional<4, 0, -2>(1.0);
@@ -664,6 +689,7 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution,
         auto lx_bz =  FX | component(7) | nd::multiply(dy) | nd::difference_on_axis(0);
         auto ly_bz =  FY | component(7) | nd::multiply(dx) | nd::difference_on_axis(1); 
 
+
         //    3. Updated conserved quantities and face-centered fields
         //=========================================================================
         auto u1  = u0  - (lx    + ly   ) * dt / dA;
@@ -684,25 +710,15 @@ mhd_2dCT::solution_t mhd_2dCT::advance( const solution_t& solution,
         };
     }
 
-
     // Updated solution state
     //=========================================================================
 }
 
 
 /**
- *     Check if simulations has ended
- */
-auto mhd_2dCT::simulation_should_continue( const state_t& state )
-{
-    return state.solution.time.value < state.run_config.get_double("tfinal");
-}
-
-
-/**
  *     Calculate maximum tolerable timestep
  */
-mara::unit_time<double> get_timestep( const mhd_2dCT::solution_t& s, const mhd_2dCT::solver_data_t& solver )
+mara::unit_time<double> get_timestep( const mhd_2d::solution_t& s, const mhd_2d::solver_data_t& solver )
 {
     //=========================================================================
     auto nx     = mara::unit_vector_t::on_axis(0);
@@ -716,11 +732,11 @@ mara::unit_time<double> get_timestep( const mhd_2dCT::solution_t& s, const mhd_2
     if (solver.ct_flag)
     {
         auto B  =  nd::zip(s.bfield_x  | nd::midpoint_on_axis(0), 
-                          s.bfield_y  | nd::midpoint_on_axis(1),
-                          s.bfield_z) | nd::apply(to_magnetic_vector);
-        auto primitive   =  nd::zip(u0, B) | nd::apply(recover_primitive);
-        auto fast_wave_x =  primitive  | nd::map([nx] (auto p ) { return p.fast_wave_speeds(nx, gamma_law_index); });
-        auto fast_wave_y =  primitive  | nd::map([ny] (auto p ) { return p.fast_wave_speeds(ny, gamma_law_index); });
+                           s.bfield_y  | nd::midpoint_on_axis(1),
+                           s.bfield_z) | nd::apply(to_magnetic_vector);
+        auto primitive    =  nd::zip(u0, B) | nd::apply(recover_primitive);
+        auto fast_wave_x  =  primitive  | nd::map([nx] (auto p ) { return p.fast_wave_speeds(nx, gamma_law_index); });
+        auto fast_wave_y  =  primitive  | nd::map([ny] (auto p ) { return p.fast_wave_speeds(ny, gamma_law_index); });
         auto s_x   =  fast_wave_x | nd::map([] (auto fw) {return std::max( std::abs(fw.p.value), std::abs(fw.m.value) );}) | nd::max();
         auto s_y   =  fast_wave_y | nd::map([] (auto fw) {return std::max( std::abs(fw.p.value), std::abs(fw.m.value) );}) | nd::max();
         auto s_max =  mara::make_velocity( std::max(s_x, s_y) );
@@ -729,38 +745,41 @@ mara::unit_time<double> get_timestep( const mhd_2dCT::solution_t& s, const mhd_2
     else
     {
         auto B  =  nd::zip(s.bfield_x, s.bfield_y, s.bfield_z) | nd::apply(to_magnetic_vector);
-        auto primitive   =  nd::zip(u0, B) | nd::apply(recover_primitive);
-        auto fast_wave_x =  primitive  | nd::map([nx] (auto p ) { return p.fast_wave_speeds(nx, gamma_law_index); });
-        auto fast_wave_y =  primitive  | nd::map([ny] (auto p ) { return p.fast_wave_speeds(ny, gamma_law_index); });
+        auto primitive    =  nd::zip(u0, B) | nd::apply(recover_primitive);
+        auto fast_wave_x  =  primitive  | nd::map([nx] (auto p ) { return p.fast_wave_speeds(nx, gamma_law_index); });
+        auto fast_wave_y  =  primitive  | nd::map([ny] (auto p ) { return p.fast_wave_speeds(ny, gamma_law_index); });
         auto s_x   =  fast_wave_x | nd::map([] (auto fw) {return std::max( std::abs(fw.p.value), std::abs(fw.m.value) );}) | nd::max();
         auto s_y   =  fast_wave_y | nd::map([] (auto fw) {return std::max( std::abs(fw.p.value), std::abs(fw.m.value) );}) | nd::max();
         auto s_max =  mara::make_velocity( std::max(s_x, s_y) );
         return std::min(min_dx, min_dy) / s_max * solver.cfl;
     }
+    // Maximum allowable timestep
     //=========================================================================
 }
 
 
-/**
- *     Update the solution one timestep
- */
-mhd_2dCT::solution_t mhd_2dCT::next_solution( const state_t& state )
+//=============================================================================
+//                         Next Functions
+//=============================================================================
+
+
+mhd_2d::solution_t mhd_2d::next_solution(const state_t& state, const solver_data_t& solver_data)
 {
-    auto s0    = state.solution;
-    auto sdata = state.solver_data;
-    auto dt    = get_timestep( s0, state.solver_data );
+    auto s0 = state.solution;
+    auto sd = solver_data;
+    auto dt = get_timestep( s0, sd );
 
     switch( state.run_config.get_int("rk_order") )
     {
         case 1:
         {
-            return advance(s0, sdata, dt);
+            return advance(s0, sd, dt);
         }
         case 2:
         {
             auto b0 = mara::make_rational(1, 2);
-            auto s1 = advance(s0, sdata, dt);
-            auto s2 = advance(s1, sdata, dt);
+            auto s1 = advance(s0, sd, dt);
+            auto s2 = advance(s1, sd, dt);
             return s0 * b0 + s2 * (1 - b0);
         }
     }
@@ -768,14 +787,21 @@ mhd_2dCT::solution_t mhd_2dCT::next_solution( const state_t& state )
 }
 
 
-/**
- *     Calculate the next State
- */
-mhd_2dCT::state_t mhd_2dCT::next_state( const mhd_2dCT::state_t& state )
+mara::schedule_t mhd_2d::next_schedule(const state_t& state)
 {
-    return mhd_2dCT::state_t{
-        state.solver_data,
-        mhd_2dCT::next_solution( state ),
+    return mara::mark_tasks_in(state, state.solution.time.value,
+        {{"write_checkpoint",   state.run_config.get_double("cpi") * 2 * M_PI},
+         {"write_diagnostics",  state.run_config.get_double("dfi") * 2 * M_PI},
+         {"record_time_series", state.run_config.get_double("tsi") * 2 * M_PI}});
+}
+
+
+mhd_2d::state_t mhd_2d::next_state(const state_t& state, const solver_data_t& solver_data)
+{
+    return state_t{
+        next_solution(state, solver_data),
+        next_schedule(state),
+        state.time_series,
         state.run_config
     };
 }
@@ -785,9 +811,9 @@ mhd_2dCT::state_t mhd_2dCT::next_state( const mhd_2dCT::state_t& state )
 //                             Diagnostics 
 //                                 -> right now just div_b
 //=============================================================================
-mhd_2dCT::diagnostic_fields_t mhd_2dCT::diagnostic_fields(const solver_data_t& solver, 
-                                                          const solution_t& solution,
-                                                          mara::config_t& run_config)
+
+nd::shared_array<mara::mhd::unit_field, 2>
+compute_div_b(const mhd_2d::solver_data_t& solver, const mhd_2d::solution_t& solution, bool ct_flag)
 {
     auto v0  =  solver.vertices;
     auto dx  =  v0 | component(0) | nd::difference_on_axis(0);
@@ -796,131 +822,254 @@ mhd_2dCT::diagnostic_fields_t mhd_2dCT::diagnostic_fields(const solver_data_t& s
     auto bx  =  solution.bfield_x;
     auto by  =  solution.bfield_y;
 
-    if( run_config.get_int("ct_flag") ){
+    if( ct_flag ){
         auto div_b_x  =  bx | nd::difference_on_axis(0);
         auto div_b_y  =  by | nd::difference_on_axis(1);
         auto div_b    =  div_b_x + div_b_y;
-
-        return diagnostic_fields_t{
-            run_config,
-            solution.time,
-            solver.vertices,
-            div_b.shared()
-        };
+        return div_b.shared();
     }
     else
     {
         auto div_b_x  =  bx | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
         auto div_b_y  =  by | nd::difference_on_axis(1) | nd::midpoint_on_axis(0); 
         auto div_b    =  div_b_x + div_b_y;
-
-        return diagnostic_fields_t{
-            run_config,
-            solution.time,
-            solver.vertices,
-            div_b.shared()
-        };
+        return div_b.shared();
     }
 }
+
+mhd_2d::diagnostic_fields_t 
+mhd_2d::diagnostic_fields(const solver_data_t& solver, const solution_t& solution, const mara::config_t& run_config)
+{
+    auto div_b = compute_div_b(solver, solution, run_config.get_int("ct_flag"));
+
+    return diagnostic_fields_t{
+        run_config,
+        solution.time,
+        solver.vertices,
+        div_b
+    };
+}
+
 
 
 //=============================================================================
 //                              Outputting
 //=============================================================================
+// void output_solution_h5( const mhd_2d::solution_t& s, const mhd_2d::solver_data_t solver, std::string fname )
+// {	
+// 	std::cout << "   Outputting: " << fname << std::endl;
+// 	auto h5f = h5::File( fname, "w" );
+
+//     // auto u0 = s.conserved;
+//     // auto B  = nd::zip(s.bfield_x|nd::midpoint_on_axis(0), s.bfield_y|nd::midpoint_on_axis(1), s.bfield_z) | nd::apply(to_magnetic_vector);
+//     // auto primitive = nd::zip(u0, B) | nd::apply(recover_primitive);
+
+//     //auto recover_primitive = std::bind(mara::mhd::recover_primitive, std::placeholders::_1, 0.0);
+// 	h5f.write( "time"      , s.time         );
+// 	h5f.write( "vertices"  , solver.vertices);
+// 	h5f.write( "conserved" , s.conserved    );
+//     h5f.write( "gamma"     , gamma_law_index);
+
+// 	h5f.close();
+// }
 
 
-void output_solution_h5( const mhd_2dCT::solution_t& s, const mhd_2dCT::solver_data_t solver, std::string fname )
-{	
-	std::cout << "   Outputting: " << fname << std::endl;
-	auto h5f = h5::File( fname, "w" );
+// void output_diagnostic_h5( const mhd_2d::diagnostic_fields_t& diag, std::string fname )
+// {
+//     auto h5f = h5::File( fname, "w" );
 
-    // auto u0 = s.conserved;
-    // auto B  = nd::zip(s.bfield_x|nd::midpoint_on_axis(0), s.bfield_y|nd::midpoint_on_axis(1), s.bfield_z) | nd::apply(to_magnetic_vector);
-    // auto primitive = nd::zip(u0, B) | nd::apply(recover_primitive);
+//     h5f.write("time" , diag.time );
+//     h5f.write("div_b", diag.div_b);
+// }
 
-    //auto recover_primitive = std::bind(mara::mhd::recover_primitive, std::placeholders::_1, 0.0);
-	h5f.write( "time"      , s.time         );
-	h5f.write( "vertices"  , solver.vertices);
-	h5f.write( "conserved" , s.conserved    );
-    h5f.write( "gamma"     , gamma_law_index);
 
-	h5f.close();
+// std::string get_checkpoint_filename( int nout )
+// {
+//     char            buffer[256]; 
+//     sprintf(        buffer, "%03d", nout );
+//     std::string num(buffer);
+
+//     return "checkpoint_" + num + ".h5";
+// }
+
+
+// std::string get_diagnostic_filename( int dout )
+// {
+//     char            buffer[256];
+//     sprintf        (buffer, "%03d", dout);
+//     std::string num(buffer);
+
+//     return "diagnostic_" + num + ".h5";
+// }
+
+
+// ============================================================================
+// int main(int argc, const char* argv[])
+// {
+//     auto run_config  = mhd_2d::create_run_config(argc, argv);
+//     auto solver_data = mhd_2d::create_solver_data(run_config);
+//     auto state       = mhd_2d::create_state(run_config);
+//     auto diag        = mhd_2d::diagnostic_fields(solver_data, state.solution, run_config );
+
+
+//     mara::pretty_print  ( std::cout, "config", run_config );
+//     output_diagnostic_h5( diag,       "diagnostic_000.h5" );
+//     output_solution_h5  ( state.solution, solver_data, "checkpoint_000.h5" );
+
+
+//     int nout = 0;
+//     int dout = 0;
+//     double delta_n = run_config.get_double("tfinal") / run_config.get_int("cpi");
+//     double delta_d = run_config.get_double("tfinal") / run_config.get_int("dfi");
+
+
+//     while( mhd_2d::simulation_should_continue(state) )
+//     {
+//         state = mhd_2d::next_state(state, solver_data);
+//         diag  = mhd_2d::diagnostic_fields(solver_data, state.solution, run_config );
+
+
+//         printf( " %d : t = %0.2f \n", state.solution.iteration.as_integral(), state.solution.time.value );
+//         if ( state.solution.time.value / delta_n - nout > 1.0  )
+//         {
+//             output_solution_h5( state.solution, solver_data, get_checkpoint_filename(++nout) );
+//         }
+//         if ( state.solution.time.value / delta_d - dout > 1.0  )
+//         {
+//             //printf("Am I ever actually here??\n");
+//             output_diagnostic_h5( diag, get_diagnostic_filename(++dout) );
+//         }
+//     }
+
+
+//     output_solution_h5( state.solution, solver_data, "output.h5" );
+
+    
+//     diag = mhd_2d::diagnostic_fields(solver_data, state.solution, run_config );
+//     output_diagnostic_h5( diag, get_diagnostic_filename(++dout) );
+
+
+//     return 0;
+// }
+
+
+//=============================================================================
+//                   Scheduling, Outputting, and Performance
+//=============================================================================
+
+auto mhd_2d::run_tasks(const state_t& state, const solver_data_t& solver_data)
+{
+
+
+    //=========================================================================
+    auto write_checkpoint  = [] (const state_t& state)
+    {
+        auto outdir = state.run_config.get_string("outdir");
+        auto count  = state.schedule.num_times_performed("write_checkpoint");
+        auto fname  = mara::filesystem::join(outdir, mara::create_numbered_filename("chkpt", count, "h5"));
+        auto group  = h5::File(fname, "w").open_group("/");
+        auto next_state = mara::complete_task_in(state, "write_checkpoint");
+        mara::write(group, "/", next_state);
+        std::printf("write checkpoint: %s\n", fname.data());
+        return next_state;
+    };
+
+
+    //=========================================================================
+    auto write_diagnostics = [&solver_data] (const state_t& state)
+    {
+        auto outdir = state.run_config.get_string("outdir");
+        auto count  = state.schedule.num_times_performed("write_diagnostics");
+        auto fname  = mara::filesystem::join(outdir, mara::create_numbered_filename("diagnostics", count, "h5"));
+        auto group  = h5::File(fname, "w").open_group("/");
+        mara::write(group, "/", diagnostic_fields(solver_data, state.solution, state.run_config));
+        std::printf("write diagnostics: %s\n", fname.data());
+        return mara::complete_task_in(state, "write_diagnostics");
+    };
+
+
+    //=========================================================================
+    auto record_time_series = [&solver_data] (state_t state)
+    {
+        auto sample       =  time_series_sample_t();
+        sample.time       =  state.solution.time;
+        sample.max_div_b  =  compute_div_b(solver_data, state.solution, state.run_config.get_int("ct_flag")) | nd::max();
+
+        state.time_series = state.time_series.prepend(sample);
+        return mara::complete_task_in(state, "record_time_series");
+    };
+
+
+    return mara::run_scheduled_tasks(state, {
+        {"write_diagnostics", write_diagnostics},
+        {"record_time_series", record_time_series},
+        {"write_checkpoint",  write_checkpoint}});
 }
 
 
-void output_diagnostic_h5( const mhd_2dCT::diagnostic_fields_t& diag, std::string fname )
+auto mhd_2d::simulation_should_continue( const state_t& state )
 {
-    auto h5f = h5::File( fname, "w" );
-
-    h5f.write("time" , diag.time );
-    h5f.write("div_b", diag.div_b);
+    return state.solution.time.value < state.run_config.get_double("tfinal");
 }
 
 
-std::string get_checkpoint_filename( int nout )
+void mhd_2d::prepare_filesystem(const mara::config_t& run_config)
 {
-    char            buffer[256]; 
-    sprintf(        buffer, "%03d", nout );
-    std::string num(buffer);
-
-    return "checkpoint_" + num + ".h5";
+    auto outdir = run_config.get_string("outdir");
+    mara::filesystem::require_dir(outdir);
 }
 
 
-std::string get_diagnostic_filename( int dout )
+void mhd_2d::print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf)
 {
-    char            buffer[256];
-    sprintf        (buffer, "%03d", dout);
-    std::string num(buffer);
-
-    return "diagnostic_" + num + ".h5";
+    auto kzps = state.solution.conserved.size() / perf.execution_time_ms;
+    std::printf("[%04d] t=%3.7lf kzps=%3.2lf\n", 
+                state.solution.iteration.as_integral(),
+                state.solution.time.value,
+                kzps);
 }
 
 
 // ============================================================================
-int main(int argc, const char* argv[])
+//                               Main
+// ============================================================================
+
+class subprog_mhd2d_sand : public mara::sub_program_t
 {
-    auto run_config  = mhd_2dCT::create_run_config(argc, argv);
-    auto state       = mhd_2dCT::create_state(run_config);
-    auto diag        = mhd_2dCT::diagnostic_fields(state.solver_data, state.solution, run_config );
+public:
 
-
-    mara::pretty_print  ( std::cout, "config", run_config );
-    output_diagnostic_h5( diag,       "diagnostic_000.h5" );
-    output_solution_h5  ( state.solution, state.solver_data, "checkpoint_000.h5" );
-
-
-    int nout = 0;
-    int dout = 0;
-    double delta_n = run_config.get_double("tfinal") / run_config.get_int("cpi");
-    double delta_d = run_config.get_double("tfinal") / run_config.get_int("doi");
-
-
-    while( mhd_2dCT::simulation_should_continue(state) )
+    int main(int argc, const char* argv[]) override
     {
-        state = mhd_2dCT::next_state(state);
-        diag  = mhd_2dCT::diagnostic_fields(state.solver_data, state.solution, run_config );
+        auto run_config  = mhd_2d::create_run_config(argc, argv);
+        auto solver_data = mhd_2d::create_solver_data(run_config);
+        auto state       = mhd_2d::create_state(run_config);
+        auto next        = std::bind(mhd_2d::next_state, std::placeholders::_1, solver_data);
+        auto tasks       = std::bind(mhd_2d::run_tasks , std::placeholders::_1, solver_data);
+        auto perf        = mara::perf_diagnostics_t();
 
+        mhd_2d::prepare_filesystem(run_config);
+        mara::pretty_print(std::cout, "config", run_config);
+        state = tasks(state);
 
-        printf( " %d : t = %0.2f \n", state.solution.iteration.as_integral(), state.solution.time.value );
-        if ( state.solution.time.value / delta_n - nout > 1.0  )
+        while (mhd_2d::simulation_should_continue(state))
         {
-            output_solution_h5( state.solution, state.solver_data, get_checkpoint_filename(++nout) );
+            std::tie(state, perf) = mara::time_execution(mara::compose(tasks, next), state);
+            mhd_2d::print_run_loop_message(state, perf);
         }
-        if ( state.solution.time.value / delta_d - dout > 1.0  )
-        {
-            //printf("Am I ever actually here??\n");
-            output_diagnostic_h5( diag, get_diagnostic_filename(++dout) );
-        }
+
+        tasks(next(state));
+        return 0;
     }
 
+    std::string name() const override
+    {
+        return "mhd_2d";
+    }
+};
 
-    output_solution_h5( state.solution, state.solver_data, "output.h5" );
-
-    
-    diag = mhd_2dCT::diagnostic_fields(state.solver_data, state.solution, run_config );
-    output_diagnostic_h5( diag, get_diagnostic_filename(++dout) );
-
-
-    return 0;
+std::unique_ptr<mara::sub_program_t> make_subprog_mhd2d_sand()
+{
+    return std::make_unique<subprog_mhd2d_sand>();
 }
+
+#endif //MARA_COMPILE_SUBPROGRAM_MHD2D_SAND
