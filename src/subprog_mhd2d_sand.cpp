@@ -66,6 +66,7 @@ namespace mhd_2d
     using location_2d_t    =  mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0,  0, double>, 2>;
     using velocity_2d_t    =  mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0, -1, double>, 2>;
     using flux_function_t  =  std::function<mara::mhd::flux_vector_t(mara::mhd::primitive_t, mara::mhd::primitive_t, mara::unit_vector_t, double)>;
+    using init_function_t  =  std::function<mara::mhd::primitive_t(mhd_2d::location_2d_t)>;
 
     
     // Solver structs
@@ -191,7 +192,8 @@ mara::config_template_t mhd_2d::create_config_template()
      .item("tfinal",            1.0)    
      .item("cfl",               0.4)    // courant number 
      .item("domain_radius",     1.0)    // half-size of square domain
-     .item("N",                 100);   // number of cells in each direction
+     .item("N",                 100)    // number of cells in each direction
+     .item("initial_condition", "orzsag_tang_vortex");
 }
 
 
@@ -433,6 +435,18 @@ auto duffel_flywheel(mhd_2d::location_2d_t position)
      .with_bfield_3(0.0);
 }
 
+auto get_init_map()
+{
+    std::map<std::string, mhd_2d::init_function_t> init_map;
+    init_map.insert(std::make_pair("brio_wu_shocktube" , brio_wu_shocktube ));
+    init_map.insert(std::make_pair("kelvin_helmholtz"  , kelvin_helmholtz  ));
+    init_map.insert(std::make_pair("orzsag_tang_vortex", orzsag_tang_vortex));
+    init_map.insert(std::make_pair("mhd_blast_wave"    , mhd_blast_wave    ));
+    init_map.insert(std::make_pair("duffel_flywheel"   , duffel_flywheel   ));
+
+    return init_map;
+}
+
 
 // ============================================================================
 //                              Create Solver
@@ -469,11 +483,16 @@ mhd_2d::solution_t mhd_2d::create_solution( const mara::config_t& run_config )
     // ========================================================================
     auto get_field    = [] (auto p) { return p.get_magnetic_field_vector(); };
 
+    // get initial condition
+    // ========================================================================
+    auto init_map = get_init_map();
+    auto initial_condition = init_map[run_config.get_string("initial_condition")];
+
     auto vertices  = create_vertices(run_config);
     auto primitive = vertices 
             | nd::midpoint_on_axis(0) 
             | nd::midpoint_on_axis(1) 
-            | nd::map(orzsag_tang_vortex);
+            | nd::map(initial_condition);
     
     auto conserved = primitive 
             | nd::map(to_conserved)
