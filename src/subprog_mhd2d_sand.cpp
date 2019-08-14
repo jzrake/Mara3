@@ -182,9 +182,9 @@ mara::config_template_t mhd_2d::create_config_template()
 {
     return mara::make_config_template()
      .item("outdir",           "./")    // directory where data products are written
-     .item("cpi",                10)    // checkpoint interval (orbits; chkpt.????.h5 - snapshot of app_state)
-     .item("dfi",                10)    // diagnostic field interval (orbits; diagnostics.????.h5)
-     .item("tsi",                10)    // time series interval (orbits)
+     .item("cpi",               1.0)    // checkpoint interval (orbits; chkpt.????.h5 - snapshot of app_state)
+     .item("dfi",               1.0)    // diagnostic field interval (orbits; diagnostics.????.h5)
+     .item("tsi",               1.0)    // time series interval (orbits)
      .item("ct_flag",             0)    // flag for CT
      .item("rk_order",            1)    // timestepping order
      .item("riemann_solver", "hlle")    // riemann solver (hlle or hlld)
@@ -855,6 +855,59 @@ mhd_2d::diagnostic_fields(const solver_data_t& solver, const solution_t& solutio
 //=============================================================================
 //                              Outputting
 //=============================================================================
+
+
+template<>
+struct h5::hdf5_type_info<mhd_2d::time_series_sample_t>
+{
+    using native_type = mhd_2d::time_series_sample_t;
+    static auto make_datatype_for(const native_type& value)
+    {
+        return h5::Datatype::compound<native_type>({
+            h5_compound_type_member(native_type, time),
+            h5_compound_type_member(native_type, max_div_b),
+        });
+    }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+};
+
+// -----------------------------------------------------------------------
+template<>
+void mara::write<mhd_2d::solution_t>(h5::Group& group, std::string name, const mhd_2d::solution_t& solution)
+{
+    auto location = group.require_group(name);
+    mara::write(location, "time",      solution.time);
+    mara::write(location, "iteration", solution.iteration);
+    mara::write(location, "conserved", solution.conserved);
+}
+
+template<>
+void mara::write<mhd_2d::state_t>(h5::Group& group, std::string name, const mhd_2d::state_t& state)
+{
+    auto location = group.require_group(name);
+    mara::write(location, "solution",    state.solution);
+    mara::write(location, "schedule",    state.schedule);
+    mara::write(location, "time_series", state.time_series.reverse());
+    mara::write(location, "run_config",  state.run_config);
+}
+
+template<>
+void mara::write<mhd_2d::diagnostic_fields_t>(h5::Group& group, std::string name, const mhd_2d::diagnostic_fields_t& diagnostics)
+{
+    auto location = group.require_group(name);
+    mara::write(location, "run_config",        diagnostics.run_config);
+    mara::write(location, "time",              diagnostics.time);
+    mara::write(location, "vertices",          diagnostics.vertices);
+    mara::write(location, "div_b",             diagnostics.div_b);
+}
+
+
+
 // void output_solution_h5( const mhd_2d::solution_t& s, const mhd_2d::solver_data_t solver, std::string fname )
 // {	
 // 	std::cout << "   Outputting: " << fname << std::endl;
