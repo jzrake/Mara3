@@ -44,6 +44,7 @@ std::unique_ptr<mara::sub_program_t> make_subprog_sedov();
 std::unique_ptr<mara::sub_program_t> make_subprog_cloud();
 std::unique_ptr<mara::sub_program_t> make_subprog_binary();
 std::unique_ptr<mara::sub_program_t> make_subprog_amrsand();
+std::unique_ptr<mara::sub_program_t> make_subprog_mhd2d_sand();
 std::unique_ptr<mara::sub_program_t> make_subprog_test();
 
 
@@ -60,6 +61,7 @@ int main(int argc, const char* argv[])
     if constexpr (MARA_COMPILE_SUBPROGRAM_CLOUD)       programs["cloud"]       = make_subprog_cloud();
     if constexpr (MARA_COMPILE_SUBPROGRAM_BINARY)      programs["binary"]      = make_subprog_binary();
     if constexpr (MARA_COMPILE_SUBPROGRAM_AMRSAND)     programs["amrsand"]     = make_subprog_amrsand();
+    if constexpr (MARA_COMPILE_SUBPROGRAM_MHD2D_SAND)  programs["mhd_2d"]      = make_subprog_mhd2d_sand();
     if constexpr (MARA_COMPILE_SUBPROGRAM_TEST)        programs["test"]        = make_subprog_test();
 
     if (argc == 1)
