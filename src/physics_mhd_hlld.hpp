@@ -94,6 +94,7 @@ struct mara::mhd::riemann_hlld_variables_t
             if (std::abs(b) < 1e-8) throw std::invalid_argument(what); return a / b;
         };
 
+
         auto d_star = dl * safe_divide(SL - ul, SL - SM, "UL_star: d_star");
         auto denom  = dl * (SL - ul) * (SL - SM) - b_along * b_along;        
         auto beta    = (SM - ul) / denom;
@@ -101,17 +102,20 @@ struct mara::mhd::riemann_hlld_variables_t
         auto vy_star =  SM * nhat[1] + v_perp_l[1] - beta * b_along * b_perp_l[1];
         auto vz_star =  SM * nhat[2] + v_perp_l[2] - beta * b_along * b_perp_l[2];
 
+
         auto num     = dl * (SL - ul) * (SL - ul) - b_along * b_along;
         auto zeta    = num / denom;
         auto bx_star = zeta * b_perp_l[0] + b_para_l[0];
         auto by_star = zeta * b_perp_l[1] + b_para_l[1];
         auto bz_star = zeta * b_perp_l[2] + b_para_l[2];
 
+
         auto e       = (PL.to_conserved_density(gamma_law_index))[4].value;
         auto bv      =  PL.bfield_dot_velocity();
         auto bv_star =  vx_star * bx_star + vy_star * by_star + vz_star * bz_star;
         auto e_one   = (SL - ul) * e - plT * ul + pstar * SM;
         auto e_star  = safe_divide(e_one + b_along * (bv - bv_star), SL - SM, "mara::mhd::riemann_hlld_variables_t::UL_star (e_star)");
+
 
         if (std::abs(denom) < 1e-8)
         {
@@ -153,6 +157,7 @@ struct mara::mhd::riemann_hlld_variables_t
             if (std::abs(b) < 1e-8) throw std::invalid_argument(what); return a / b;
         };
 
+
         auto d_star  = dr * safe_divide(SR - ur, (SR - SM), "UR_star: d_star");
         auto denom   = dr * (SR - ur) * (SR - SM) - b_along * b_along;
         auto beta    = (SM - ur) / denom;
@@ -160,17 +165,20 @@ struct mara::mhd::riemann_hlld_variables_t
         auto vy_star =  SM * nhat[1] + v_perp_r[1] - beta * b_along * b_perp_r[1];
         auto vz_star =  SM * nhat[2] + v_perp_r[2] - beta * b_along * b_perp_r[2];
 
+
         auto num     = dr * (SR - ur) * (SR - ur) - b_along * b_along;
         auto zeta    = num / denom;
         auto bx_star = zeta * b_perp_r[0] + b_para_r[0];
         auto by_star = zeta * b_perp_r[1] + b_para_r[1];
         auto bz_star = zeta * b_perp_r[2] + b_para_r[2];
 
+
         auto e       = (PR.to_conserved_density(gamma_law_index))[4].value;
         auto bv      =  PR.bfield_dot_velocity();
         auto bv_star =  vx_star * bx_star + vy_star * by_star + vz_star * bz_star;
         auto e_one   = (SR - ur) * e - prT * ur + pstar * SM;
         auto e_star  = safe_divide(e_one + b_along * (bv - bv_star), SR - SM, "mara::mhd::riemann_hlld_variables_t::UR_star (e_star)");
+
 
         if (std::abs(denom) < 1e-8)
         {
@@ -210,6 +218,7 @@ struct mara::mhd::riemann_hlld_variables_t
         auto sgn = [] (double x) { return std::copysign(1.0, x); };
         auto b_sign  = sgn(b_along);
 
+
         if (b_along != 0.0)
         {
             auto Ul_star = UL_star();
@@ -222,6 +231,7 @@ struct mara::mhd::riemann_hlld_variables_t
             auto bz_star = Ul_star[7].value;
             auto bv_star = vx_star * bx_star + vy_star * by_star + vz_star * bz_star;
 
+
             auto Ur_star     = UR_star();
             auto v_starstar  = get_v_starstar(Ul_star, Ur_star, b_sign);
             auto b_starstar  = get_b_starstar(Ul_star, Ur_star, b_sign);
@@ -233,6 +243,7 @@ struct mara::mhd::riemann_hlld_variables_t
             auto bz_starstar = b_para_l[2]  + b_starstar[2] * (1 - nhat[2]);
             auto bv_starstar = vx_starstar * bx_starstar + vy_starstar * by_starstar + vz_starstar * bz_starstar;
             auto e_starstar  = Ul_star[4].value - std::sqrt(d_star) * (bv_star - bv_starstar) * b_sign;
+
 
             return mara::mhd::conserved_density_t{
                 d_star,
@@ -261,6 +272,7 @@ struct mara::mhd::riemann_hlld_variables_t
         auto sgn = [] (double x) { return std::copysign(1.0, x); };
         auto b_sign  = sgn(b_along);
 
+
         if (b_along != 0.0)
         {
             auto Ur_star = UR_star();
@@ -273,6 +285,7 @@ struct mara::mhd::riemann_hlld_variables_t
             auto bz_star = Ur_star[7].value;
             auto bv_star = vx_star * bx_star + vy_star * by_star + vz_star * bz_star;
 
+
             auto Ul_star     = UL_star();
             auto v_starstar  = get_v_starstar(Ul_star, Ur_star, b_sign);
             auto b_starstar  = get_b_starstar(Ul_star, Ur_star, b_sign);
@@ -284,6 +297,7 @@ struct mara::mhd::riemann_hlld_variables_t
             auto bz_starstar = b_para_r[2]  + b_starstar[2] * (1 - nhat[2]);
             auto bv_starstar = vx_starstar * bx_starstar + vy_starstar * by_starstar + vz_starstar * bz_starstar;
             auto e_starstar  = Ur_star[4].value + std::sqrt(d_star) * (bv_star - bv_starstar) * b_sign;
+
 
             return mara::mhd::conserved_density_t{
                 d_star,
@@ -331,13 +345,16 @@ struct mara::mhd::riemann_hlld_variables_t
         auto bzl_star = UL_star[7].value;
         auto bzr_star = UR_star[7].value;
 
+
         auto rt_dl_star = std::sqrt(dl_star);
         auto rt_dr_star = std::sqrt(dr_star);
+
 
         auto eta        =  rt_dl_star + rt_dr_star;
         auto u_starstar = (rt_dl_star * ul_star + rt_dr_star * ur_star + (bxr_star - bxl_star) * b_sign) / eta;
         auto v_starstar = (rt_dl_star * vl_star + rt_dr_star * vr_star + (byr_star - byl_star) * b_sign) / eta;
         auto w_starstar = (rt_dl_star * wl_star + rt_dr_star * wr_star + (bzr_star - bzl_star) * b_sign) / eta;
+
 
         return mara::arithmetic_sequence_t<double, 3>{
             u_starstar,
@@ -378,13 +395,16 @@ struct mara::mhd::riemann_hlld_variables_t
         auto bzl_star = UL_star[7].value;
         auto bzr_star = UR_star[7].value;
 
+
         auto rt_dl_star = std::sqrt(dl_star);
         auto rt_dr_star = std::sqrt(dr_star);
+
 
         auto eta         = rt_dl_star + rt_dr_star;
         auto bx_starstar = rt_dl_star * bxr_star + rt_dr_star * bxl_star + rt_dl_star * rt_dr_star * (ur_star - ul_star) * b_sign;
         auto by_starstar = rt_dl_star * byr_star + rt_dr_star * byl_star + rt_dl_star * rt_dr_star * (vr_star - vl_star) * b_sign;
         auto bz_starstar = rt_dl_star * bzr_star + rt_dr_star * bzl_star + rt_dl_star * rt_dr_star * (wr_star - wl_star) * b_sign;
+
 
         return mara::arithmetic_sequence_t<double, 3>{
             bx_starstar / eta,
@@ -393,12 +413,11 @@ struct mara::mhd::riemann_hlld_variables_t
         };
     }
 
+
     auto FL_star()     const { return FL() + (UL_star() - UL()) * make_velocity(SL); }
     auto FR_star()     const { return FR() + (UR_star() - UR()) * make_velocity(SR); }
     auto FL_starstar() const { return FL() + (UL_star() - UL()) * make_velocity(SL) + (UL_starstar() - UL_star()) * make_velocity(SLstar); }
     auto FR_starstar() const { return FR() + (UR_star() - UR()) * make_velocity(SR) + (UR_starstar() - UR_star()) * make_velocity(SRstar); }
-
-
 
 
     /**
@@ -422,8 +441,14 @@ struct mara::mhd::riemann_hlld_variables_t
 
 
 /**
- * @brief     Compute quantities for HLLD riemann solver
- * 
+ * @brief      Computer variables required to solve the HLLD jump conditions
+ *
+ * @param[in]  Pl               The state to the left of the interface
+ * @param[in]  Pr               The state to the right
+ * @param[in]  nhat             The normal vector to the interface
+ * @param[in]  gamma_law_index  The gamma law index
+ *
+ * @return     The HLLD variables struct
  */
 inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
     const mara::mhd::primitive_t& Pl,

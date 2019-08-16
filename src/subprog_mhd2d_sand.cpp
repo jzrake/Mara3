@@ -48,6 +48,7 @@
 #include "core_ndarray_ops.hpp"
 #include "core_linked_list.hpp"
 
+#include "math_interpolation.hpp"
 #include "physics_mhd.hpp"
 #include "physics_mhd_hlld.hpp"
 
@@ -65,8 +66,8 @@ namespace mhd_2d
     // ========================================================================
     using location_2d_t    =  mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0,  0, double>, 2>;
     using velocity_2d_t    =  mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0, -1, double>, 2>;
-    using flux_function_t  =  std::function<mara::mhd::flux_vector_t(mara::mhd::primitive_t, mara::mhd::primitive_t, mara::mhd::unit_field, mara::unit_vector_t, double)>;
     using init_function_t  =  std::function<mara::mhd::primitive_t(mhd_2d::location_2d_t)>;
+    using flux_function_t  =  std::function<mara::mhd::flux_vector_t(mara::mhd::primitive_t, mara::mhd::primitive_t, mara::mhd::unit_field, mara::unit_vector_t, double)>;
 
     
     // Solver structs
@@ -74,6 +75,7 @@ namespace mhd_2d
     struct solver_data_t
     {
         double                              cfl;
+        double                              plm_theta;
         nd::shared_array<location_2d_t, 2>  vertices;
         flux_function_t                     riemann_solver;
         bool                                ct_flag;
@@ -189,6 +191,7 @@ mara::config_template_t mhd_2d::create_config_template()
      .item("tsi",               1.0)    // time series interval (orbits)
      .item("ct_flag",             0)    // flag for CT
      .item("rk_order",            1)    // timestepping order
+     .item("plm_theta",         0.5)    // plm weight (theta)
      .item("riemann_solver", "hlle")    // riemann solver (hlle or hlld)
      .item("tfinal",            1.0)    
      .item("cfl",               0.4)    // courant number 
@@ -301,13 +304,14 @@ auto kelvin_helmholtz(mhd_2d::location_2d_t position)
 
     auto x     = position[0].value;
     auto y     = position[1].value;
-    auto nexus = std::abs(y) < 0.3;
+    auto nexus = std::abs(y) < 0.5;
 
     auto density  = nexus ? 2.0  :  1.0; 
     auto vx       = nexus ? 0.5  : -0.5;
 
-    auto amp    = 0.01;
-    auto pert_y = amp * std::sin(x);
+    auto amp = 0.01;
+    auto k   = 50. * 2 * M_PI;
+    auto pert_y =  amp * std::sin(k * x);
 
     auto pressure = 2.5;
     auto vy       = pert_y;
@@ -460,13 +464,15 @@ mhd_2d::solver_data_t mhd_2d::create_solver_data( const mara::config_t& run_conf
     solver_map.insert(std::make_pair("hlle", mara::mhd::riemann_hlle));
     solver_map.insert(std::make_pair("hlld", mara::mhd::riemann_hlld));
     
-    auto vertices       = create_vertices(run_config);
-    auto riemann_solver = solver_map[run_config.get_string("riemann_solver")];
-    double cfl          = run_config.get_double("cfl");
-    bool ct_flag        = run_config.get_int("ct_flag");
+    bool   ct_flag        = run_config.get_int("ct_flag");
+    double cfl            = run_config.get_double("cfl");
+    double plm_theta      = run_config.get_double("plm_theta");
+    auto   riemann_solver = solver_map[run_config.get_string("riemann_solver")];
+    auto   vertices       = create_vertices(run_config);
 
     return solver_data_t{
         cfl,
+        plm_theta,
         vertices,
         riemann_solver,
         ct_flag,
@@ -549,7 +555,55 @@ mhd_2d::state_t mhd_2d::create_state( const mara::config_t& run_config )
 // ============================================================================
 //                              The Solver
 // ============================================================================
- 
+
+
+/*
+ *     Calculate flux between cells
+ */
+auto intercell_flux(mhd_2d::flux_function_t riemann_solver, std::size_t axis)
+{
+    return nd::apply( [riemann_solver,axis] (auto left_right_prims, auto left_right_grads, auto b_face)
+    {
+        auto [wl, wr] = left_right_prims;
+        auto [gl, gr] = left_right_grads;
+
+        auto Pl  =  wl + gl / 2.0;
+        auto Pr  =  wr - gr / 2.0;
+        auto nh  =  mara::unit_vector_t::on_axis(axis);
+
+        return riemann_solver(Pl, Pr, b_face, nh, gamma_law_index);
+    });
+};
+
+
+/**
+ *     Compute the PLM gradient in each cell in direction of axis
+ */
+auto compute_gradients(std::size_t axis, double plm_theta)
+{
+    return [=] (auto zip3_prims)
+    {
+        return zip3_prims 
+        | nd::apply([plm_theta] (auto a, auto b, auto c) { return mara::plm_gradient(a, b, c, plm_theta); });
+    };
+}
+
+
+/**
+ *     Zip_adjacent function specifically for MHD solvers
+ *
+ *        - includes longitudinal field as solver parameter
+ */
+auto zip_adjacent2_mhd(nd::shared_array<mara::mhd::unit_field,2> b_face, std::size_t axis)
+{
+    return [=] (auto array)
+    {
+        auto Pl  = array | nd::select_axis(axis).from(0).to(1).from_the_end();
+        auto Pr  = array | nd::select_axis(axis).from(1).to(0).from_the_end();
+        return zip(Pl, Pr, b_face);
+    };
+}; 
+
 
 mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
                                         const solver_data_t& solver,
@@ -581,54 +635,8 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
     };
 
 
-    /*
-     *     Calculate flux between cells
-     */
-    auto intercell_flux = [riemann_solver=solver.riemann_solver] (std::size_t axis)
-    {
-        return [axis, riemann_solver] (auto left_right_balong)
-        {
-            using namespace std::placeholders;
-            auto nh = mara::unit_vector_t::on_axis(axis);
-            auto riemann = std::bind(riemann_solver, _1, _2, _3, nh, gamma_law_index);
-            return left_right_balong | nd::apply(riemann);
-        };
-    };
-
-
-    /**
-     *     Zip_adjacent function specifically for MHD solvers
-     *
-     *        - includes longitudinal field as solver parameter
-     */
-    
-    // auto zip_adjacent2_mhd = [] (auto b_face, std::size_t axis)
-    // {
-    //     auto set_parallel_field = [] (std::size_t axis) 
-    //     {
-    //         return nd::apply( [axis] (auto P, auto b) {return P.with_b_along(b, axis);} );
-    //     };
-
-    //     return [=] (auto array)
-    //     {
-    //         auto Pl  = array | nd::select_axis(axis).from(0).to(1).from_the_end();
-    //         auto Pr  = array | nd::select_axis(axis).from(1).to(0).from_the_end();
-    //         auto Plp = nd::zip(Pl, b_face) | set_parallel_field(axis);
-    //         auto Prp = nd::zip(Pr, b_face) | set_parallel_field(axis);
-    //         return zip(Plp,Prp);
-    //     };
-    // };
-
-    auto zip_adjacent2_mhd = [] (auto b_face, std::size_t axis)
-    {
-        return [=] (auto array)
-        {
-            auto Pl  = array | nd::select_axis(axis).from(0).to(1).from_the_end();
-            auto Pr  = array | nd::select_axis(axis).from(1).to(0).from_the_end();
-            return nd::zip(Pl, Pr, b_face);
-        };
-    };
-
+    //=========================================================================
+    auto plm_theta      = solver.plm_theta;
 
     //=========================================================================
     auto v0  =  solver.vertices;
@@ -648,6 +656,9 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
     if ( solver.ct_flag )
     {
         // For CT bx0, by0 are face-centered fields
+        //=====================================================================
+        
+
         //    1. Get cell centered field
         //=====================================================================
         auto B   =  nd::zip(bx0  | nd::midpoint_on_axis(0), 
@@ -655,14 +666,28 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
                             bz0) | nd::apply(to_magnetic_vector);
 
 
-        //    2. Pass face-centered field to zip_adjacent2 stencil
+        //    2. Calculate primitives, apply BC, and zip left and right states
         //=====================================================================
-        auto w0  =  nd::zip(u0,B) | nd::apply(recover_primitive);
-        auto FX  =  w0 | nd::extend_periodic_on_axis(0) | zip_adjacent2_mhd(bx0, 0) | intercell_flux(0);
-        auto FY  =  w0 | nd::extend_periodic_on_axis(1) | zip_adjacent2_mhd(by0, 1) | intercell_flux(1);
+        auto w0    =  nd::zip(u0,B) | nd::apply(recover_primitive);
+        auto w2_ex =  w0 | nd::extend_periodic_on_axis(0, 1) | nd::zip_adjacent2_on_axis(0);
+        auto w2_ey =  w0 | nd::extend_periodic_on_axis(1, 1) | nd::zip_adjacent2_on_axis(1);
 
 
-        //    3. Extract euler fluxes for hydro quantities and B_z
+        //    3. Compute N+2 gradients and zip together left and right grads
+        //=====================================================================
+        auto gx  =  w0 | nd::extend_periodic_on_axis(0, 2) | nd::zip_adjacent3_on_axis(0) | compute_gradients(0, plm_theta);
+        auto gy  =  w0 | nd::extend_periodic_on_axis(1, 2) | nd::zip_adjacent3_on_axis(1) | compute_gradients(1, plm_theta);
+        auto g2_ex  =  gx | nd::zip_adjacent2_on_axis(0);
+        auto g2_ey  =  gy | nd::zip_adjacent2_on_axis(1);
+
+
+        //    4. Pass prim and grad pairs (and b parallel) to riemann solver
+        //=====================================================================
+        auto FX    =  nd::zip(w2_ex, g2_ex, bx0) | intercell_flux(solver.riemann_solver, 0);
+        auto FY    =  nd::zip(w2_ey, g2_ey, by0) | intercell_flux(solver.riemann_solver, 1);
+
+
+        //    4. Extract euler fluxes for hydro quantities and B_z
         //=========================================================================
         auto lx    =  FX | just_euler_fluxes() | nd::multiply(dy) | nd::difference_on_axis(0);
         auto ly    =  FY | just_euler_fluxes() | nd::multiply(dx) | nd::difference_on_axis(1);
@@ -670,14 +695,14 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
         auto ly_bz =  FY | component(7) | nd::multiply(dx) | nd::difference_on_axis(1); 
 
 
-        //    4. Get z-directed electric fields and calculate corner-centered EMFs
+        //    5. Get z-directed electric fields and calculate corner-centered EMFs
         //=========================================================================
         auto emf_x_edges  = -FX | component(6) | nd::extend_periodic_on_axis(1) | nd::midpoint_on_axis(1); //avg flux of By in x-direction
         auto emf_y_edges  =  FY | component(5) | nd::extend_periodic_on_axis(0) | nd::midpoint_on_axis(0); //avg flux of Bx in y-direction
         auto emf_edges    = (emf_x_edges + emf_y_edges) * 0.5 * e; 
 
 
-        //    5. Updated conserved quantities and face-centered fields
+        //    6. Updated conserved quantities and face-centered fields
         //=========================================================================
         auto u1  = u0  - (lx    + ly   ) * dt / dA;
         auto bz1 = bz0 - (lx_bz + ly_bz) * dt / dA * e;
@@ -685,7 +710,7 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
         auto by1 = by0 + ( emf_edges|nd::difference_on_axis(0) ) / dx * dt;
 
 
-        //    6. Return new solution
+        //    7. Return new solution
         //=========================================================================
         return solution_t{
             solution.time + dt,
@@ -699,17 +724,34 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
     else
     {
         // For no-CT bx0, by0, bz0 are cell-centered fields
-        //    1. Need face centered fields to send to zip_adjacent2 stencil
+        //=====================================================================
+
+
+        //    1. Calculate primitives, apply BC, and zip left and right states
         //=====================================================================
         auto B   =  nd::zip(bx0, by0, bz0) | nd::apply(to_magnetic_vector);
         auto w0  =  nd::zip(u0,B) | nd::apply(recover_primitive);
-        auto bxc =  bx0 | nd::extend_periodic_on_axis(0) | nd::midpoint_on_axis(0);
-        auto byc =  by0 | nd::extend_periodic_on_axis(1) | nd::midpoint_on_axis(1);
-        auto FX  =  w0  | nd::extend_periodic_on_axis(0) | zip_adjacent2_mhd(bxc, 0) | intercell_flux(0);
-        auto FY  =  w0  | nd::extend_periodic_on_axis(1) | zip_adjacent2_mhd(byc, 1) | intercell_flux(1);
+        auto w2_ex  =  w0 | nd::extend_periodic_on_axis(0, 1) | nd::zip_adjacent2_on_axis(0);
+        auto w2_ey  =  w0 | nd::extend_periodic_on_axis(1, 1) | nd::zip_adjacent2_on_axis(1);
 
 
-        //    2. Get Fluxes in all quantities
+        //    2. Compute N+2 gradients and zip together left and right grads
+        //=====================================================================
+        auto gx  =  w0 | nd::extend_periodic_on_axis(0, 2) | nd::zip_adjacent3_on_axis(0) | compute_gradients(0, plm_theta);
+        auto gy  =  w0 | nd::extend_periodic_on_axis(1, 2) | nd::zip_adjacent3_on_axis(1) | compute_gradients(1, plm_theta);
+        auto g2_ex  =  gx | nd::zip_adjacent2_on_axis(0);
+        auto g2_ey  =  gy | nd::zip_adjacent2_on_axis(1);
+
+
+        //    3. Get face-centered fields and pass to riemann solver
+        //=========================================================================
+        auto bxc  =  bx0 | nd::extend_periodic_on_axis(0) | nd::midpoint_on_axis(0);
+        auto byc  =  by0 | nd::extend_periodic_on_axis(1) | nd::midpoint_on_axis(1);
+        auto FX   =  nd::zip(w2_ex, g2_ex, bxc) | intercell_flux(solver.riemann_solver, 0);
+        auto FY   =  nd::zip(w2_ey, g2_ey, byc) | intercell_flux(solver.riemann_solver, 1);
+
+
+        //    4. Get Fluxes in all quantities
         //=========================================================================
         auto lx    =  FX | just_euler_fluxes() | nd::multiply(dy) | nd::difference_on_axis(0);
         auto ly    =  FY | just_euler_fluxes() | nd::multiply(dx) | nd::difference_on_axis(1);
@@ -721,7 +763,7 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
         auto ly_bz =  FY | component(7) | nd::multiply(dx) | nd::difference_on_axis(1); 
 
 
-        //    3. Updated conserved quantities and face-centered fields
+        //    5. Updated conserved quantities and face-centered fields
         //=========================================================================
         auto u1  = u0  - (lx    + ly   ) * dt / dA;
         auto bx1 = bx0 - (lx_bx + ly_bx) * dt / dA * e;
@@ -729,7 +771,7 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
         auto bz1 = bz0 - (lx_bz + ly_bz) * dt / dA * e;
 
 
-        //    4. Return new solution
+        //    6. Return new solution
         //=========================================================================
         return solution_t{
             solution.time + dt,

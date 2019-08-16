@@ -170,9 +170,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     primitive_t with_b_along(unit_field the_b, mara::unit_vector_t nh) const
     {
         const auto& _ = *this;
-        if( nh[0]==0 ) return _.with_bfield_1(the_b.value);
-        if( nh[1]==1 ) return _.with_bfield_2(the_b.value);
-        if( nh[2]==2 ) return _.with_bfield_3(the_b.value);
+        if( nh[0]==1.0 ) return _.with_bfield_1(the_b.value);
+        if( nh[1]==1.0 ) return _.with_bfield_2(the_b.value);
+        if( nh[2]==1.0 ) return _.with_bfield_3(the_b.value);
         throw std::invalid_argument("mara::mhd::with_b_along (only works for cartesion fluxes)");
     }
 
