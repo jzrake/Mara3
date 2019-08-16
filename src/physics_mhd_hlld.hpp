@@ -555,15 +555,24 @@ inline mara::mhd::riemann_hlld_variables_t mara::mhd::compute_hlld_variables(
 
 
 /**
- * @brief     Calculate hlld riemann solution from left and right 
- *            primitive states
- * 
+ * @brief      Return the HLLD flux for the given pair of states
+ *
+ * @param[in]  Pl               The state to the left of the interface
+ * @param[in]  Pr               The state to the right
+ * @param[in]  b_para           The component of the magnetic field parallel to nhat
+ * @param[in]  nhat             The normal vector to the interface
+ * @param[in]  gamma_law_index  The gamma law index
+ *
+ * @return     A vector of fluxes
  */
 inline mara::mhd::flux_vector_t mara::mhd::riemann_hlld(
         const primitive_t& Pl,
         const primitive_t& Pr,
+        const unit_field& b_along,
         const unit_vector_t& nhat,
         double gamma_law_index)
 {
-    return compute_hlld_variables(Pl, Pr, nhat, gamma_law_index).interface_flux();
+    auto Plp = Pl.with_b_along(b_along, nhat);
+    auto Prp = Pr.with_b_along(b_along, nhat);
+    return compute_hlld_variables(Plp, Prp, nhat, gamma_law_index).interface_flux();
 }

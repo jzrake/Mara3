@@ -65,7 +65,7 @@ namespace mhd_2d
     // ========================================================================
     using location_2d_t    =  mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0,  0, double>, 2>;
     using velocity_2d_t    =  mara::arithmetic_sequence_t<mara::dimensional_value_t<1 , 0, -1, double>, 2>;
-    using flux_function_t  =  std::function<mara::mhd::flux_vector_t(mara::mhd::primitive_t, mara::mhd::primitive_t, mara::unit_vector_t, double)>;
+    using flux_function_t  =  std::function<mara::mhd::flux_vector_t(mara::mhd::primitive_t, mara::mhd::primitive_t, mara::mhd::unit_field, mara::unit_vector_t, double)>;
     using init_function_t  =  std::function<mara::mhd::primitive_t(mhd_2d::location_2d_t)>;
 
     
@@ -128,10 +128,11 @@ namespace mhd_2d
 
     struct diagnostic_fields_t
     {
-        mara::config_t                                run_config;
-        mara::unit_time<double>                       time;
-        nd::shared_array<location_2d_t,         2>    vertices;
-        nd::shared_array<mara::mhd::unit_field, 2>    div_b; 
+        mara::config_t                                       run_config;
+        mara::unit_time<double>                              time;
+        nd::shared_array<location_2d_t, 2>                   vertices;
+        // nd::shared_array<mara::mhd::primitive_t, 2>          prims;
+        nd::shared_array<mara::mhd::unit_field, 2>           div_b; 
     };
 
 
@@ -485,7 +486,7 @@ mhd_2d::solution_t mhd_2d::create_solution( const mara::config_t& run_config )
 
     // get initial condition
     // ========================================================================
-    auto init_map = get_init_map();
+    auto init_map          = get_init_map();
     auto initial_condition = init_map[run_config.get_string("initial_condition")];
 
     auto vertices  = create_vertices(run_config);
@@ -585,12 +586,12 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
      */
     auto intercell_flux = [riemann_solver=solver.riemann_solver] (std::size_t axis)
     {
-        return [axis, riemann_solver] (auto left_and_right_states)
+        return [axis, riemann_solver] (auto left_right_balong)
         {
             using namespace std::placeholders;
             auto nh = mara::unit_vector_t::on_axis(axis);
-            auto riemann = std::bind(riemann_solver, _1, _2, nh, gamma_law_index);
-            return left_and_right_states | nd::apply(riemann);
+            auto riemann = std::bind(riemann_solver, _1, _2, _3, nh, gamma_law_index);
+            return left_right_balong | nd::apply(riemann);
         };
     };
 
@@ -600,20 +601,31 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
      *
      *        - includes longitudinal field as solver parameter
      */
+    
+    // auto zip_adjacent2_mhd = [] (auto b_face, std::size_t axis)
+    // {
+    //     auto set_parallel_field = [] (std::size_t axis) 
+    //     {
+    //         return nd::apply( [axis] (auto P, auto b) {return P.with_b_along(b, axis);} );
+    //     };
+
+    //     return [=] (auto array)
+    //     {
+    //         auto Pl  = array | nd::select_axis(axis).from(0).to(1).from_the_end();
+    //         auto Pr  = array | nd::select_axis(axis).from(1).to(0).from_the_end();
+    //         auto Plp = nd::zip(Pl, b_face) | set_parallel_field(axis);
+    //         auto Prp = nd::zip(Pr, b_face) | set_parallel_field(axis);
+    //         return zip(Plp,Prp);
+    //     };
+    // };
+
     auto zip_adjacent2_mhd = [] (auto b_face, std::size_t axis)
     {
-        auto set_parallel_field = [] (std::size_t axis) 
-        {
-            return nd::apply( [axis] (auto P, auto b) {return P.with_b_along(b, axis);} );
-        };
-
         return [=] (auto array)
         {
             auto Pl  = array | nd::select_axis(axis).from(0).to(1).from_the_end();
             auto Pr  = array | nd::select_axis(axis).from(1).to(0).from_the_end();
-            auto Plp = nd::zip(Pl, b_face) | set_parallel_field(axis);
-            auto Prp = nd::zip(Pr, b_face) | set_parallel_field(axis);
-            return zip(Plp,Prp);
+            return nd::zip(Pl, Pr, b_face);
         };
     };
 
@@ -809,9 +821,9 @@ mhd_2d::solution_t mhd_2d::next_solution(const state_t& state, const solver_data
 mara::schedule_t mhd_2d::next_schedule(const state_t& state)
 {
     return mara::mark_tasks_in(state, state.solution.time.value,
-        {{"write_checkpoint",   state.run_config.get_double("cpi") * 2 * M_PI},
-         {"write_diagnostics",  state.run_config.get_double("dfi") * 2 * M_PI},
-         {"record_time_series", state.run_config.get_double("tsi") * 2 * M_PI}});
+        {{"write_checkpoint",   state.run_config.get_double("cpi")},
+         {"write_diagnostics",  state.run_config.get_double("dfi")},
+         {"record_time_series", state.run_config.get_double("tsi")}});
 }
 
 
@@ -859,14 +871,39 @@ compute_div_b(const mhd_2d::solver_data_t& solver, const mhd_2d::solution_t& sol
 mhd_2d::diagnostic_fields_t 
 mhd_2d::diagnostic_fields(const solver_data_t& solver, const solution_t& solution, const mara::config_t& run_config)
 {
-    auto div_b = compute_div_b(solver, solution, run_config.get_int("ct_flag"));
+    auto s     =  solution;
+    auto u0    =  s.conserved;
+    auto div_b =  compute_div_b(solver, s, solver.ct_flag);
 
-    return diagnostic_fields_t{
-        run_config,
-        solution.time,
-        solver.vertices,
-        div_b
-    };
+    if (solver.ct_flag)
+    {
+        auto B  =  nd::zip(s.bfield_x  | nd::midpoint_on_axis(0), 
+                       s.bfield_y  | nd::midpoint_on_axis(1),
+                       s.bfield_z) | nd::apply(to_magnetic_vector);
+        auto prims  =  nd::zip(u0, B) | nd::apply(recover_primitive);
+
+        return diagnostic_fields_t{
+            run_config,
+            s.time,
+            solver.vertices,
+            // prims,
+            div_b
+        };
+    }
+    else
+    {
+        auto B      =  nd::zip(s.bfield_x, s.bfield_y, s.bfield_z) | nd::apply(to_magnetic_vector);
+        auto prims  =  nd::zip(u0, B) | nd::apply(recover_primitive);
+
+        return diagnostic_fields_t{
+            run_config,
+            s.time,
+            solver.vertices,
+            // prims,
+            div_b
+        };
+    }
+
 }
 
 
@@ -919,10 +956,11 @@ template<>
 void mara::write<mhd_2d::diagnostic_fields_t>(h5::Group& group, std::string name, const mhd_2d::diagnostic_fields_t& diagnostics)
 {
     auto location = group.require_group(name);
-    mara::write(location, "run_config",        diagnostics.run_config);
-    mara::write(location, "time",              diagnostics.time);
-    mara::write(location, "vertices",          diagnostics.vertices);
-    mara::write(location, "div_b",             diagnostics.div_b);
+    mara::write(location, "run_config", diagnostics.run_config);
+    mara::write(location, "time",       diagnostics.time);
+    mara::write(location, "vertices",   diagnostics.vertices);
+    // mara::write(location, "prims",      diagnostics.prims);
+    mara::write(location, "div_b",      diagnostics.div_b);
 }
 
 

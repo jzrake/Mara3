@@ -32,7 +32,7 @@
 #include "core_matrix.hpp"
 #include "core_dimensional.hpp"
 #include "core_tuple.hpp"
-
+#include "app_serialize.hpp"
 
 
 
@@ -88,6 +88,7 @@ struct mara::mhd
     static inline flux_vector_t riemann_hlle(
         const primitive_t& Pl,
         const primitive_t& Pr,
+        const unit_field& b_para,
         const unit_vector_t& nhat,
         double gamma_law_index);
 
@@ -98,6 +99,7 @@ struct mara::mhd
     static inline flux_vector_t riemann_hlld(
         const  primitive_t& Pl,
         const  primitive_t& Pr,
+        const  unit_field& b_para,
         const  unit_vector_t& nhat,
         double gamma_law_index);
 
@@ -162,9 +164,17 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         if( axis==0 ) return _.with_bfield_1(the_b.value);
         if( axis==1 ) return _.with_bfield_2(the_b.value);
         if( axis==2 ) return _.with_bfield_3(the_b.value);
-        throw std::invalid_argument("mara::mhd::no_bfield_jump (only works for cartesion fluxes)");
+        throw std::invalid_argument("mara::mhd::with_b_along (only works for cartesion fluxes)");
     }
 
+    primitive_t with_b_along(unit_field the_b, mara::unit_vector_t nh) const
+    {
+        const auto& _ = *this;
+        if( nh[0]==0 ) return _.with_bfield_1(the_b.value);
+        if( nh[1]==1 ) return _.with_bfield_2(the_b.value);
+        if( nh[2]==2 ) return _.with_bfield_3(the_b.value);
+        throw std::invalid_argument("mara::mhd::with_b_along (only works for cartesion fluxes)");
+    }
 
     //=========================================================================
     /**
@@ -643,6 +653,7 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
  *
  * @param[in]  Pl               The state to the left of the interface
  * @param[in]  Pr               The state to the right
+ * @param[in]  b_para           The component of the magnetic field parallel to nhat
  * @param[in]  nhat             The normal vector to the interface
  * @param[in]  gamma_law_index  The gamma law index
  *
@@ -651,19 +662,38 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
 mara::mhd::flux_vector_t mara::mhd::riemann_hlle(
     const primitive_t& Pl,
     const primitive_t& Pr,
+    const unit_field&  b_para,
     const unit_vector_t& nhat,
     double gamma_law_index)
 {  
-    auto Ul = Pl.to_conserved_density(gamma_law_index);
-    auto Ur = Pr.to_conserved_density(gamma_law_index);
-    auto Al = Pl.fast_wave_speeds(nhat, gamma_law_index ); 
-    auto Ar = Pr.fast_wave_speeds(nhat, gamma_law_index );
-    auto Fl = Pl.flux(nhat, Ul);
-    auto Fr = Pr.flux(nhat, Ur);
+    auto Plp = Pl.with_b_along(b_para, nhat);
+    auto Prp = Pr.with_b_along(b_para, nhat);
+
+    auto Ul = Plp.to_conserved_density(gamma_law_index);
+    auto Ur = Prp.to_conserved_density(gamma_law_index);
+    auto Al = Plp.fast_wave_speeds(nhat, gamma_law_index ); 
+    auto Ar = Prp.fast_wave_speeds(nhat, gamma_law_index );
+    auto Fl = Plp.flux(nhat, Ul);
+    auto Fr = Prp.flux(nhat, Ur);
 
     auto ap = std::max(make_velocity(0.0), std::max(Al.p, Ar.p));
     auto am = std::min(make_velocity(0.0), std::min(Al.m, Ar.m));
 
     return (Fl * ap - Fr * am - (Ul - Ur) * ap * am) / (ap - am);
 }
+
+//=============================================================================
+// template<>
+// void mara::write<mara::mhd::primitive_t>(h5::Group& group, std::string name, const mara::mhd::primitive_t& p)
+// {
+//     auto location = group.require_group(name);
+//     mara::write(location, "density" , p.mass_density());
+//     mara::write(location, "pressure", p.gas_pressure());
+//     mara::write(location, "vx"      , p.velocity_1()  );
+//     mara::write(location, "vy"      , p.velocity_2()  );
+//     mara::write(location, "vz"      , p.velocity_3()  );
+//     mara::write(location, "bx"      , p.bfield_1()    );
+//     mara::write(location, "by"      , p.bfield_2()    );
+//     mara::write(location, "bz"      , p.bfield_3()    );
+// }
 
