@@ -61,6 +61,9 @@ namespace mara
     template<std::size_t Rank, typename ValueType>
     auto tree_of(const arithmetic_sequence_t<ValueType, 1 << Rank>& child_values);
 
+    inline std::size_t hilbert_index(tree_index_t<2> index);
+
+
     //=========================================================================
     namespace detail
     {
@@ -997,4 +1000,51 @@ auto mara::tree_of(const arithmetic_sequence_t<ValueType, 1 << Rank>& child_valu
     {
         detail::to_shared_ptr(child_values.map([] (auto&& c) { return tree_of<Rank>(c); }))
     };
+}
+
+
+
+
+/**
+ * @brief      Convert the given tree index to a linear index according to a
+ *             Hilbert curve
+ *
+ * @param[in]  index  The tree index
+ *
+ * @return     The Hilbert linear index of the given tree index
+ */
+std::size_t mara::hilbert_index(tree_index_t<2> index)
+{
+    // https://en.wikipedia.org/wiki/Hilbert_curve
+
+    auto rot = [] (int n, int *x, int *y, int rx, int ry)
+    {
+        if (ry == 0)
+        {
+            if (rx == 1)
+            {
+                *x = n-1 - *x;
+                *y = n-1 - *y;
+            }
+            int t = *x;
+            *x = *y;
+            *y = t;
+        }
+    };
+
+    auto xy2d = [rot] (int n, int x, int y)
+    {
+        int rx, ry, s, d=0;
+
+        for (s = n/2; s > 0; s /= 2)
+        {
+            rx = (x & s) > 0;
+            ry = (y & s) > 0;
+            d += s * s * ((3 * rx) ^ ry);
+            rot(n, &x, &y, rx, ry);
+        }
+        return d;
+    };
+
+    return xy2d(index.level, index.coordinates[0], index.coordinates[1]);
 }

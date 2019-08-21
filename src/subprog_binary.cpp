@@ -80,7 +80,8 @@ mara::config_template_t binary::create_config_template()
     .item("buffer_damping_rate", 10.0)          // maximum rate of buffer zone, where solution is driven to initial state
     .item("domain_radius",       24.0)          // half-size of square domain
     .item("disk_radius",          2.0)          // characteristic disk radius (in units of binary separation)
-    .item("ambient_density",     1e-4)          // surface density beyond torus
+    .item("disk_mass",           1e-3)          // total disk mass (in units of the binary mass)
+    .item("ambient_density",     1e-4)          // surface density beyond torus (relative to mas sigma)
     .item("separation",           1.0)          // binary separation: 0.0 or 1.0 (zero emulates a single body)
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
@@ -98,22 +99,18 @@ binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_
     auto softening_radius  = run_config.get_double("softening_radius");
     auto disk_radius       = run_config.get_double("disk_radius");
     auto mach_number       = run_config.get_double("mach_number");
+    auto disk_mass         = run_config.get_double("disk_mass");
     auto ambient_density   = run_config.get_double("ambient_density");
     auto counter_rotate    = run_config.get_int("counter_rotate");
     auto rc = disk_radius;
-    auto s1 = ambient_density;
+    auto s0 = disk_mass / (17.0618 * rc * rc); // see mathematica notebook
+    auto s1 = ambient_density * s0;
 
     auto sigma = [=] (double r)
     {
         auto x = r / rc;
-        return std::exp(-0.5 * (x - 1) * (x - 1)) + s1;
+        return s0 * std::exp(-0.5 * (x - 1) * (x - 1)) + s1;
     };
-
-    // auto dlogsigma_dlogr = [=] (double r)
-    // {
-    //     auto x = r / rc;
-    //     return x * (1 - x) * (1 - s1 / sigma(r));
-    // };
 
     auto dp_dr = [=] (double r)
     {
@@ -132,15 +129,9 @@ binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_
         auto r              = std::sqrt(r2);
         auto rs             = softening_radius;
         auto GM             = 1.0;
-        // auto cs2            = 1.0 / mach_number / mach_number; // constant sound-speed
-        // auto gradp_term     = dp_dr(r) * r / sigma(r);
-        // auto vp             = std::sqrt(GM / (r + rs) + cs2 * dlogsigma_dlogr(r)) * (counter_rotate ? -1 : 1);
         auto vp             = std::sqrt(GM / (r + rs) + dp_dr(r)) * (counter_rotate ? -1 : 1);
         auto vx             = vp * (-y / r);
         auto vy             = vp * ( x / r);
-
-        // if (GM / (r + rs) + gradp_term < 0.0)
-        //     throw std::invalid_argument("no disk solution: increase mach_number or ambient_density");
 
         return mara::iso2d::primitive_t()
             .with_sigma(sigma(r))
@@ -180,9 +171,9 @@ binary::quad_tree_t<binary::location_2d_t> binary::create_vertices(const mara::c
     });
 }
 
-mara::two_body_parameters_t binary::create_binary_params(const mara::config_t& run_config)
+mara::orbital_elements_t binary::create_binary_params(const mara::config_t& run_config)
 {
-    auto binary = mara::two_body_parameters_t();
+    auto binary = mara::orbital_elements_t();
     binary.total_mass   = 1.0;
     binary.separation   = run_config.get_double("separation");
     binary.mass_ratio   = run_config.get_double("mass_ratio");
@@ -200,7 +191,12 @@ binary::solution_t binary::create_solution(const mara::config_t& run_config)
         | nd::apply([] (auto x, auto p) { return p.to_conserved_angmom_per_area(x); })
         | nd::to_shared();
     });
-    return solution_t{0, 0.0, conserved, {}, {}, {}, {}, {}, {}};
+
+    return solution_t{
+        0, 0.0, conserved, {}, {}, {}, {}, {}, {},
+        mara::make_full_orbital_elements_with_zeros(),
+        mara::make_full_orbital_elements_with_zeros(),
+    };
 }
 
 mara::schedule_t binary::create_schedule(const mara::config_t& run_config)
@@ -232,23 +228,23 @@ binary::state_t binary::create_state(const mara::config_t& run_config)
 
 
 //=============================================================================
-auto binary::next_solution(const solution_t& state, const solver_data_t& solver_data)
+auto binary::next_solution(const solution_t& solution, const solver_data_t& solver_data)
 {
-    auto can_fail = [] (const solution_t& state, const solver_data_t& solver_data, auto dt)
+    auto can_fail = [] (const solution_t& solution, const solver_data_t& solver_data, auto dt, bool safe_mode)
     {
-        auto s0 = state;
+        auto s0 = solution;
 
         switch (solver_data.rk_order)
         {
             case 1:
             {
-                return advance(s0, solver_data, dt);
+                return advance(s0, solver_data, dt, safe_mode);
             }
             case 2:
             {
                 auto b0 = mara::make_rational(1, 2);
-                auto s1 = advance(s0, solver_data, dt);
-                auto s2 = advance(s1, solver_data, dt);
+                auto s1 = advance(s0, solver_data, dt, safe_mode);
+                auto s2 = advance(s1, solver_data, dt, safe_mode);
                 return s0 * b0 + s2 * (1 - b0);
             }
         }
@@ -256,12 +252,12 @@ auto binary::next_solution(const solution_t& state, const solver_data_t& solver_
     };
 
     try {
-        return can_fail(state, solver_data, solver_data.recommended_time_step);
+        return can_fail(solution, solver_data, solver_data.recommended_time_step, false);
     }
     catch (const std::exception& e)
     {
         std::cout << e.what() << std::endl;
-        return can_fail(state, solver_data, solver_data.recommended_time_step * 0.01);
+        return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true);
     }
 }
 
@@ -340,6 +336,8 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         sample.angular_momentum_ejected     = state.solution.angular_momentum_ejected;
         sample.disk_mass                    = disk_mass            (state.solution, solver_data);
         sample.disk_angular_momentum        = disk_angular_momentum(state.solution, solver_data);
+        sample.orbital_elements_acc         = state.solution.orbital_elements_acc;
+        sample.orbital_elements_grav        = state.solution.orbital_elements_grav;
 
         state.time_series = state.time_series.prepend(sample);
         return mara::complete_task_in(state, "record_time_series");

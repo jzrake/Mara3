@@ -41,6 +41,59 @@ struct h5::hdf5_type_info<mara::iso2d::conserved_angmom_per_area_t>
 
 //=============================================================================
 template<>
+struct h5::hdf5_type_info<mara::orbital_elements_t>
+{
+    using native_type = mara::orbital_elements_t;
+    static auto make_datatype_for(const native_type& value)
+    {
+        return h5::Datatype::compound<native_type>({
+            h5_compound_type_member(native_type, separation),
+            h5_compound_type_member(native_type, total_mass),
+            h5_compound_type_member(native_type, mass_ratio),
+            h5_compound_type_member(native_type, eccentricity),
+        });
+    }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+};
+
+
+
+
+//=============================================================================
+template<>
+struct h5::hdf5_type_info<mara::full_orbital_elements_t>
+{
+    using native_type = mara::full_orbital_elements_t;
+    static auto make_datatype_for(const native_type& value)
+    {
+        return h5::Datatype::compound<native_type>({
+            h5_compound_type_member(native_type, pomega),
+            h5_compound_type_member(native_type, phi),
+            h5_compound_type_member(native_type, cm_position_x),
+            h5_compound_type_member(native_type, cm_position_y),
+            h5_compound_type_member(native_type, cm_velocity_x),
+            h5_compound_type_member(native_type, cm_velocity_y),
+            h5_compound_type_member(native_type, elements),
+        });
+    }
+    static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
+    static auto convert_to_writable(const native_type& value) { return value; }
+    static auto prepare(const Datatype&, const Dataspace& space) { return native_type(); }
+    static auto finalize(native_type&& value) { return std::move(value); }
+    static auto get_address(const native_type& value) { return &value; }
+    static auto get_address(native_type& value) { return &value; }
+};
+
+
+
+
+//=============================================================================
+template<>
 struct h5::hdf5_type_info<binary::time_series_sample_t>
 {
     using native_type = binary::time_series_sample_t;
@@ -56,6 +109,8 @@ struct h5::hdf5_type_info<binary::time_series_sample_t>
             h5_compound_type_member(native_type, work_done_on),
             h5_compound_type_member(native_type, mass_ejected),
             h5_compound_type_member(native_type, angular_momentum_ejected),
+            h5_compound_type_member(native_type, orbital_elements_acc),
+            h5_compound_type_member(native_type, orbital_elements_grav),
         });
     }
     static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }
@@ -83,6 +138,8 @@ void mara::write<binary::solution_t>(h5::Group& group, std::string name, const b
     mara::write(location, "work_done_on",                 solution.work_done_on);
     mara::write(location, "mass_ejected",                 solution.mass_ejected);
     mara::write(location, "angular_momentum_accreted_on", solution.angular_momentum_accreted_on);
+    mara::write(location, "orbital_elements_acc",  solution.orbital_elements_acc);
+    mara::write(location, "orbital_elements_grav", solution.orbital_elements_grav);
 }
 
 template<>
@@ -122,6 +179,8 @@ void mara::read<binary::solution_t>(h5::Group& group, std::string name, binary::
     mara::read(location, "work_done_on",                 solution.work_done_on);
     mara::read(location, "mass_ejected",                 solution.mass_ejected);
     mara::read(location, "angular_momentum_accreted_on", solution.angular_momentum_accreted_on);
+    mara::read(location, "orbital_elements_acc",  solution.orbital_elements_acc);
+    mara::read(location, "orbital_elements_grav", solution.orbital_elements_grav);
 }
 
 template<>

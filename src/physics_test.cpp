@@ -209,7 +209,7 @@ TEST_CASE("MHD HLLD solver satisfies expected jump conditions", "[mara::mhd::com
 TEST_CASE("Two body gravity model works as expected", "[model_two_body]")
 {
     auto dt = 1e-4;
-    auto binary = mara::two_body_parameters_t{};
+    auto binary = mara::orbital_elements_t{};
     auto state0 = mara::compute_two_body_state(binary, dt * 0.0);
     auto state1 = mara::compute_two_body_state(binary, dt * 0.5);
     auto state2 = mara::compute_two_body_state(binary, dt * 1.0);
@@ -232,7 +232,99 @@ TEST_CASE("Two body gravity model works as expected", "[model_two_body]")
     CHECK(state2.body2.position_x * state2.body2.velocity_y - state2.body2.position_y * state2.body2.velocity_x > 0.0);
     CHECK(state0.body2.position_x * state0.body2.velocity_y - state0.body2.position_y * state0.body2.velocity_x ==
           state2.body2.position_x * state2.body2.velocity_y - state2.body2.position_y * state2.body2.velocity_x);
+}
 
+TEST_CASE("Two body model perturbation works as expected", "[model_two_body]")
+{
+    SECTION("for a circular orbit")
+    {
+        auto binary = mara::orbital_elements_t{};
+        auto state0 = mara::compute_two_body_state(binary, 0.0);
+        auto state1 = mara::compute_two_body_state(binary, 0.1);
+        auto state2 = mara::compute_two_body_state(binary, 0.2);
+
+        auto binary0 = mara::compute_orbital_elements(state0);
+        auto binary1 = mara::compute_orbital_elements(state1);
+        auto binary2 = mara::compute_orbital_elements(state2);
+
+        REQUIRE(binary0.cm_position_x == 0.0);
+        REQUIRE(binary0.cm_position_y == 0.0);
+        REQUIRE(binary0.cm_velocity_x == 0.0);
+        REQUIRE(binary0.cm_velocity_y == 0.0);
+        REQUIRE(binary0.elements.total_mass == binary.total_mass);
+
+        REQUIRE(binary1.cm_position_x == 0.0);
+        REQUIRE(binary1.cm_position_y == 0.0);
+        REQUIRE(binary1.cm_velocity_x == 0.0);
+        REQUIRE(binary1.cm_velocity_y == 0.0);
+        REQUIRE(binary1.elements.total_mass == binary.total_mass);
+
+        REQUIRE(binary2.cm_position_x == 0.0);
+        REQUIRE(binary2.cm_position_y == 0.0);
+        REQUIRE(binary2.cm_velocity_x == 0.0);
+        REQUIRE(binary2.cm_velocity_y == 0.0);
+        REQUIRE(binary2.elements.total_mass == binary.total_mass);
+    }
+    SECTION("for an elliptical orbit")
+    {
+        auto binary = mara::orbital_elements_t{};
+        binary.mass_ratio = 0.5;
+        binary.eccentricity = 0.3;
+
+        auto state1 = mara::compute_two_body_state(binary, 0.1);
+        auto binary1 = mara::compute_orbital_elements(state1);
+
+        REQUIRE(std::fabs(binary1.cm_position_x) < 1e-12);
+        REQUIRE(std::fabs(binary1.cm_position_y) < 1e-12);
+        REQUIRE(std::fabs(binary1.cm_velocity_x) < 1e-12);
+        REQUIRE(std::fabs(binary1.cm_velocity_y) < 1e-12);
+        REQUIRE(binary1.elements.total_mass == Approx(binary.total_mass));
+        REQUIRE(binary1.elements.mass_ratio == Approx(binary.mass_ratio));
+        REQUIRE(binary1.elements.separation == Approx(binary.separation));
+        REQUIRE(binary1.elements.eccentricity == Approx(binary.eccentricity));
+    }
+    SECTION("radial kick to both components at periapsis does not change energy, eccentricity, or angular momentum")
+    {
+        auto binary = mara::orbital_elements_t{};
+        binary.mass_ratio = 0.5;
+        binary.eccentricity = 0.3;
+
+        auto state1 = mara::compute_two_body_state(binary, 0.0);
+        state1.body1.velocity_x += 0.1;
+        state1.body2.velocity_x += 0.1;
+
+        auto binary1 = mara::compute_orbital_elements(state1);
+
+        REQUIRE(mara::orbital_energy(binary1.elements) == Approx(mara::orbital_energy(binary)));
+        REQUIRE(mara::orbital_angular_momentum(binary1.elements) == Approx(mara::orbital_angular_momentum(binary)));
+        REQUIRE(binary1.cm_velocity_x == 0.1);
+        REQUIRE(binary1.elements.eccentricity == Approx(binary.eccentricity));
+        REQUIRE(std::fabs(binary1.cm_velocity_y) < 1e-12);
+    }
+    SECTION("parallel kick to both components at periapsis makes the energy less negative, and increases the eccentricity")
+    {
+        auto binary = mara::orbital_elements_t{};
+        binary.mass_ratio = 1.0;
+        binary.eccentricity = 0.3;
+
+        auto state1 = mara::compute_two_body_state(binary, 0.0);
+        state1.body1.velocity_y += 0.1;
+        state1.body2.velocity_y -= 0.1;
+
+        SECTION("objects are at pericenter at t=0")
+        {
+            REQUIRE(state1.body1.position_x == Approx(+0.5 * (1.0 - 0.3))); // +a * mu * (1 - e)
+            REQUIRE(state1.body2.position_x == Approx(-0.5 * (1.0 - 0.3))); // -a * mu * (1 - e)
+            REQUIRE(state1.body1.velocity_y > 0.0);
+            REQUIRE(state1.body2.velocity_y < 0.0);
+        }
+
+        auto binary1 = mara::compute_orbital_elements(state1);
+        REQUIRE(mara::orbital_energy(binary1.elements) > mara::orbital_energy(binary));
+        REQUIRE(binary1.elements.eccentricity > binary.eccentricity);
+        REQUIRE(std::fabs(binary1.cm_velocity_x) < 1e-12);
+        REQUIRE(std::fabs(binary1.cm_velocity_y) < 1e-12);
+    }
 }
 
 

@@ -86,7 +86,7 @@ namespace binary
         std::size_t                                           block_size;
         reconstruct_method_t                                  reconstruct_method;
         riemann_solver_t                                      riemann_solver;
-        mara::two_body_parameters_t                           binary_params;
+        mara::orbital_elements_t                              binary_params;
         quad_tree_t<location_2d_t>                            vertices;
         quad_tree_t<location_2d_t>                            cell_centers;
         quad_tree_t<mara::unit_area<double>>                  cell_areas;
@@ -108,6 +108,8 @@ namespace binary
         mara::arithmetic_sequence_t<mara::unit_energy<double>, 2> work_done_on = {};
         mara::unit_mass  <double>                                 mass_ejected = {};
         mara::unit_angmom<double>                                 angular_momentum_ejected = {};
+        mara::full_orbital_elements_t                             orbital_elements_acc;
+        mara::full_orbital_elements_t                             orbital_elements_grav;
 
         solution_t operator+(const solution_t& other) const;
         solution_t operator*(mara::rational_number_t scale) const;
@@ -141,6 +143,8 @@ namespace binary
         mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> angular_momentum_accreted_on = {};
         mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> integrated_torque_on = {};
         mara::arithmetic_sequence_t<mara::unit_energy<double>, 2> work_done_on = {};
+        mara::full_orbital_elements_t                             orbital_elements_acc;
+        mara::full_orbital_elements_t                             orbital_elements_grav;
     };
 
 
@@ -163,7 +167,7 @@ namespace binary
     mara::config_template_t      create_config_template();
     mara::config_t               create_run_config   (int argc, const char* argv[]);
     mara::schedule_t             create_schedule     (const mara::config_t& run_config);
-    mara::two_body_parameters_t  create_binary_params(const mara::config_t& run_config);
+    mara::orbital_elements_t     create_binary_params(const mara::config_t& run_config);
     quad_tree_t<location_2d_t>   create_vertices     (const mara::config_t& run_config);
     solution_t                   create_solution     (const mara::config_t& run_config);
     state_t                      create_state        (const mara::config_t& run_config);

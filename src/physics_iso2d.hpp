@@ -112,9 +112,15 @@ struct mara::iso2d
         const conserved_angmom_per_area_t& Q,
         const location_2d_t& x);
 
+    static inline conserved_per_area_t to_conserved_per_area(
+        const conserved_angmom_per_area_t& Q,
+        const location_2d_t& x);
+
     static inline flux_angmom_t to_conserved_angmom_flux(
         const flux_t &F,
         const location_2d_t& x);
+
+    static inline auto momentum_vector(const conserved_per_area_t& U);
 
     static inline primitive_t roe_average(
         const primitive_t& Pl,
@@ -371,6 +377,35 @@ mara::iso2d::primitive_t mara::iso2d::recover_primitive(const conserved_angmom_p
         throw std::invalid_argument("mara::iso2d::recover_primitive (negative density)");
     }
     return {{sigma.value, vx.value, vy.value}};
+}
+
+
+
+
+/**
+ * @brief      Convert angular momentum conserving quantities to the
+ *             corresponding linear momentum conserving quantities.
+ *
+ * @param[in]  Q     The angular momentum conserving quantities
+ * @param[in]  x     The position
+ *
+ * @return     Some U's.
+ */
+mara::iso2d::conserved_per_area_t mara::iso2d::to_conserved_per_area(const conserved_angmom_per_area_t& Q, const location_2d_t& x)
+{
+    auto sigma = mara::get<0>(Q);
+    auto Sr = mara::get<1>(Q);
+    auto Lz = mara::get<2>(Q);
+    auto r2 = (x * x).sum();
+    auto px = (Sr * x[0] - Lz * x[1]) / r2;
+    auto py = (Sr * x[1] + Lz * x[0]) / r2;
+
+    return {{sigma, px, py}};
+}
+
+auto mara::iso2d::momentum_vector(const conserved_per_area_t& U)
+{
+    return make_sequence(mara::get<1>(U), mara::get<2>(U));
 }
 
 
