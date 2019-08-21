@@ -697,17 +697,17 @@ mhd_2d::solution_t mhd_2d::advance( const solution_t& solution,
 
         //    5. Get z-directed electric fields and calculate corner-centered EMFs
         //=========================================================================
-        auto emf_x_edges  = -FX | component(6) | nd::extend_periodic_on_axis(1) | nd::midpoint_on_axis(1); //avg flux of By in x-direction
-        auto emf_y_edges  =  FY | component(5) | nd::extend_periodic_on_axis(0) | nd::midpoint_on_axis(0); //avg flux of Bx in y-direction
-        auto emf_edges    = (emf_x_edges + emf_y_edges) * 0.5 * e; 
+        auto emf_x_edges  =  FY | component(5) | nd::extend_periodic_on_axis(0) | nd::midpoint_on_axis(0); //avg flux of Bx in y-direction
+        auto emf_y_edges  = -FX | component(6) | nd::extend_periodic_on_axis(1) | nd::midpoint_on_axis(1); //avg flux of By in x-direction
+        auto emf_corners  = (emf_x_edges + emf_y_edges) * 0.5 * e; 
 
 
         //    6. Updated conserved quantities and face-centered fields
         //=========================================================================
         auto u1  = u0  - (lx    + ly   ) * dt / dA;
         auto bz1 = bz0 - (lx_bz + ly_bz) * dt / dA * e;
-        auto bx1 = bx0 - ( emf_edges|nd::difference_on_axis(1) ) / dy * dt;
-        auto by1 = by0 + ( emf_edges|nd::difference_on_axis(0) ) / dx * dt;
+        auto bx1 = bx0 - ( emf_corners|nd::difference_on_axis(1) ) / dy * dt;
+        auto by1 = by0 + ( emf_corners|nd::difference_on_axis(0) ) / dx * dt;
 
 
         //    7. Return new solution
