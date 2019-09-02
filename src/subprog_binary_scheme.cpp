@@ -1,4 +1,6 @@
+#include "app_parallel.hpp"
 #include "core_ndarray_ops.hpp"
+#include "core_thread_pool.hpp"
 #include "math_interpolation.hpp"
 #include "mesh_prolong_restrict.hpp"
 #include "mesh_tree_operators.hpp"
@@ -8,7 +10,7 @@
 
 
 
-static std::launch tree_launch = std::launch::deferred;
+// static std::launch tree_launch = std::launch::deferred;
 using prim_pair_t = std::tuple<mara::iso2d::primitive_t, mara::iso2d::primitive_t>;
 using force_per_area_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<-1, 1, -2, double>, 2>;
 
@@ -38,9 +40,55 @@ namespace binary
 
 
 //=============================================================================
+namespace mt
+{
+    static mara::thread_pool_t thread_pool(4);
+
+    template<std::size_t NumThreads>
+    auto evaluate_on_thread_pool()
+    {
+        return [] (auto array)
+        {
+            using value_type = typename decltype(array)::value_type;
+            auto provider = nd::make_unique_provider<value_type>(array.shape());
+            auto evaluate_partial = [&] (auto accessor)
+            {
+                return [accessor, array, &provider]
+                {
+                    for (auto index : accessor)
+                    {
+                        provider(index) = array(index);
+                    }
+                };
+            };
+            auto futures = nd::basic_sequence_t<std::future<void>, NumThreads>();
+            auto regions = nd::partition_shape<NumThreads>(array.shape());
+
+            for (std::size_t n = 0; n < NumThreads; ++n)
+                futures[n] = thread_pool.enqueue(evaluate_partial(regions[n]));
+
+            for (auto& future : futures)
+                future.get();
+
+            return nd::make_array(std::move(provider).shared());
+        };
+    }
+
+    auto to_shared()
+    {
+        // return nd::to_shared();
+        // return mara::evaluate_on<4>();
+        return evaluate_on_thread_pool<4>();
+    }
+}
+
+
+
+
+//=============================================================================
 void binary::set_scheme_globals(const mara::config_t& run_config)
 {
-    tree_launch = run_config.get_int("threaded") == 0 ? std::launch::deferred : std::launch::async;
+    // tree_launch = run_config.get_int("threaded") ? std::launch::async : std::launch::deferred;
 }
 
 
@@ -114,10 +162,10 @@ static auto extend(TreeType tree, std::size_t axis, std::size_t guard_count)
     return tree.indexes().map([tree, axis, guard_count] (auto index)
     {
         auto C = tree.at(index);
-        auto L = mara::get_cell_block(tree, index.prev_on(axis), mara::compose(nd::to_shared(), nd::select_final(guard_count, axis)));
-        auto R = mara::get_cell_block(tree, index.next_on(axis), mara::compose(nd::to_shared(), nd::select_first(guard_count, axis)));
-        return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis) | nd::to_shared();
-    }, tree_launch);
+        auto L = mara::get_cell_block(tree, index.prev_on(axis), mara::compose(mt::to_shared(), nd::select_final(guard_count, axis)));
+        auto R = mara::get_cell_block(tree, index.next_on(axis), mara::compose(mt::to_shared(), nd::select_first(guard_count, axis)));
+        return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis) | mt::to_shared();
+    }/*, tree_launch*/);
 };
 
 
@@ -280,23 +328,23 @@ static auto source_terms = [] (auto solver_data, auto solution, auto p0, auto tr
     auto q0  = solution.conserved.at(tree_index);
 
     auto sigma = q0 | component<0>();
-    auto fg1 = (xc | nd::map(grav_vdot_field(solver_data, body1_pos, binary.body1.mass))) * sigma | nd::to_shared();
-    auto fg2 = (xc | nd::map(grav_vdot_field(solver_data, body2_pos, binary.body2.mass))) * sigma | nd::to_shared();
+    auto fg1 = (xc | nd::map(grav_vdot_field(solver_data, body1_pos, binary.body1.mass))) * sigma | mt::to_shared();
+    auto fg2 = (xc | nd::map(grav_vdot_field(solver_data, body2_pos, binary.body2.mass))) * sigma | mt::to_shared();
 
-    auto s_grav_1 = (nd::zip(xc, fg1) | nd::apply(force_to_source_terms)) * dt | nd::to_shared();
-    auto s_grav_2 = (nd::zip(xc, fg2) | nd::apply(force_to_source_terms)) * dt | nd::to_shared();
-    auto s_sink_1 = -q0 * (xc | nd::map(sink_rate_field(solver_data, body1_pos))) * dt | nd::to_shared();
-    auto s_sink_2 = -q0 * (xc | nd::map(sink_rate_field(solver_data, body2_pos))) * dt | nd::to_shared();
-    auto s_buffer = (solver_data.initial_conserved.at(tree_index) - q0) * br * dt | nd::to_shared();
+    auto s_grav_1 = (nd::zip(xc, fg1) | nd::apply(force_to_source_terms)) * dt | mt::to_shared();
+    auto s_grav_2 = (nd::zip(xc, fg2) | nd::apply(force_to_source_terms)) * dt | mt::to_shared();
+    auto s_sink_1 = -q0 * (xc | nd::map(sink_rate_field(solver_data, body1_pos))) * dt | mt::to_shared();
+    auto s_sink_2 = -q0 * (xc | nd::map(sink_rate_field(solver_data, body2_pos))) * dt | mt::to_shared();
+    auto s_buffer = (solver_data.initial_conserved.at(tree_index) - q0) * br * dt | mt::to_shared();
     auto s_geom = nd::zip(p0.at(tree_index), xc) | nd::apply([sr2, M, dt] (auto p, auto x)
     {
         auto ramp = 1.0 - std::exp(-(x * x).sum() / sr2);
         auto cs2 = cs2_at_position(x, M);
         return p.source_terms_conserved_angmom(cs2) * ramp * dt;
-    }) | nd::to_shared();
+    }) | mt::to_shared();
 
-    auto dps1 = nd::zip(s_sink_1, xc) | nd::apply(mara::iso2d::to_conserved_per_area) | nd::map(mara::iso2d::momentum_vector) | nd::to_shared();
-    auto dps2 = nd::zip(s_sink_2, xc) | nd::apply(mara::iso2d::to_conserved_per_area) | nd::map(mara::iso2d::momentum_vector) | nd::to_shared();
+    auto dps1 = nd::zip(s_sink_1, xc) | nd::apply(mara::iso2d::to_conserved_per_area) | nd::map(mara::iso2d::momentum_vector) | mt::to_shared();
+    auto dps2 = nd::zip(s_sink_2, xc) | nd::apply(mara::iso2d::to_conserved_per_area) | nd::map(mara::iso2d::momentum_vector) | mt::to_shared();
 
     auto totals = binary::source_term_total_t();
     totals.mass_accreted_on[0]             = -(s_sink_1    | component<0>() | nd::multiply(dA) | nd::sum());
@@ -316,7 +364,7 @@ static auto source_terms = [] (auto solver_data, auto solution, auto p0, auto tr
     totals.momentum_y_accreted_on[0]       = -(dps1        | component<1>() | nd::multiply(dA) | nd::sum());
     totals.momentum_y_accreted_on[1]       = -(dps2        | component<1>() | nd::multiply(dA) | nd::sum());
 
-    return std::make_pair(s_grav_1 + s_grav_2 + s_sink_1 + s_sink_2 + s_buffer + s_geom | nd::to_shared(), totals);
+    return std::make_pair((s_grav_1 + s_grav_2 + s_sink_1 + s_sink_2 + s_buffer + s_geom) | mt::to_shared(), totals);
 };
 
 
@@ -353,7 +401,7 @@ static auto block_fluxes = [] (
             gy_ex.at(tree_index) | nd::zip_adjacent2_on_axis(0))
         | nd::apply(intercell_flux(0, solver_data, tree_index))
         | nd::multiply(dy)
-        | nd::to_shared();
+        | mt::to_shared();
 
         auto fhat_y = nd::zip(
             yf,
@@ -362,7 +410,7 @@ static auto block_fluxes = [] (
             gx_ey.at(tree_index) | nd::zip_adjacent2_on_axis(1))
         | nd::apply(intercell_flux(1, solver_data, tree_index))
         | nd::multiply(dx)
-        | nd::to_shared();
+        | mt::to_shared();
 
         return std::make_tuple(fhat_x, fhat_y);
     };
@@ -388,7 +436,7 @@ static auto block_update = [] (
         auto ly = fhat_y.at(tree_index) | nd::difference_on_axis(1);
 
         auto s = source_terms(solver_data, solution, p0, tree_index, dt);
-        return std::make_pair(q0 - (lx + ly) * dt / dA + s.first | nd::to_shared(), s.second);
+        return std::make_pair((q0 - (lx + ly) * dt / dA + s.first) | mt::to_shared(), s.second);
     };
 };
 
@@ -413,7 +461,7 @@ static auto correct_fluxes_xl = [] (auto fhat_tree, mara::tree_index_t<2> index)
         | nd::take_final_on_axis(0);
 
         auto fluxr = fhat | nd::drop_first_on_axis(0);
-        return fluxl | nd::concat(fluxr).on_axis(0) | nd::to_shared();
+        return fluxl | nd::concat(fluxr).on_axis(0) | mt::to_shared();
     };
 };
 
@@ -434,7 +482,7 @@ static auto correct_fluxes_xr = [] (auto fhat_tree, mara::tree_index_t<2> index)
         | nd::take_first_on_axis(0);
 
         auto fluxl = fhat | nd::drop_final_on_axis(0);
-        return fluxl | nd::concat(fluxr).on_axis(0) | nd::to_shared();
+        return fluxl | nd::concat(fluxr).on_axis(0) | mt::to_shared();
     };
 };
 
@@ -455,7 +503,7 @@ static auto correct_fluxes_yl = [] (auto fhat_tree, mara::tree_index_t<2> index)
         | nd::take_final_on_axis(1);
 
         auto fluxr = fhat | nd::drop_first_on_axis(1);
-        return fluxl | nd::concat(fluxr).on_axis(1) | nd::to_shared();
+        return fluxl | nd::concat(fluxr).on_axis(1) | mt::to_shared();
     };
 };
 
@@ -476,7 +524,7 @@ static auto correct_fluxes_yr = [] (auto fhat_tree, mara::tree_index_t<2> index)
         | nd::take_first_on_axis(1);
 
         auto fluxl = fhat | nd::drop_final_on_axis(1);
-        return fluxl | nd::concat(fluxr).on_axis(1) | nd::to_shared();
+        return fluxl | nd::concat(fluxr).on_axis(1) | mt::to_shared();
     };
 };
 
@@ -546,7 +594,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
         return [th, spacing_at_root, axis] (mara::tree_index_t<2> tree_index, auto p)
         {
             auto spacing = spacing_at_root / (1 << tree_index.level);
-            return (estimate_plm_difference(p, axis, th) / spacing) | nd::to_shared();
+            return (estimate_plm_difference(p, axis, th) / spacing) | mt::to_shared();
         };
     };
 
@@ -558,13 +606,13 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
     {
         return nd::zip(Q, X)
         | nd::apply([] (auto q, auto x) { return mara::iso2d::recover_primitive(q, x); })
-        | nd::to_shared();
-    }, tree_launch);
+        | mt::to_shared();
+    }/*, tree_launch*/);
 
     auto p0_ex = extend(p0, 0, 1);
     auto p0_ey = extend(p0, 1, 1);
-    auto gx = p0_ex.pair_indexes().apply(estimate_gradient(0), tree_launch);
-    auto gy = p0_ey.pair_indexes().apply(estimate_gradient(1), tree_launch);
+    auto gx = p0_ex.pair_indexes().apply(estimate_gradient(0)/*, tree_launch*/);
+    auto gy = p0_ey.pair_indexes().apply(estimate_gradient(1)/*, tree_launch*/);
     auto gx_ex = extend(gx, 0, 1);
     auto gx_ey = extend(gx, 1, 1);
     auto gy_ex = extend(gy, 0, 1);
@@ -572,7 +620,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     auto fhat = p0
     .indexes()
-    .map(block_fluxes(solver_data, solution, p0, p0_ex, p0_ey, gx_ex, gx_ey, gy_ex, gy_ey, dt), tree_launch);
+    .map(block_fluxes(solver_data, solution, p0, p0_ex, p0_ey, gx_ex, gx_ey, gy_ex, gy_ey, dt)/*, tree_launch*/);
 
 
     auto fhat_x = fhat.map([] (auto t) { return std::get<0>(t); });
@@ -583,7 +631,7 @@ binary::solution_t binary::advance(const solution_t& solution, const solver_data
 
     auto block_results = p0
     .indexes()
-    .map(block_update(solver_data, solution, p0, fhat_xc, fhat_yc, dt), tree_launch);
+    .map(block_update(solver_data, solution, p0, fhat_xc, fhat_yc, dt)/*, tree_launch*/);
 
 
     auto q1     = block_results.map([] (const auto& t) { return t.first; });
@@ -656,7 +704,7 @@ binary::solution_t binary::solution_t::operator+(const solution_t& other) const
     return {
         time       + other.time,
         iteration  + other.iteration,
-        (conserved + other.conserved).map(nd::to_shared(), tree_launch),
+        (conserved + other.conserved).map(mt::to_shared()/*, tree_launch*/),
 
         mass_accreted_on               + other.mass_accreted_on,
         angular_momentum_accreted_on   + other.angular_momentum_accreted_on,
@@ -674,7 +722,7 @@ binary::solution_t binary::solution_t::operator*(mara::rational_number_t scale) 
     return {
         time       * scale.as_double(),
         iteration  * scale,
-        (conserved * scale.as_double()).map(nd::to_shared(), tree_launch),
+        (conserved * scale.as_double()).map(mt::to_shared()/*, tree_launch*/),
 
         mass_accreted_on               * scale.as_double(),
         angular_momentum_accreted_on   * scale.as_double(),
