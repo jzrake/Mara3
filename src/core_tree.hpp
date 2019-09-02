@@ -603,14 +603,26 @@ struct mara::arithmetic_binary_tree_t
     {
         return map([fn, launch_mode] (auto&& v)
         {
-            return std::make_shared
-            <std::future
-            <std::invoke_result_t<Function, ValueType>>>
-            (std::async(launch_mode, fn, std::forward<decltype(v)>(v)));
+            using result_type = std::invoke_result_t<Function, ValueType>;
+            using future_type = std::future<result_type>;
+            return std::make_shared<future_type>(std::async(launch_mode, fn, std::forward<decltype(v)>(v)));
         })
         .map([] (auto&& future_ptr) { return future_ptr->get(); });
     }
 
+
+
+    template<typename Function, typename ThreadPool>
+    auto map(Function&& fn, ThreadPool& thread_pool)
+    {
+        return map([fn, &thread_pool] (auto&& v)
+        {
+            using result_type = std::invoke_result_t<Function, ValueType>;
+            using future_type = std::future<result_type>;
+            return std::make_shared<future_type>(thread_pool.enqueue(fn, std::forward<decltype(v)>(v)));
+        })
+        .map([] (auto&& future_ptr) { return future_ptr->get(); });
+    }
 
 
 
@@ -638,6 +650,11 @@ struct mara::arithmetic_binary_tree_t
         return map([fn] (auto&& t) { return std::apply(fn, t); }, launch_mode);
     }
 
+    template<typename Function, typename ThreadPool>
+    auto apply(Function&& fn, ThreadPool& thread_pool)
+    {
+        return map([fn] (auto&& t) { return std::apply(fn, t); }, thread_pool);
+    }
 
 
 
