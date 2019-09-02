@@ -59,10 +59,7 @@ public:
 
     thread_pool_t(int num_workers=4)
     {
-        for (int n = 0; n < num_workers; ++n)
-        {
-            threads.push_back(make_worker(n));
-        }
+        restart(num_workers);
     }
 
 
@@ -71,6 +68,18 @@ public:
         stop_all();
     }
 
+    void restart(int num_workers)
+    {
+        stop_all();
+        threads.clear();
+
+        stop = false;
+
+        for (int n = 0; n < num_workers; ++n)
+        {
+            threads.push_back(make_worker(n));
+        }
+    }
 
     void stop_all()
     {
