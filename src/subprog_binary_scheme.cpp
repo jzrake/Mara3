@@ -1,4 +1,5 @@
 #include "core_ndarray_ops.hpp"
+#include "core_thread_pool.hpp"
 #include "math_interpolation.hpp"
 #include "mesh_prolong_restrict.hpp"
 #include "mesh_tree_operators.hpp"
@@ -8,7 +9,8 @@
 
 
 
-static std::launch tree_launch = std::launch::deferred;
+static mara::thread_pool_t tree_launch(1);
+// static std::launch tree_launch = std::launch::deferred;
 using prim_pair_t = std::tuple<mara::iso2d::primitive_t, mara::iso2d::primitive_t>;
 using force_per_area_t = mara::arithmetic_sequence_t<mara::dimensional_value_t<-1, 1, -2, double>, 2>;
 
@@ -40,7 +42,12 @@ namespace binary
 //=============================================================================
 void binary::set_scheme_globals(const mara::config_t& run_config)
 {
-    tree_launch = run_config.get_int("threaded") == 0 ? std::launch::deferred : std::launch::async;
+    if (run_config.get_int("threaded") <= 0)
+    {
+        throw std::invalid_argument("runtime option 'threaded' for number of threads must be > 0");
+    }
+    tree_launch.restart(run_config.get_int("threaded"));
+    // tree_launch = run_config.get_int("threaded") == 0 ? std::launch::deferred : std::launch::async;
 }
 
 
