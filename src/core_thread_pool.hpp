@@ -53,7 +53,7 @@ public:
     {
         operator bool() const { return run != nullptr; }
         std::function<void(void)> run; 
-        std::shared_ptr<std::promise<void>> promise;
+        std::shared_ptr<int> tag;
     };
 
 
@@ -87,25 +87,37 @@ public:
     }
 
 
-    std::future<void> enqueue(std::function<void(void)> run)
-    {
-        auto promise = std::make_shared<std::promise<void>>();
-        std::lock_guard<std::mutex> lock(mutex);
-        pending_tasks.push_back({run, promise});
-        condition.notify_one();
-        return promise->get_future();
+    template<typename Function, typename... Args>
+    auto enqueue(Function&& fn, Args&&... args)
+    {        
+        using result_type = std::invoke_result_t<Function, Args...>;
+        auto promised_result = std::make_shared<std::promise<result_type>>();
+
+        enqueue_internal([fn, promised_result, args...]
+        {
+            promised_result->set_value(fn(args...));
+        });
+        return promised_result->get_future();
     }
 
 
 private:
 
 
+    void enqueue_internal(std::function<void(void)> run)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        pending_tasks.push_back({run, std::make_shared<int>()});
+        condition.notify_one();
+    }
+
+
     /**
      * Convenience method to find a task with the given tag.
      */
-    std::vector<task_t>::iterator tagged(std::promise<void>* tag, std::vector<task_t>& v)
+    std::vector<task_t>::iterator tagged(int* tag, std::vector<task_t>& v)
     {
-        return std::find_if(v.begin(), v.end(), [tag] (auto& t) { return t.promise.get() == tag; });
+        return std::find_if(v.begin(), v.end(), [tag] (auto& t) { return t.tag.get() == tag; });
     }
 
 
@@ -136,11 +148,10 @@ private:
     /**
      * Called by other threads to indicate they have finished a task.
      */
-    void complete(std::promise<void>* tag)
+    void complete(int* tag)
     {
         std::lock_guard<std::mutex> lock(mutex);
         auto task = tagged(tag, running_tasks);
-        task->promise->set_value();
         running_tasks.erase(task);
     }
 
@@ -155,7 +166,7 @@ private:
             while (auto task = next(id))
             {
                 task.run();
-                complete(task.promise.get());
+                complete(task.tag.get());
             }
         });
     }
