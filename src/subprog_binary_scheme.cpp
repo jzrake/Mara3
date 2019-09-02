@@ -323,7 +323,7 @@ static auto source_terms = [] (auto solver_data, auto solution, auto p0, auto tr
     totals.momentum_y_accreted_on[0]       = -(dps1        | component<1>() | nd::multiply(dA) | nd::sum());
     totals.momentum_y_accreted_on[1]       = -(dps2        | component<1>() | nd::multiply(dA) | nd::sum());
 
-    return std::make_pair(s_grav_1 + s_grav_2 + s_sink_1 + s_sink_2 + s_buffer + s_geom | nd::to_shared(), totals);
+    return std::make_pair((s_grav_1 + s_grav_2 + s_sink_1 + s_sink_2 + s_buffer + s_geom) | nd::to_shared(), totals);
 };
 
 
@@ -395,7 +395,7 @@ static auto block_update = [] (
         auto ly = fhat_y.at(tree_index) | nd::difference_on_axis(1);
 
         auto s = source_terms(solver_data, solution, p0, tree_index, dt);
-        return std::make_pair(q0 - (lx + ly) * dt / dA + s.first | nd::to_shared(), s.second);
+        return std::make_pair((q0 - (lx + ly) * dt / dA + s.first) | nd::to_shared(), s.second);
     };
 };
 
