@@ -836,7 +836,7 @@ struct mara::arithmetic_binary_tree_t
      *             bifurcate function may return sequences of any value type.
      *
      * @param      bifurcate       The bifurcate function to apply to the
-     *                             values: value_type -> sequence<T>
+     *                             values: value_type -> sequence<value_type>
      *
      * @tparam     Bifurcate       The type of the bifurcate function
      * @tparam     ResultTreeType  The function's return value (deduced)
