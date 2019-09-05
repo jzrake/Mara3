@@ -153,10 +153,12 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     primitive_t with_velocity_2(double v)   const { auto res = *this; res[2] = v; return res; }
     primitive_t with_velocity_3(double v)   const { auto res = *this; res[3] = v; return res; }
     primitive_t with_gas_pressure(double v) const { auto res = *this; res[4] = v; return res; }
+
     
     primitive_t with_bfield_1(double v)     const { auto res = *this; res[5] = v; return res; }
     primitive_t with_bfield_2(double v)     const { auto res = *this; res[6] = v; return res; }
     primitive_t with_bfield_3(double v)     const { auto res = *this; res[7] = v; return res; }
+
 
     primitive_t with_b_along(unit_field the_b, std::size_t axis) const
     {
@@ -167,6 +169,7 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         throw std::invalid_argument("mara::mhd::with_b_along (only works for cartesion fluxes)");
     }
 
+
     primitive_t with_b_along(unit_field the_b, mara::unit_vector_t nh) const
     {
         const auto& _ = *this;
@@ -176,7 +179,11 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         throw std::invalid_argument("mara::mhd::with_b_along (only works for cartesion fluxes)");
     }
 
+
     //=========================================================================
+
+
+
     /**
      * @brief      Return the square of the four-velocity magnitude.
      *
@@ -188,6 +195,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         return _[1] * _[1] + _[2] * _[2] + _[3] * _[3];
     }
 
+
+
+
     /**
      * @brief      Return the magnitude of the velocity.
      *
@@ -197,6 +207,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     {
         return std::sqrt( velocity_squared() );
     }
+
+
+
 
     /**
      * @brief      Return the kinematic three-velocity along the given unit
@@ -212,6 +225,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         return nhat.project(_[1], _[2], _[3]);
     }
 
+
+
+
     /**
      * @brief    Return sequence of 3 velocity components
      * 
@@ -222,10 +238,14 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         return arithmetic_sequence_t<double, 3>{velocity_1(), velocity_2(), velocity_3()};
     }
 
+
     auto bfield() const
     {
         return arithmetic_sequence_t<double, 3>{bfield_1(), bfield_2(), bfield_3()};
     }
+
+
+
 
 
      /**
@@ -238,6 +258,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         const auto &_ = *this;
         return _[5] * _[5] + _[6] * _[6] + _[7] * _[7];
     }
+
+
+
 
     /**
      * @brief      Return the magnetic field along the given unit
@@ -253,6 +276,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         return nhat.project(_[5], _[6], _[7]);
     }
 
+
+
+
      /**
      * @brief      Return the dot product of the bfield and velocity vectors
      *
@@ -264,6 +290,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         const auto &_ = *this;
         return _[1] * _[5] + _[2] * _[6] + _[3] * _[7];
     }
+
+
+
 
     /**
      * @brief        Return component of v \cross B in direction of nhat
@@ -284,6 +313,7 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
 
 
 
+
    /**
      * @brief      Return the sound-speed squared.
      *
@@ -301,6 +331,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         return gamma_law_index * gas_pressure() / mass_density();
     }
 
+
+
+
    /**
      * @brief      Return Alfven-speed squared
      *
@@ -310,6 +343,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     {
         return bfield_squared() /  mass_density();
     }
+
+
+
 
    /**
      * @brief      Return the squared-Alfven-speed along some direction
@@ -325,6 +361,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
             throw std::invalid_argument("mhd::alfven_speed_squared: (zero density)") ;
         return b_along*b_along / mass_density();
     }
+
+
+
 
    /**
      * @brief      Return the fast magnetosonic wavespeed squared along nhat
@@ -354,6 +393,8 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     }
 
 
+
+
    /**
      * @brief      Return the slow magnetosonic wavespeed squared along nhat
      *
@@ -371,6 +412,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
 
         return 0.5 * one - two;
     }
+
+
+
 
     /**
      * @brief      Convert this state to a density of conserved mass, momentum,
@@ -400,6 +444,8 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     }
 
 
+
+
     /**
      * @brief      Convert this state to a density of just conserved mass,
      *             momentum, and energy. Energy includes magnetic energy
@@ -423,6 +469,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         return U;
     }
 
+
+
+
     /**
      * @brief       Get vector of cell-centered magnetic fields
      * 
@@ -439,6 +488,8 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     }
 
 
+
+
     /**
      * @brief      Return the flux of conserved quantities in the given
      *             direction.
@@ -452,6 +503,8 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
     {
         return flux(nhat, to_conserved_density(gamma_law_index));
     }
+
+
 
 
     /**
@@ -489,6 +542,7 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
 
 
 
+
     /**
      * @brief      Return the wavespeeds along a given direction
      *
@@ -507,6 +561,7 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         };
     }
 
+
     wavespeeds_t alfven_wave_speeds(const unit_vector_t& nhat, double gamma_law_index) const
     {
         auto ca = std::sqrt( alfven_speed_squared_along(nhat) );
@@ -516,6 +571,7 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
             make_velocity(vn + ca)
         };
     }
+
 
     wavespeeds_t fast_wave_speeds(const unit_vector_t& nhat, double gamma_law_index) const
     {
@@ -527,6 +583,7 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
         };
     }
 
+
     wavespeeds_t slow_wave_speeds(const unit_vector_t& nhat, double gamma_law_index) const
     {
         auto cs = std::sqrt( magnetosonic_speed_squared_slow(nhat, gamma_law_index) );
@@ -536,6 +593,9 @@ struct mara::mhd::primitive_t : public mara::derivable_sequence_t<double, 8, pri
             make_velocity(vn + cs)
         };
     }
+
+
+
 
     /**
      * @brief      Above function generalized to other wave speeds
@@ -616,6 +676,9 @@ mara::mhd::primitive_t mara::mhd::recover_primitive(
     return P;
 }
 
+
+
+
 mara::mhd::primitive_t mara::mhd::recover_primitive(
     const conserved_density_euler_t U,
     const magnetic_field_t B,
@@ -681,6 +744,9 @@ mara::mhd::flux_vector_t mara::mhd::riemann_hlle(
 
     return (Fl * ap - Fr * am - (Ul - Ur) * ap * am) / (ap - am);
 }
+
+
+
 
 //=============================================================================
 // template<>

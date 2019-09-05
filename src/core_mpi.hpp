@@ -577,6 +577,22 @@ public:
 
 
     /**
+     * Blocking-sendrecv a string from dest to source
+     */
+    void sendrecv(std::string sendbuf, int dest, int source, int tag=0)
+    {
+        auto status  = probe(source, tag);
+        auto recvbuf = std::string(status.count(), 0);
+
+        MPI_Sendrecv(&sendbuf, sendbuf.size(), MPI_CHAR, dest, tag, 
+                     &recvbuf, recvbuf.size(), MPI_CHAR, source, tag,
+                     comm, MPI_STATUS_IGNORE);
+        
+        return recvbuf;
+    }
+
+
+    /**
      * Non-blocking send a string to the given rank. Returns a request object
      * that can be tested for completion or waited on. Note that the request
      * is cancelled if allowed to go out of scope. Also keep in mind your MPI
@@ -649,6 +665,32 @@ public:
         auto value = T();
         std::memcpy(&value, &buf[0], sizeof(T));
         return value;
+    }
+
+
+    /**
+     * Template version of a send-receive using blocking sends and
+     * receives.
+     * 
+     */
+    template <typename T>
+    T sendrecv(const T &send_value, int send_rank, int recv_rank, int tag=0) const
+    {
+        static_assert(std::is_trivially_copyable<T>::send_value, "type is not trivially copyable");
+        
+        auto sendbuf = std::string(sizeof(T), 0);
+        std::memcpy(&sendbuf[0], &send_value, sizeof(T));
+
+        auto recvbuf = sendrecv(sendbuf, send_rank, recv_rank, tag);
+
+        if (recvbuf.size() != sizeof(T))
+        {
+            throw std::logic_error("received message has wrong size for data type");
+        }
+
+        auto recv_value = T();
+        std::memcpy(&recv_value, &recvbuf[0], sizeof(T));
+        return recv_value;
     }
 
 
