@@ -368,7 +368,7 @@ void test_hlld_jump_condtions(
     auto bvL_star = vxLstar * bxLstar + vyLstar * byLstar + bzLstar * vzLstar;
     auto balong = Pl.bfield_along(nhat); // checked by HLLD to be same as the longitudinal field of Pr
     auto UL = vars.UL();
-    auto FL = mara::mhd::conserved_to_flux(UL, nhat, gamma_law_index);
+    auto FL = mara::mhd::recover_primitive(UL, gamma_law_index, 1e-4).flux(nhat, gamma_law_index);
 
     CHECK(SL * UL[0].value - FL[0].value == Approx(SL * dLstar - dLstar * SM));
     CHECK(SL * UL[1].value - FL[1].value == Approx(SL * dLstar * vxLstar - (dLstar * vxLstar * SM - balong * bxLstar + pstar * nhat[0])));
@@ -393,7 +393,7 @@ void test_hlld_jump_condtions(
     auto bzRstar = URstar[7].value;
     auto bvR_star = vxRstar * bxRstar + vyRstar * byRstar + bzRstar * vzRstar;
     auto UR = vars.UR();
-    auto FR = mara::mhd::conserved_to_flux(UR, nhat, gamma_law_index);
+    auto FR = mara::mhd::recover_primitive(UR, gamma_law_index, 1e-4).flux(nhat, gamma_law_index);
 
     CHECK(SR * UR[0].value - FR[0].value == Approx(SR * dRstar - dRstar * SM));
     CHECK(SR * UR[1].value - FR[1].value == Approx(SR * dRstar * vxRstar - (dRstar * vxRstar * SM - balong * bxRstar + pstar * nhat[0])));
