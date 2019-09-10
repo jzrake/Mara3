@@ -579,7 +579,7 @@ public:
     /**
      * Blocking-sendrecv a string from dest to source
      */
-    void sendrecv(std::string sendbuf, int dest, int source, int tag=0)
+    std::string sendrecv(std::string sendbuf, int dest, int source, int tag=0)
     {
         auto status  = probe(source, tag);
         auto recvbuf = std::string(status.count(), 0);
