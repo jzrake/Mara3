@@ -584,7 +584,7 @@ public:
         auto status  = probe(source, tag);
         auto recvbuf = std::string(status.count(), 0);
 
-        MPI_Sendrecv(&sendbuf, sendbuf.size(), MPI_CHAR, dest, tag, 
+        MPI_Sendrecv(&sendbuf[0], sendbuf.size(), MPI_CHAR, dest, tag, 
                      &recvbuf, recvbuf.size(), MPI_CHAR, source, tag,
                      comm, MPI_STATUS_IGNORE);
         
