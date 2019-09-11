@@ -9,6 +9,7 @@
 #include "core_tree.hpp"
 #include "core_ndarray.hpp"
 #include "core_ndarray_ops.hpp"
+#include "core_linked_list.hpp"
 
 
 void mpi_hello_world(mpi::Communicator comm)
@@ -91,14 +92,18 @@ void mpi_ring(mpi::Communicator comm)
 
 int main(int argc, char* argv[])
 {
+    // Tree rank and number of children per node
+    const auto tree_rank = 2;
+    const auto child_num = 1 >> tree_rank;
+
     auto session = mpi::Session();
     auto comm    = mpi::comm_world();
     printf("Running on %d processes\n", comm.size());
 
 
     // 1. Build trivial tree
-    auto to_zeros = [] (int value) { return mara::arithmetic_sequence_t<int, 4>{0, 0, 0, 0}; };
-    auto nullTree = mara::tree_of<2>(0).bifurcate_all(to_zeros).bifurcate_all(to_zeros).bifurcate_all(to_zeros);
+    auto to_zeros = [] (int value) { return mara::arithmetic_sequence_t<int, 1>{0, 0, 0, 0}; };
+    auto nullTree = mara::tree_of<tree_rank>(0).bifurcate_all(to_zeros).bifurcate_all(to_zeros).bifurcate_all(to_zeros);
 
 
     // 2. Build tree of linear hilbert indeces
@@ -108,25 +113,28 @@ int main(int argc, char* argv[])
 
 
     // 3. Assign each block a rank
+    //      this function is wrong -> use nd::divvy instead
     auto hindex_to_rank = [] (int mpi_size, int num_blocks)
     {
         auto block_per_proc = std::ceil(num_blocks / mpi_size);
         return [block_per_proc] (auto hindex) { return std::floor(hindex / block_per_proc); };
     }; 
-    //--> might want to make this a generalized function elsewhere?
     auto treesize = hilbertTree.size();
     auto rankTree = hilbertTree.map(hindex_to_rank(comm.size(), treesize));
     
-    //NEED ROUTINES TO:
-    // (a) Collect all other MPI ranks a process needs to communicate with in order to create guard zones
-    //      i . Determine indeces of blocks required for update [tree of sequences of (4) indeces]
-    auto get_neighbor_indexes = [] (auto i) { return mara::arithmetic_sequence_t{ /*the indices*/ }; };
-    auto commTree = rankTree.indexes().map(get_neighbor_indexes);
 
-    //      ii. Get the process that owns each block [tree of sequences of (4) ranks needed to communicate]
-    auto 
-
-    // (b) Add necessary blocks to the tree and do the communications to fill the tree
+    // Make tree of empty linked lists
+    auto query_neighbors = [] (auto rankTree)
+    {
+        return [rankTree] (mara::linked_list_t<int> rank_list, mara::tree_index_t<2> i)
+        {
+            target_indices = mara::arithmetic_sequence_t<mara::tree_index_t<2>, 1>{i.prev_on(0), i.next_on(0), i.prev_on(1), i.next_on(1)};
+            return rank_list.append();
+        }
+    };
+    auto commList = nullTree.map([] (auto i) { return mara::linked_list_t<int>{}; })
+                            .pair(nullTree.indexes())
+                            .apply(query_neighbors(rankTree));
 
     return 0;
 }
