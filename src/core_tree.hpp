@@ -62,6 +62,7 @@ namespace mara
     auto tree_of(const arithmetic_sequence_t<ValueType, 1 << Rank>& child_values);
 
     inline std::size_t hilbert_index(tree_index_t<2> index);
+    inline std::size_t global_hilbert_index(tree_index_t<2> index);
 
 
     //=========================================================================
@@ -156,6 +157,26 @@ struct mara::tree_index_t
     arithmetic_sequence_t<tree_index_t, 1 << Rank> child_indexes() const
     {
         return iota<1 << Rank>().map([this] (auto i) { return tree_index_t{level + 1, coordinates * 2 + binary_repr<Rank>(i)}; });
+    }
+
+
+
+
+    /**
+     * @brief      Return the number of indexes in all levels below a given indexes
+     *             level, assuming a complete tree
+     *
+     * @return     The number of indexes
+     */
+    std::size_t indexes_below()
+    {
+        std::size_t lvl = level, ibelow = 1;
+        while (lvl > 1)
+        {
+            ibelow += pow(1 << Rank, level-1);
+            lvl--;
+        }
+        return ibelow;
     }
 
 
@@ -526,7 +547,6 @@ struct mara::arithmetic_binary_tree_t
                 .map([] (auto i) { return [i] (auto&& c) { return c.indexes(i); }; })
                 .apply_to(children()))};
     }
-
 
 
 
@@ -1047,4 +1067,9 @@ std::size_t mara::hilbert_index(tree_index_t<2> index)
     };
 
     return xy2d(index.level, index.coordinates[0], index.coordinates[1]);
+}
+
+std::size_t mara::global_hilbert_index(tree_index_t<2> index)
+{
+    return mara::hilbert_index(index) + index.indexes_below();
 }
