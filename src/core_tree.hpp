@@ -32,6 +32,7 @@
 #include <optional>
 #include <variant>
 #include <future>
+#include <cmath>
 #include "core_sequence.hpp"
 
 
@@ -87,6 +88,18 @@ namespace mara
 template<std::size_t Rank>
 struct mara::tree_index_t
 {
+
+
+    /**
+     * @brief      Helper function to give the number of children per
+     *             node at the given Rank
+     *             
+     * @return     An integer
+     */
+    std::size_t child_num() const
+    {
+        return 1 << Rank;
+    }
 
 
 
@@ -173,7 +186,7 @@ struct mara::tree_index_t
         std::size_t lvl = level, ibelow = 1;
         while (lvl > 1)
         {
-            ibelow += pow(1 << Rank, level-1);
+            ibelow += std::pow(1 << Rank, level-1);
             lvl--;
         }
         return ibelow;
@@ -208,6 +221,26 @@ struct mara::tree_index_t
     arithmetic_sequence_t<bool, Rank> orthant() const
     {
         return coordinates.map([this] (auto x) -> bool { return x / (1 << (level - 1)); });
+    }
+
+
+
+
+    /**
+     * @brief      Gives the next sibling's index. Throws std::out_of_range
+     *             (to be caught in tree iterator) if next sibling does not
+     *             exist
+     * 
+     * @return     An index
+     */
+    tree_index_t next_sibling() const
+    {
+        auto next_sib = to_integral<Rank>(coordinates)++;
+        if (next_sib > child_num() - 1)
+        {
+            throw std::out_of_range("tree_index_t : next_sibling() : Next sibling does not exist")
+        }
+        return parent_index() * 2 + binary_repr<Rank>(next_sib);
     }
 
 
@@ -259,6 +292,54 @@ struct mara::arithmetic_binary_tree_t
 
 
 
+    struct iterator
+    {
+        //What are these for?
+        using iterator_category = std::input_iterator_tag;
+        using value_type = arithmetic_binary_tree_t::value_type;
+        using difference_type = std::ptrdiff_t;
+        using pointer = value_type*;
+        using reference = value_type&;
+
+
+        //=====================================================================
+        iterator& next()
+        {
+            try
+            {
+                current = current.next_sibling().front_index();
+                while (!tree.at(current).has_value())
+                {
+                    current = current.next_sibling().front_index();
+                }
+                return *this
+            }
+            catch(exception& e)
+            {
+                return iterator{tree, current.parent_index()}.next();
+            }
+        }
+
+
+        iterator& operator++()
+        {
+            return (*this).next();
+        }
+
+
+        //=====================================================================
+        const value_type& operator*() const{ return tree.at(current); }
+        bool operator==(const iterator& other) const { return  tree == other.tree && current == other.current; };
+        bool operator!=(const iterator& other) const { return  tree != other.tree && current != other.current; };
+
+
+        //=====================================================================
+        arithmetic_binary_tree_t  tree;
+        tree_index_t<Rank>        current;
+    };
+
+
+
     /**
      * @brief      Return the numer of leafs in the tree.
      *
@@ -299,6 +380,17 @@ struct mara::arithmetic_binary_tree_t
     }
 
 
+
+    /**
+     * @brief      Return the index that would be hit first in a depth-first
+     *             traversal.
+     *             
+     * @return     The index
+     */
+    const tree_index_t front_index() const
+    {
+        return has_value() ? (*this).indexes().value(); : children.at(0).front_index();
+    }
 
 
     /**
@@ -906,7 +998,32 @@ struct mara::arithmetic_binary_tree_t
 
     auto operator+() const { return map([] (auto&& x) { return +x; }); }
     auto operator-() const { return map([] (auto&& x) { return -x; }); }
+    //=========================================================================
+    
 
+    /**
+     * @breif       Return an iterator to the beginning of the tree
+     *
+     * @return      An iterator
+     */
+    // iterator begin() const
+    // {
+    //     return has_value() ? iterator{*this, (*this).indexes().value()} : children().at(0).begin();
+    // }
+    iterator begin() const
+    {
+        return iterator{*this, front_index()};
+    }
+
+    /**
+     * @brief       Return an iterator to the end of the tree
+     * 
+     * @return      An iterator
+     */
+    iterator end() const
+    {
+        return {*this, tree_index_t<Rank>{}};
+    }
 
 
 
