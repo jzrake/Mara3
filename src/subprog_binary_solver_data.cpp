@@ -83,6 +83,7 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     result.domain_radius         = run_config.get_double("domain_radius");
     result.mach_number           = run_config.get_double("mach_number");
     result.alpha                 = run_config.get_double("alpha");
+    result.alpha_cutoff_radius   = run_config.get_double("alpha_cutoff_radius");
     result.sink_rate             = run_config.get_double("sink_rate");
     result.sink_radius           = run_config.get_double("sink_radius");
     result.softening_radius      = run_config.get_double("softening_radius");

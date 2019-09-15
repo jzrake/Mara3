@@ -81,6 +81,7 @@ namespace binary
         mara::unit_length<double>                             sink_radius;
         double                                                mach_number;
         double                                                alpha;
+        double                                                alpha_cutoff_radius;
         double                                                plm_theta;
         int                                                   rk_order;
         std::size_t                                           block_size;

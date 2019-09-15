@@ -154,10 +154,12 @@ static auto cs2_at_position(binary::location_2d_t x, double mach_number)
 
 
 //=============================================================================
-static auto scale_height_at_position(binary::location_2d_t x, double mach_number)
+static auto scale_height_at_position(binary::location_2d_t x, const binary::solver_data_t& solver_data)
 {
-    auto r = std::sqrt((x * x).sum().value);
-    return r / mach_number;
+    auto rc = solver_data.alpha_cutoff_radius;
+    auto r  = std::sqrt((x * x).sum().value);
+    auto profile = rc > 0.0 ? 0.5 * (1.0 + std::tanh(3.0 * (r - rc))) : 1.0;
+    return profile * r / solver_data.mach_number;
 };
 
 
@@ -246,7 +248,7 @@ static auto intercell_flux(std::size_t axis, const binary::solver_data_t& solver
         auto pl_hat = pl + gl * 0.5 * grid_spacing;
         auto pr_hat = pr - gr * 0.5 * grid_spacing;
         auto cs2 = cs2_at_position(xf, solver_data.mach_number);
-        auto nu = solver_data.alpha * std::sqrt(cs2) * scale_height_at_position(xf, solver_data.mach_number);
+        auto nu = solver_data.alpha * std::sqrt(cs2) * scale_height_at_position(xf, solver_data);
         auto mu = 0.5 * nu * (pl_hat.sigma() + pr_hat.sigma());
 
         auto nhat = mara::unit_vector_t::on_axis(axis);
