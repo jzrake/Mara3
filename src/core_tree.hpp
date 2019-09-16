@@ -238,7 +238,7 @@ struct mara::tree_index_t
         auto next_sib = to_integral<Rank>(coordinates)++;
         if (next_sib > child_num() - 1)
         {
-            throw std::out_of_range("tree_index_t : next_sibling() : Next sibling does not exist")
+            throw std::out_of_range("tree_index_t : next_sibling() : Next sibling does not exist");
         }
         return parent_index() * 2 + binary_repr<Rank>(next_sib);
     }
@@ -307,14 +307,17 @@ struct mara::arithmetic_binary_tree_t
         {
             try
             {
-                current = current.next_sibling().front_index();
+                // next_sibling() will throw std::out_of_range if sibling 
+                // number (i) > children number (1 << rank)
+
+                current = current.next_sibling().front_index();                
                 while (!tree.at(current).has_value())
                 {
                     current = current.next_sibling().front_index();
                 }
-                return *this
+                return *this;
             }
-            catch(exception& e)
+            catch(std::exception& e)
             {
                 return iterator{tree, current.parent_index()}.next();
             }
@@ -387,9 +390,9 @@ struct mara::arithmetic_binary_tree_t
      *             
      * @return     The index
      */
-    const tree_index_t front_index() const
+    const tree_index_t<Rank> front_index() const
     {
-        return has_value() ? (*this).indexes().value(); : children.at(0).front_index();
+        return has_value() ? (*this).indexes().value() : children().at(0).front_index();
     }
 
 
