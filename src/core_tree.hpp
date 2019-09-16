@@ -315,6 +315,10 @@ struct mara::arithmetic_binary_tree_t
                 {
                     current = current.next_sibling().front_index();
                 }
+                if(current.level > tree.depth())
+                {
+                    return tree.end();
+                }
                 return *this;
             }
             catch(std::exception& e)
@@ -1007,6 +1011,8 @@ struct mara::arithmetic_binary_tree_t
     //=========================================================================
     
 
+
+
     /**
      * @breif       Return an iterator to the beginning of the tree
      *
@@ -1020,6 +1026,9 @@ struct mara::arithmetic_binary_tree_t
     {
         return iterator{*this, front_index()};
     }
+
+
+
 
     /**
      * @brief       Return an iterator to the end of the tree
