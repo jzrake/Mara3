@@ -384,6 +384,7 @@ struct mara::arithmetic_binary_tree_t
 
 
 
+
     /**
      * @brief      Return the index that would be hit first in a depth-first
      *             traversal.
@@ -394,6 +395,8 @@ struct mara::arithmetic_binary_tree_t
     {
         return has_value() ? (*this).indexes().value() : children().at(0).front_index();
     }
+
+
 
 
     /**
