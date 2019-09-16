@@ -240,7 +240,7 @@ struct mara::tree_index_t
         {
             throw std::out_of_range("tree_index_t : next_sibling() : Next sibling does not exist");
         }
-        return parent_index() * 2 + binary_repr<Rank>(next_sib);
+        return {level, parent_index() * 2 + binary_repr<Rank>(next_sib)};
     }
 
 
