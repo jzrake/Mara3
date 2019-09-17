@@ -235,12 +235,13 @@ struct mara::tree_index_t
      */
     tree_index_t next_sibling() const
     {
-        auto next_sib = to_integral<Rank>(coordinates)++;
+        // auto next_sib = mara::to_integral<Rank>(coordinates)++;
+        auto next_sib = mara::to_integral<Rank>(orthant()) + 1;
         if (next_sib > child_num() - 1)
         {
             throw std::out_of_range("tree_index_t : next_sibling() : Next sibling does not exist");
         }
-        return {level, parent_index() * 2 + binary_repr<Rank>(next_sib)};
+        return {level, parent_index().coordinates * 2 + binary_repr<Rank>(next_sib)};
     }
 
 
@@ -308,16 +309,17 @@ struct mara::arithmetic_binary_tree_t
             try
             {
                 // next_sibling() will throw std::out_of_range if sibling 
-                // number (i) > children number (1 << rank)
+                // number > children number (1 << rank)
 
-                current = current.next_sibling().front_index();                
-                while (!tree.at(current).has_value())
+                current = tree.node_at(current.next_sibling()).front_index();                
+                while (!tree.node_at(current).has_value())
                 {
-                    current = current.next_sibling().front_index();
+                    current = tree.node_at(current.next_sibling()).front_index();
                 }
                 if(current.level > tree.depth())
                 {
-                    return tree.end();
+                    // return tree.end();
+                    current = tree_index_t<Rank>{};
                 }
                 return *this;
             }
@@ -397,7 +399,7 @@ struct mara::arithmetic_binary_tree_t
      */
     const tree_index_t<Rank> front_index() const
     {
-        return has_value() ? (*this).indexes().value() : children().at(0).front_index();
+        return indexes().front();
     }
 
 
@@ -1018,10 +1020,6 @@ struct mara::arithmetic_binary_tree_t
      *
      * @return      An iterator
      */
-    // iterator begin() const
-    // {
-    //     return has_value() ? iterator{*this, (*this).indexes().value()} : children().at(0).begin();
-    // }
     iterator begin() const
     {
         return iterator{*this, front_index()};
@@ -1037,7 +1035,7 @@ struct mara::arithmetic_binary_tree_t
      */
     iterator end() const
     {
-        return {*this, tree_index_t<Rank>{}};
+        return iterator{*this, tree_index_t<Rank>{}};
     }
 
 
