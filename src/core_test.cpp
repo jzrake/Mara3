@@ -211,6 +211,11 @@ TEST_CASE("binary tree indexes methods work correctly", "[tree_index]")
 
     REQUIRE((mara::tree_index_t<3>{3, {3, 0, 5}}).prev_on(1) == mara::tree_index_t<3>{3, {3, 7, 5}});
     REQUIRE((mara::tree_index_t<3>{3, {4, 7, 5}}).next_on(1) == mara::tree_index_t<3>{3, {4, 0, 5}});
+
+    REQUIRE(mara::tree_index_t<3>().is_root());
+    REQUIRE(mara::tree_index_t<3>().is_last_child());
+    REQUIRE(mara::tree_index_t<3>{1, {1, 1, 1}}.is_last_child());
+    REQUIRE_FALSE(mara::tree_index_t<3>{2, {1, 1, 1}}.is_last_child());
 }
 
 TEST_CASE("binary tree constructors and operators work OK", "[arithmetic_binary_tree]")
@@ -325,16 +330,35 @@ TEST_CASE("tree traversals and value retrievals work OK", "[arithmetic_binary_tr
         .at(mara::make_tree_index(0, 1, 2).with_level(2)) == 1.0);
 }
 
+#include <iostream>
 TEST_CASE("tree iterator works as expected", "[arithmetic_binary_tree]")
 {
-    auto tree = mara::tree_of<2>(0.0).bifurcate_all([] (auto i) { return mara::iota<4>(); });
-    auto iter = tree.begin();
-    REQUIRE(tree.at(iter.current) == 0); iter.next();
-    REQUIRE(tree.at(iter.current) == 1); ++iter;
-    REQUIRE(*iter == 2); ++iter;
-    REQUIRE(*iter == 3); ++iter;
-    // REQUIRE(iter == tree.end());
-    REQUIRE(iter.current == mara::tree_index_t<2>{});
+    // SECTION("on a uniformly refined tree of rank 2 and depth 1")
+    // {
+    //     auto tree = mara::tree_of<2>(0).bifurcate_all([] (auto i) { return mara::iota<4>(); });
+    //     auto iter = tree.begin();
+    //     REQUIRE_FALSE(iter == tree.end());
+    //     REQUIRE(tree.at(iter.current) == 0); iter.next();
+    //     REQUIRE(tree.at(iter.current) == 1); ++iter;
+    //     REQUIRE(*iter == 2); ++iter;
+    //     REQUIRE(*iter == 3); ++iter;
+    //     REQUIRE(iter == tree.end());        
+    // }
+    SECTION("on a uniformly refined tree of rank 1 and depth 2")
+    {
+        auto tree = mara::tree_of<1>(std::size_t())
+        .bifurcate_if([] (auto val) { return true; }, [] (auto i) { return mara::iota<2>(); })
+        .bifurcate_if([] (auto val) { return true; }, [] (auto i) { return mara::iota<2>(); });
+
+        std::size_t n = 0;
+
+        for (auto it = tree.begin(); it != tree.end(); ++it)
+        {
+            ++n;
+            std::cout << it.current.level << " " << mara::to_string(it.current.coordinates) << std::endl;
+        }
+        REQUIRE(tree.size() == n);
+    }
 }
 
 /** COPY **/

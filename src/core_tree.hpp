@@ -96,7 +96,7 @@ struct mara::tree_index_t
      *             
      * @return     An integer
      */
-    std::size_t child_num() const
+    std::size_t child_count() const
     {
         return 1 << Rank;
     }
@@ -113,6 +113,22 @@ struct mara::tree_index_t
     bool valid() const
     {
         return (coordinates < (1 << level)).all();
+    }
+
+
+
+
+    bool is_root() const
+    {
+        return *this == tree_index_t{};
+    }
+
+
+
+
+    bool is_last_child() const
+    {
+        return level == 0 || mara::to_integral<Rank>(orthant()) == (1 << Rank) - 1;
     }
 
 
@@ -181,12 +197,14 @@ struct mara::tree_index_t
      *
      * @return     The number of indexes
      */
-    std::size_t indexes_below()
+    std::size_t indexes_below() const
     {
-        std::size_t lvl = level, ibelow = 1;
+        std::size_t lvl = level;
+        std::size_t ibelow = 1;
+
         while (lvl > 1)
         {
-            ibelow += std::pow(1 << Rank, level-1);
+            ibelow += std::pow(1 << Rank, level - 1);
             lvl--;
         }
         return ibelow;
@@ -227,26 +245,20 @@ struct mara::tree_index_t
 
 
     /**
-     * @brief      Gives the next sibling's index. Throws std::out_of_range
-     *             (to be caught in tree iterator) if next sibling does not
-     *             exist
-     * 
+     * @brief      Return the next sibling's index. Throws std::out_of_range (to
+     *             be caught in tree iterator) if next sibling does not exist
+     *
      * @return     An index
      */
     tree_index_t next_sibling() const
     {
         auto next_sib = mara::to_integral<Rank>(orthant()) + 1; 
-        if (next_sib > child_num() - 1)
+
+        if (next_sib >= child_count())
         {
-            throw std::out_of_range("tree_index_t : next_sibling() : Next sibling does not exist");
+            throw std::out_of_range("tree_index_t::next_sibling (next sibling does not exist)");
         }
         return tree_index_t{level, parent_index().coordinates * 2 + binary_repr<Rank>(next_sib)};
-    }
-
-    void print_index() const
-    {
-        printf("{%lu, (%lu, %lu)}\n", level, coordinates.at(0), coordinates.at(1));
-        return;
     }
 
 
@@ -279,7 +291,7 @@ struct mara::tree_index_t
 };
 
 
-
+#include <iostream>
 
 //=============================================================================
 template<typename ValueType, std::size_t Rank>
@@ -300,7 +312,6 @@ struct mara::arithmetic_binary_tree_t
 
     struct iterator
     {
-        //What are these for?
         using iterator_category = std::input_iterator_tag;
         using value_type = arithmetic_binary_tree_t::value_type;
         using difference_type = std::ptrdiff_t;
@@ -311,27 +322,57 @@ struct mara::arithmetic_binary_tree_t
         //=====================================================================
         void next()
         {
-            try
+            // If we are the root of the tree, then set to end; done
+
+            // If we are the last child of our parent, then climb the tree to
+            // find the first ancestor that is not the last child of its parent.
+            // Set current to that ancestor's next sibling's front.
+
+            // If we are not the last child of our parent, then return our next
+            // sibling's front.
+
+            // ALL BROKEN ;(
+
+            if (current.is_root())
             {
-                auto next = tree.indexes().node_at(current.next_sibling()).front();
-                while (!tree.node_at(next).has_value())
-                {
-                    next = tree.indexes().node_at(next.next_sibling()).front();
-                }
-                current = next;
-                return;
+                std::cout << "A" << std::endl;
+
+                *this = tree.end();
             }
-            catch(std::exception& e)
+            else if (current.is_last_child())
             {
-                if (current.level==0)
+                std::cout << "B" << std::endl;
+
+                auto ancestor = current.parent_index();
+
+                while (ancestor.is_last_child())
                 {
-                    // return iterator{tree, tree_index_t<Rank>{}};
-                    current = tree_index_t<Rank>{};
-                    return;
+                    ancestor = ancestor.parent_index();
+
+                    if (ancestor.is_root())
+                    {
+                        *this = tree.end();
+                        return;
+                    }
                 }
-                // return iterator{tree, current.parent_index()}.next();
-                iterator{tree, current.parent_index()}.next();
-                return;
+
+                current = ancestor.next_sibling();
+
+                while (! tree.contains(current))
+                {
+                    current = current.child_indexes()[0];
+                }
+            }
+            else
+            {
+                std::cout << "C" << std::endl;
+
+                current = current.next_sibling();
+
+                while (! tree.contains(current))
+                {
+                    current = current.child_indexes()[0];
+                }   
             }
         }
         void operator++() { next(); }
@@ -339,14 +380,15 @@ struct mara::arithmetic_binary_tree_t
 
         //=====================================================================
         const value_type& operator*() const{ return tree.at(current); }
-        bool operator==(const iterator& other) const { return  (tree == other.tree && current == other.current); };
-        bool operator!=(const iterator& other) const { return  (tree != other.tree && current != other.current); };
+        bool operator==(const iterator& other) const { return tree.is(other.tree) && current == other.current; };
+        bool operator!=(const iterator& other) const { return tree.is(other.tree) && current != other.current; };
 
 
         //=====================================================================
         arithmetic_binary_tree_t  tree;
         tree_index_t<Rank>        current;
     };
+
 
 
 
@@ -401,6 +443,32 @@ struct mara::arithmetic_binary_tree_t
     const tree_index_t<Rank> front_index() const
     {
         return indexes().front();
+    }
+
+
+
+
+    /**
+     * @brief      Return true if this tree and the other one are both non-leaf
+     *             nodes pointing to exactly the same tree.
+     *
+     * @param[in]  other  The other tree
+     *
+     * @note       This function never invokes operator== on the value_type.
+     *
+     * @return     True or false
+     */
+    bool is(const arithmetic_binary_tree_t& other) const
+    {
+        if (has_value() && other.has_value())
+        {
+            return false;
+        }
+        else if (! has_value() && ! other.has_value())
+        {
+            return __impl == other.__impl;
+        }
+        return false;
     }
 
 
@@ -1036,7 +1104,7 @@ struct mara::arithmetic_binary_tree_t
      */
     iterator end() const
     {
-        return iterator{*this, tree_index_t<Rank>{}};
+        return iterator{*this, tree_index_t<Rank>{depth() + 1, {}}};
     }
 
 
