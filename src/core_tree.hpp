@@ -235,13 +235,18 @@ struct mara::tree_index_t
      */
     tree_index_t next_sibling() const
     {
-        // auto next_sib = mara::to_integral<Rank>(coordinates)++;
-        auto next_sib = mara::to_integral<Rank>(orthant()) + 1;
+        auto next_sib = mara::to_integral<Rank>(orthant()) + 1; 
         if (next_sib > child_num() - 1)
         {
             throw std::out_of_range("tree_index_t : next_sibling() : Next sibling does not exist");
         }
-        return {level, parent_index().coordinates * 2 + binary_repr<Rank>(next_sib)};
+        return tree_index_t{level, parent_index().coordinates * 2 + binary_repr<Rank>(next_sib)};
+    }
+
+    void print_index() const
+    {
+        printf("{%lu, (%lu, %lu)}\n", level, coordinates.at(0), coordinates.at(1));
+        return;
     }
 
 
@@ -304,42 +309,38 @@ struct mara::arithmetic_binary_tree_t
 
 
         //=====================================================================
-        iterator& next()
+        void next()
         {
             try
             {
-                // next_sibling() will throw std::out_of_range if sibling 
-                // number > children number (1 << rank)
-
-                current = tree.node_at(current.next_sibling()).front_index();                
-                while (!tree.node_at(current).has_value())
+                auto next = tree.indexes().node_at(current.next_sibling()).front();
+                while (!tree.node_at(next).has_value())
                 {
-                    current = tree.node_at(current.next_sibling()).front_index();
+                    next = tree.indexes().node_at(next.next_sibling()).front();
                 }
-                if(current.level > tree.depth())
-                {
-                    // return tree.end();
-                    current = tree_index_t<Rank>{};
-                }
-                return *this;
+                current = next;
+                return;
             }
             catch(std::exception& e)
             {
-                return iterator{tree, current.parent_index()}.next();
+                if (current.level==0)
+                {
+                    // return iterator{tree, tree_index_t<Rank>{}};
+                    current = tree_index_t<Rank>{};
+                    return;
+                }
+                // return iterator{tree, current.parent_index()}.next();
+                iterator{tree, current.parent_index()}.next();
+                return;
             }
         }
-
-
-        iterator& operator++()
-        {
-            return (*this).next();
-        }
+        void operator++() { next(); }
 
 
         //=====================================================================
         const value_type& operator*() const{ return tree.at(current); }
-        bool operator==(const iterator& other) const { return  tree == other.tree && current == other.current; };
-        bool operator!=(const iterator& other) const { return  tree != other.tree && current != other.current; };
+        bool operator==(const iterator& other) const { return  (tree == other.tree && current == other.current); };
+        bool operator!=(const iterator& other) const { return  (tree != other.tree && current != other.current); };
 
 
         //=====================================================================

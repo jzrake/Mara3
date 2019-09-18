@@ -325,4 +325,33 @@ TEST_CASE("tree traversals and value retrievals work OK", "[arithmetic_binary_tr
         .at(mara::make_tree_index(0, 1, 2).with_level(2)) == 1.0);
 }
 
+TEST_CASE("tree iterator works as expected", "[arithmetic_binary_tree]")
+{
+    auto tree = mara::tree_of<2>(0.0).bifurcate_all([] (auto i) { return mara::iota<4>(); });
+    auto iter = tree.begin();
+    REQUIRE(tree.at(iter.current) == 0); iter.next();
+    REQUIRE(tree.at(iter.current) == 1); ++iter;
+    REQUIRE(*iter == 2); ++iter;
+    REQUIRE(*iter == 3); ++iter;
+    // REQUIRE(iter == tree.end());
+    REQUIRE(iter.current == mara::tree_index_t<2>{});
+}
+
+/** COPY **/
+// TEST_CASE("linked list iterators work right", ["linked_list_copy"])
+// {
+//     auto a = mara::linked_list_t<int>().append(1).append(2);
+//     auto it = a.begin();
+//     REQUIRE(*it == 1); ++it;
+//     REQUIRE(*it == 2); ++it;
+//     REQUIRE( it == a.end());
+
+//     std::size_t n = 0;
+
+//     for (auto x : mara::linked_list_t<int>{0, 1, 2, 3, 4})
+//     {
+//         REQUIRE(x == n++);
+//     }
+// }
+
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
