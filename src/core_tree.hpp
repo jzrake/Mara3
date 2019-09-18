@@ -917,7 +917,7 @@ struct mara::arithmetic_binary_tree_t
 /**
  * @brief      Return a boolean sequence {a} representing a number:
  *
- *             value = a[0] + 2^0 + a[1] + 2^1 + ...
+ *             value = a[0] * 2^0 + a[1] * 2^1 + ...
  *
  * @param[in]  value  The number to represent
  *
