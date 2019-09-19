@@ -218,22 +218,21 @@ struct mara::tree_index_t
 
 
     /**
-     * @brief      Return the number of indexes in all levels below a given indexes
-     *             level, assuming a complete tree.
+     * @brief      Return the number of indexes in all levels smaller than this
+     *             index's level (assuming the smaller levels are densely
+     *             populated).
      *
      * @return     The number of indexes
      */
     std::size_t indexes_below() const
     {
-        std::size_t lvl = level;
-        std::size_t ibelow = 1;
+        std::size_t total = 0;
 
-        while (lvl > 1)
+        for (std::size_t n = level; n > 0; --n)
         {
-            ibelow += std::pow(1 << Rank, level - 1);
-            lvl--;
+            total += 1 << Rank * (n - 1);
         }
-        return ibelow;
+        return total;
     }
 
 
@@ -374,7 +373,7 @@ struct mara::arithmetic_binary_tree_t
                 while (! tree.contains(current))
                 {
                     current = current.child_indexes()[0];
-                }   
+                }
             }
         }
         void operator++() { next(); }
