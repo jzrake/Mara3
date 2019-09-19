@@ -328,17 +328,6 @@ struct mara::arithmetic_binary_tree_t
         //=====================================================================
         void next()
         {
-            // If we are the root of the tree, then set to end; done
-
-            // If we are the last child of our parent, then climb the tree to
-            // find the first ancestor that is not the last child of its parent.
-            // Set current to that ancestor's next sibling's front.
-
-            // If we are not the last child of our parent, then return our next
-            // sibling's front.
-
-            // ALL BROKEN ;(
-
             if (current.is_root())
             {
                 *this = tree.end();
@@ -349,13 +338,13 @@ struct mara::arithmetic_binary_tree_t
 
                 while (ancestor.is_last_child())
                 {
-                    ancestor = ancestor.parent_index();
-
                     if (ancestor.is_root())
                     {
                         *this = tree.end();
                         return;
                     }
+
+                    ancestor = ancestor.parent_index();
                 }
 
                 current = ancestor.next_sibling();

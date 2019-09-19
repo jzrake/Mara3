@@ -215,7 +215,8 @@ TEST_CASE("binary tree indexes methods work correctly", "[tree_index]")
     REQUIRE(mara::tree_index_t<3>().is_root());
     REQUIRE(mara::tree_index_t<3>().is_last_child());
     REQUIRE(mara::tree_index_t<3>{1, {1, 1, 1}}.is_last_child());
-    REQUIRE_FALSE(mara::tree_index_t<3>{2, {1, 1, 1}}.is_last_child());
+    REQUIRE(mara::tree_index_t<3>{1,{1,1,1}}.parent_index().is_root());
+    REQUIRE_FALSE(mara::tree_index_t<3>{2, {0, 0, 0}}.is_last_child());
 }
 
 TEST_CASE("binary tree constructors and operators work OK", "[arithmetic_binary_tree]")
@@ -332,31 +333,59 @@ TEST_CASE("tree traversals and value retrievals work OK", "[arithmetic_binary_tr
 
 TEST_CASE("tree iterator works as expected", "[arithmetic_binary_tree]")
 {
-    // SECTION("on a uniformly refined tree of rank 2 and depth 1")
-    // {
-    //     auto tree = mara::tree_of<2>(0).bifurcate_all([] (auto i) { return mara::iota<4>(); });
-    //     auto iter = tree.begin();
-    //     REQUIRE_FALSE(iter == tree.end());
-    //     REQUIRE(tree.at(iter.current) == 0); iter.next();
-    //     REQUIRE(tree.at(iter.current) == 1); ++iter;
-    //     REQUIRE(*iter == 2); ++iter;
-    //     REQUIRE(*iter == 3); ++iter;
-    //     REQUIRE(iter == tree.end());        
-    // }
-    // SECTION("on a uniformly refined tree of rank 1 and depth 2")
-    // {
-    //     auto tree = mara::tree_of<1>(std::size_t())
-    //     .bifurcate_if([] (auto val) { return true; }, [] (auto i) { return mara::iota<2>(); })
-    //     .bifurcate_if([] (auto val) { return true; }, [] (auto i) { return mara::iota<2>(); });
+    SECTION("on a uniformly refined tree of rank 2 and depth 1")
+    {
+        auto tree = mara::tree_of<2>(0).bifurcate_all([] (auto i) { return mara::iota<4>(); });
+        auto iter = tree.begin();
+        REQUIRE_FALSE(iter == tree.end());
+        REQUIRE(tree.at(iter.current) == 0); iter.next();
+        REQUIRE(tree.at(iter.current) == 1); ++iter;
+        REQUIRE(*iter == 2); ++iter;
+        REQUIRE(*iter == 3); ++iter;
+        REQUIRE(iter == tree.end());
+    }
+    SECTION("on a uniformly refined tree of rank 1 and depth 2")
+    {
+        auto tree = mara::tree_of<1>(std::size_t())
+        .bifurcate_if([] (auto val) { return true; }, [] (auto i) { return mara::iota<2>(); })
+        .bifurcate_if([] (auto val) { return true; }, [] (auto i) { return mara::iota<2>(); });
 
-    //     std::size_t n = 0;
+        std::size_t n = 0;
 
-    //     for (auto it = tree.begin(); it != tree.end(); ++it)
-    //     {
-    //         ++n;
-    //     }
-    //     REQUIRE(tree.size() == n);
-    // }
+        for (auto it = tree.begin(); it != tree.end(); ++it)
+        {
+            ++n;
+        }
+        REQUIRE(tree.size() == n);
+    }
+    SECTION("on a non-uniformly refined tree of rank 2 and depth 3")
+    {
+        auto tree = mara::tree_of<2>(std::size_t())
+        .bifurcate_if([] (auto val) { return true; }, [] (auto i) { return mara::iota<4>(); })
+        .bifurcate_if([] (auto val) { return val == 0; }, [] (auto i) { return mara::iota<4>() + 100; })
+        .bifurcate_if([] (auto val) { return val == 102; }, [] (auto i) { return mara::iota<4>() + 500; });
+
+        auto iter = tree.begin();
+        REQUIRE(*iter == 100); ++iter;
+        REQUIRE(*iter == 101); ++iter;
+        REQUIRE(*iter == 500); ++iter;
+        REQUIRE(*iter == 501); ++iter;
+        REQUIRE(*iter == 502); ++iter;
+        REQUIRE(*iter == 503); ++iter;
+        REQUIRE(*iter == 103); ++iter;
+        REQUIRE(*iter == 1); ++iter;
+        REQUIRE(*iter == 2); ++iter;
+        REQUIRE(*iter == 3); ++iter;
+        REQUIRE(iter == tree.end());
+        
+
+        std::size_t n = 0;
+        for (auto it = tree.begin(); it != tree.end(); ++it)
+        {
+            ++n;
+        }
+        REQUIRE(tree.size() == n);   
+    }
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
