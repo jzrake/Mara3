@@ -93,7 +93,7 @@ struct mara::tree_index_t
     /**
      * @brief      Helper function to give the number of children per
      *             node at the given Rank
-     *             
+     *
      * @return     An integer
      */
     std::size_t child_count() const
@@ -397,7 +397,7 @@ struct mara::arithmetic_binary_tree_t
      * @brief      Return an iterator to the beginning of the tree
      *
      * @return     An iterator
-     * 
+     *
      * @note       The iterator traverses the leafs depth-first.
      */
     iterator begin() const
@@ -466,7 +466,7 @@ struct mara::arithmetic_binary_tree_t
     /**
      * @brief      Return the index that would be hit first in a depth-first
      *             traversal.
-     *             
+     *
      * @return     The index
      */
     const tree_index_t<Rank> front_index(tree_index_t<Rank> start={}) const
@@ -839,7 +839,7 @@ struct mara::arithmetic_binary_tree_t
     /**
      * @brief      Convenience function for mapping a function of multiple
      *             arguments over a tree of tuple values:
-     *             
+     *
      *             A.pair(B).apply([] (auto a, auto b) { return ...; })
      *
      * @param      fn        The function to map
