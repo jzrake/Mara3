@@ -217,6 +217,11 @@ TEST_CASE("binary tree indexes methods work correctly", "[tree_index]")
     REQUIRE(mara::tree_index_t<3>{1, {1, 1, 1}}.is_last_child());
     REQUIRE(mara::tree_index_t<3>{1,{1,1,1}}.parent_index().is_root());
     REQUIRE_FALSE(mara::tree_index_t<3>{2, {0, 0, 0}}.is_last_child());
+
+    REQUIRE(mara::tree_index_t<3>{0, {}}.indexes_below() == 0);
+    REQUIRE(mara::tree_index_t<3>{1, {}}.indexes_below() == 1);
+    REQUIRE(mara::tree_index_t<3>{2, {}}.indexes_below() == 1 + 2 * 2 * 2);
+    REQUIRE(mara::tree_index_t<3>{3, {}}.indexes_below() == 1 + 2 * 2 * 2 + 4 * 4 * 4);
 }
 
 TEST_CASE("binary tree constructors and operators work OK", "[arithmetic_binary_tree]")
