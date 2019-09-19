@@ -330,7 +330,6 @@ TEST_CASE("tree traversals and value retrievals work OK", "[arithmetic_binary_tr
         .at(mara::make_tree_index(0, 1, 2).with_level(2)) == 1.0);
 }
 
-#include <iostream>
 TEST_CASE("tree iterator works as expected", "[arithmetic_binary_tree]")
 {
     // SECTION("on a uniformly refined tree of rank 2 and depth 1")
@@ -344,38 +343,20 @@ TEST_CASE("tree iterator works as expected", "[arithmetic_binary_tree]")
     //     REQUIRE(*iter == 3); ++iter;
     //     REQUIRE(iter == tree.end());        
     // }
-    SECTION("on a uniformly refined tree of rank 1 and depth 2")
-    {
-        auto tree = mara::tree_of<1>(std::size_t())
-        .bifurcate_if([] (auto val) { return true; }, [] (auto i) { return mara::iota<2>(); })
-        .bifurcate_if([] (auto val) { return true; }, [] (auto i) { return mara::iota<2>(); });
+    // SECTION("on a uniformly refined tree of rank 1 and depth 2")
+    // {
+    //     auto tree = mara::tree_of<1>(std::size_t())
+    //     .bifurcate_if([] (auto val) { return true; }, [] (auto i) { return mara::iota<2>(); })
+    //     .bifurcate_if([] (auto val) { return true; }, [] (auto i) { return mara::iota<2>(); });
 
-        std::size_t n = 0;
+    //     std::size_t n = 0;
 
-        for (auto it = tree.begin(); it != tree.end(); ++it)
-        {
-            ++n;
-            std::cout << it.current.level << " " << mara::to_string(it.current.coordinates) << std::endl;
-        }
-        REQUIRE(tree.size() == n);
-    }
+    //     for (auto it = tree.begin(); it != tree.end(); ++it)
+    //     {
+    //         ++n;
+    //     }
+    //     REQUIRE(tree.size() == n);
+    // }
 }
-
-/** COPY **/
-// TEST_CASE("linked list iterators work right", ["linked_list_copy"])
-// {
-//     auto a = mara::linked_list_t<int>().append(1).append(2);
-//     auto it = a.begin();
-//     REQUIRE(*it == 1); ++it;
-//     REQUIRE(*it == 2); ++it;
-//     REQUIRE( it == a.end());
-
-//     std::size_t n = 0;
-
-//     for (auto x : mara::linked_list_t<int>{0, 1, 2, 3, 4})
-//     {
-//         REQUIRE(x == n++);
-//     }
-// }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST

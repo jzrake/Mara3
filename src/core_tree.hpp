@@ -128,7 +128,7 @@ struct mara::tree_index_t
 
     bool is_last_child() const
     {
-        return level == 0 || mara::to_integral<Rank>(orthant()) == (1 << Rank) - 1;
+        return level == 0 || sibling_index() == child_count() - 1;
     }
 
 
@@ -151,7 +151,7 @@ struct mara::tree_index_t
 
 
     /**
-     * @brief      Return this index as it is relative to the parent block.
+     * @brief      Return this index as it is relative to the parent node.
      *
      * @return     The index as seen by the parent.
      */
@@ -191,9 +191,17 @@ struct mara::tree_index_t
 
 
 
+    std::size_t sibling_index() const
+    {
+        return mara::to_integral(relative_to_parent().orthant());
+    }
+
+
+
+
     /**
      * @brief      Return the number of indexes in all levels below a given indexes
-     *             level, assuming a complete tree
+     *             level, assuming a complete tree.
      *
      * @return     The number of indexes
      */
@@ -245,20 +253,18 @@ struct mara::tree_index_t
 
 
     /**
-     * @brief      Return the next sibling's index. Throws std::out_of_range (to
-     *             be caught in tree iterator) if next sibling does not exist
+     * @brief      Return the next sibling's index. Throws std::out_of_range if
+     *             next sibling does not exist
      *
      * @return     An index
      */
     tree_index_t next_sibling() const
     {
-        auto next_sib = mara::to_integral<Rank>(orthant()) + 1; 
-
-        if (next_sib >= child_count())
+        if (is_last_child())
         {
-            throw std::out_of_range("tree_index_t::next_sibling (next sibling does not exist)");
+            throw std::out_of_range("tree_index_t::next_sibling (is the last child)");
         }
-        return tree_index_t{level, parent_index().coordinates * 2 + binary_repr<Rank>(next_sib)};
+        return tree_index_t{level, parent_index().coordinates * 2 + binary_repr<Rank>(sibling_index() + 1)};
     }
 
 
@@ -291,7 +297,7 @@ struct mara::tree_index_t
 };
 
 
-#include <iostream>
+
 
 //=============================================================================
 template<typename ValueType, std::size_t Rank>
@@ -335,14 +341,10 @@ struct mara::arithmetic_binary_tree_t
 
             if (current.is_root())
             {
-                std::cout << "A" << std::endl;
-
                 *this = tree.end();
             }
             else if (current.is_last_child())
             {
-                std::cout << "B" << std::endl;
-
                 auto ancestor = current.parent_index();
 
                 while (ancestor.is_last_child())
@@ -365,8 +367,6 @@ struct mara::arithmetic_binary_tree_t
             }
             else
             {
-                std::cout << "C" << std::endl;
-
                 current = current.next_sibling();
 
                 while (! tree.contains(current))
