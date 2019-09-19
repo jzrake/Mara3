@@ -352,8 +352,9 @@ TEST_CASE("tree iterator works as expected", "[arithmetic_binary_tree]")
 
         std::size_t n = 0;
 
-        for (auto it = tree.begin(); it != tree.end(); ++it)
+        for (auto leaf : tree)
         {
+            (void) leaf; // avoid unused variable warning
             ++n;
         }
         REQUIRE(tree.size() == n);
@@ -377,11 +378,12 @@ TEST_CASE("tree iterator works as expected", "[arithmetic_binary_tree]")
         REQUIRE(*iter == 2); ++iter;
         REQUIRE(*iter == 3); ++iter;
         REQUIRE(iter == tree.end());
-        
 
         std::size_t n = 0;
-        for (auto it = tree.begin(); it != tree.end(); ++it)
+
+        for (auto leaf : tree)
         {
+            (void) leaf; // avoid unused variable warning
             ++n;
         }
         REQUIRE(tree.size() == n);   

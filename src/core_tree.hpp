@@ -118,6 +118,12 @@ struct mara::tree_index_t
 
 
 
+    /**
+     * @brief      Determines if this index is the root index
+     *             (default-constructed indexes are the root).
+     *
+     * @return     True if this index is root, False otherwise.
+     */
     bool is_root() const
     {
         return *this == tree_index_t{};
@@ -126,6 +132,12 @@ struct mara::tree_index_t
 
 
 
+
+    /**
+     * @brief      Determines if this index is the last child of its parent.
+     *
+     * @return     True if this is the last child, False otherwise
+     */
     bool is_last_child() const
     {
         return level == 0 || sibling_index() == child_count() - 1;
@@ -153,7 +165,7 @@ struct mara::tree_index_t
     /**
      * @brief      Return this index as it is relative to the parent node.
      *
-     * @return     The index as seen by the parent.
+     * @return     The index as seen by the parent
      */
     tree_index_t relative_to_parent() const
     {
@@ -181,7 +193,7 @@ struct mara::tree_index_t
      * @brief      Return a sequence of tree indexes corresponding to the 2^Rank
      *             indexes of this node's children.
      *
-     * @return     A sequence of tree indexes.
+     * @return     A sequence of tree indexes
      */
     arithmetic_sequence_t<tree_index_t, 1 << Rank> child_indexes() const
     {
@@ -191,6 +203,12 @@ struct mara::tree_index_t
 
 
 
+    /**
+     * @brief      Return the linear index (between 0 and 2^Rank, non-inclusive)
+     *             of this index in its parent.
+     *
+     * @return     The sibling index
+     */
     std::size_t sibling_index() const
     {
         return mara::to_integral(relative_to_parent().orthant());
@@ -305,8 +323,6 @@ struct mara::arithmetic_binary_tree_t
 {
 
 
-
-
     //=========================================================================
     using value_type = ValueType;
     using children_array_type = mara::arithmetic_sequence_t<arithmetic_binary_tree_t, 1 << Rank>;
@@ -314,8 +330,7 @@ struct mara::arithmetic_binary_tree_t
     template<std::size_t Depth> using bit_path_nd_t = arithmetic_sequence_t<bit_path_t<Depth>, Rank>;
 
 
-
-
+    //=========================================================================
     struct iterator
     {
         using iterator_category = std::input_iterator_tag;
@@ -343,10 +358,8 @@ struct mara::arithmetic_binary_tree_t
                         *this = tree.end();
                         return;
                     }
-
                     ancestor = ancestor.parent_index();
                 }
-
                 current = ancestor.next_sibling();
 
                 while (! tree.contains(current))
@@ -377,6 +390,34 @@ struct mara::arithmetic_binary_tree_t
         arithmetic_binary_tree_t  tree;
         tree_index_t<Rank>        current;
     };
+
+
+
+
+    /**
+     * @brief      Return an iterator to the beginning of the tree
+     *
+     * @return     An iterator
+     * 
+     * @note       The iterator traverses the leafs depth-first.
+     */
+    iterator begin() const
+    {
+        return iterator{*this, front_index()};
+    }
+
+
+
+
+    /**
+     * @brief      Return an iterator to the end of the tree
+     *
+     * @return     An iterator
+     */
+    iterator end() const
+    {
+        return iterator{*this, tree_index_t<Rank>{depth() + 1, {}}};
+    }
 
 
 
@@ -429,9 +470,9 @@ struct mara::arithmetic_binary_tree_t
      *             
      * @return     The index
      */
-    const tree_index_t<Rank> front_index() const
+    const tree_index_t<Rank> front_index(tree_index_t<Rank> start={}) const
     {
-        return indexes().front();
+        return has_value() ? start : children().at(0).front_index(start.child_indexes()[0]);
     }
 
 
@@ -1069,36 +1110,8 @@ struct mara::arithmetic_binary_tree_t
     auto operator+() const { return map([] (auto&& x) { return +x; }); }
     auto operator-() const { return map([] (auto&& x) { return -x; }); }
     //=========================================================================
-    
 
 
-
-    /**
-     * @breif       Return an iterator to the beginning of the tree
-     *
-     * @return      An iterator
-     */
-    iterator begin() const
-    {
-        return iterator{*this, front_index()};
-    }
-
-
-
-
-    /**
-     * @brief       Return an iterator to the end of the tree
-     * 
-     * @return      An iterator
-     */
-    iterator end() const
-    {
-        return iterator{*this, tree_index_t<Rank>{depth() + 1, {}}};
-    }
-
-
-
-    //=========================================================================
     std::variant<ValueType, std::shared_ptr<children_array_type>> __impl;
 };
 
