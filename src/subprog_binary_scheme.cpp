@@ -175,13 +175,23 @@ static auto cs2_at_position(binary::location_2d_t x, mara::two_body_state_t bina
     return -(phi1(x) + phi2(x)).value / M / M;
 };
 
-static auto scale_height_at_position(binary::location_2d_t x, const binary::solver_data_t& solver_data)
+static auto nu_at_position(binary::location_2d_t x, double cs2, const binary::solver_data_t& solver_data)
 {
-    auto rc = solver_data.alpha_cutoff_radius;
-    auto r  = std::sqrt((x * x).sum().value);
-    auto profile = rc > 0.0 ? 0.5 * (1.0 + std::tanh(3.0 * (r - rc))) : 1.0;
-    return profile * r / solver_data.mach_number;
-};
+    auto radius = [] (auto x) { return std::sqrt((x * x).sum().value); };
+    auto profile = [radius, rc=solver_data.alpha_cutoff_radius] (auto x)
+    {
+        return rc > 0.0 ? 0.5 * (1.0 + std::tanh(3.0 * (radius(x) - rc))) : 1.0;
+    };
+    auto scale_height = [radius, M=solver_data.mach_number] (auto x)
+    {
+        return radius(x) / M;
+    };
+    if (solver_data.nu > 0.0)
+    {
+        return profile(x) * solver_data.nu;
+    }
+    return profile(x) * solver_data.alpha * std::sqrt(cs2) * scale_height(x);
+}
 
 
 
@@ -273,7 +283,7 @@ static auto intercell_flux(
         auto pl_hat = pl + gl * 0.5 * grid_spacing;
         auto pr_hat = pr - gr * 0.5 * grid_spacing;
         auto cs2 = cs2_at_position(xf, binary, solver_data);
-        auto nu = solver_data.alpha * std::sqrt(cs2) * scale_height_at_position(xf, solver_data);
+        auto nu = nu_at_position(xf, cs2, solver_data);
         auto mu = 0.5 * nu * (pl_hat.sigma() + pr_hat.sigma());
 
         auto nhat = mara::unit_vector_t::on_axis(axis);
