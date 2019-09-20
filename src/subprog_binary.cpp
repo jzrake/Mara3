@@ -87,8 +87,10 @@ mara::config_template_t binary::create_config_template()
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
     .item("counter_rotate",         0)          // retrograde disk option: 0 or 1
     .item("mach_number",         40.0)          // disk mach number; for locally isothermal EOS
-    .item("alpha",                0.0)          // viscous alpha coefficient
-    .item("alpha_cutoff_radius",  0.0);         // radius inside of which alpha is set to zero
+    .item("axisymmetric_cs2",       1)          // if true then cs2 = GM / r / Mach^2; otherwise cs2 = -phi / Mach^2
+    .item("alpha_cutoff_radius",  0.0)          // radius inside of which viscosity is set to zero
+    .item("alpha",                0.0)          // viscous alpha coefficient (if nu == 0 then alpha-viscosity is used)
+    .item("nu",                   0.0);         // kinematic viscosity coefficient (if nu > 0 then constant-nu is used)
 }
 
 

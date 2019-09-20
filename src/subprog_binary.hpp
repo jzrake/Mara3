@@ -82,8 +82,10 @@ namespace binary
         double                                                mach_number;
         double                                                alpha;
         double                                                alpha_cutoff_radius;
+        double                                                nu;
         double                                                plm_theta;
         int                                                   rk_order;
+        bool                                                  axisymmetric_cs2;
         std::size_t                                           block_size;
         reconstruct_method_t                                  reconstruct_method;
         riemann_solver_t                                      riemann_solver;
