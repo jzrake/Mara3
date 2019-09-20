@@ -525,8 +525,11 @@ auto validate = [] (auto solution, auto solver_data)
     {
         auto XQ = nd::zip(solver_data.cell_centers.at(index), solution.conserved.at(index));
 
-        for (auto [x, q] : XQ)
+	for (auto xq : XQ)
         {
+            const auto& x = std::get<0>(xq);
+            const auto& q = std::get<1>(xq);
+
             if (mara::get<0>(q) < 0.0)
             {                
                 std::printf("negative density %3.2e (at position [%+3.2lf %+3.2lf])\n", mara::get<0>(q).value, x[0].value, x[1].value);
