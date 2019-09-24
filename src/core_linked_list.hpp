@@ -280,6 +280,41 @@ struct mara::linked_list_t
 
 
     /**
+     * @brief       Pair this list with another of the same shape
+     *
+     * @param[in]   other       The other list
+     *
+     * @tparam      OtherType   The value_type of the other list
+     *
+     * @return      A list of tuples with the same shape as this one
+     */
+    template<typename OtherType>
+    auto pair(const linked_list_t<OtherType> other) const
+    {
+        auto result = linked_list_t<std::pair<value_type, OtherType>>();
+
+        auto iter = begin();
+        for (auto o : other)
+        {
+            if (iter == end())
+            {
+                throw std::logic_error("cannot pair lists of different lengths");
+            }
+            result = result.prepend(std::make_pair(*iter, o));
+            ++iter;
+        }
+
+        if (iter != end())
+        {
+            throw std::logic_error("cannot pair lists of different lengths");
+        }
+        return result.reverse();
+    }
+
+
+
+
+    /**
      * @brief      Return the value at the front of the list; O(1). Throws
      *             out_of_range if this list is empty.
      *
