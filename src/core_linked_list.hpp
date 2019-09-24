@@ -336,9 +336,124 @@ struct mara::linked_list_t
     {
         return {linked_list_t()};
     }
+    //=========================================================================
+    
+    
+    /**
+     * @brief     Return the front half of a list
+     * 
+     * @return    A list
+     */
+    const linked_list_t front_half() const
+    {
+        auto iter = begin();
+
+        linked_list_t<value_type> temp;
+        for(std::size_t n=0; n < size() / 2; n++)
+        {
+            temp = temp.prepend(*iter);
+            ++iter;
+        }
+        return temp.reverse();
+    }
 
 
 
+    /**
+     * @brief     Returns the back half of a list
+     * 
+     * @return    A list
+     */
+    const linked_list_t back_half() const
+    {
+        auto iter = begin();
+
+        for(std::size_t n=0; n < size() / 2; n++)
+        {
+            ++iter;
+        }
+        return iter.current;
+    }
+
+
+
+    /**
+     * @brief  Sorts and merges two already sorted lists. Both the calling list
+     *         and the parameter list must already be sorted.
+     *             
+     * @param  other The other sorted list
+     * 
+     * @return       A sorted list
+     */
+    const linked_list_t sorted_merge(linked_list_t other, bool (*cmp)(value_type, value_type)) const
+    {
+        auto result = linked_list_t<value_type>();
+
+        if (empty())
+        {
+            return other;
+        }
+        else if (other.empty())
+        {
+            return *this;
+        }
+        else if (cmp(head(), other.head()))
+        {
+            auto temp = result.prepend(head()); 
+            result = temp.concat(tail().sorted_merge(other, cmp));
+        }
+        else
+        {
+            auto temp = result.prepend(other.head());
+            result = temp.concat(other.tail().sorted_merge(*this, cmp));
+        }
+        return result;
+    }
+
+
+
+    /**
+     * @brief      Basic function to sort values in ascending order
+     * 
+     * @return     A sorted list
+     */
+    const linked_list_t sort() const
+    {
+        if (size() <= 1)
+        {
+            return *this;
+        }
+        
+        //Split in half and sort
+        auto A = front_half().sort();
+        auto B =  back_half().sort();
+
+        //Stitch together sorted lists
+        return A.sorted_merge(B, [] (auto x, auto y) { return y > x; });
+    }
+
+
+    /**
+     * @brief     Function to sort based on the provided boolean function
+     *
+     * @param     cmp  A function taking two parameters and returning a bool
+     *
+     * @return    The sorted list
+     */
+    const linked_list_t sort(bool (*cmp)(value_type, value_type)) const
+    {
+        if(size() <= 1)
+        {
+            return *this;
+        }
+
+        auto A = front_half().sort(cmp);
+        auto B =  back_half().sort(cmp);
+
+        return A.sorted_merge(B, cmp);
+    }
+    //=========================================================================
+    
 
     /**
      * @brief      Determine whether two sequences are equal.

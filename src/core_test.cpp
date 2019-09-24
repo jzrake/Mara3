@@ -105,6 +105,12 @@ TEST_CASE("tuples work correctly")
 
 TEST_CASE("linked lists work as expected", "[linked_list]")
 {
+    SECTION("testing empty()")
+    {
+        auto a = mara::linked_list_t<int>();
+        REQUIRE(a.empty() == true);
+        REQUIRE(a.prepend(1).empty() == false);
+    }
     SECTION("prepending to build lists works OK")
     {
         auto a = mara::linked_list_t<int>();
@@ -181,6 +187,33 @@ TEST_CASE("linked lists work as expected", "[linked_list]")
         REQUIRE(d.reverse().size() == A.size());
         // The operation below still fails for very large lists:
         // REQUIRE(d == d.reverse().reverse());
+    }
+    SECTION("test the sorting routines")
+    {
+        auto A = mara::linked_list_t<int>{2,5,10,21};
+        auto B = mara::linked_list_t<int>{7,9,15,32};
+        auto z = mara::linked_list_t<int>{2,5,7,9,10,15,21,32};
+        REQUIRE(A.sorted_merge(B, [] (auto x, auto y) { return y > x; }) == z);
+
+        auto C = mara::linked_list_t<int>{8,12,90,43,19,76,48};
+        auto y = mara::linked_list_t<int>{8,12,19,43,48,76,90};
+        REQUIRE(C.front_half() == mara::linked_list_t<int>{8,12,90});
+        REQUIRE(C.back_half()  == mara::linked_list_t<int>{43,19,76,48});
+        REQUIRE(C.sort() == y);
+
+        struct nums
+        {
+            int A;
+            double B;
+
+            bool operator==(const nums other) const {return A==other.A && B==other.B; }
+        };
+        auto i = nums{1,3.2};
+        auto j = nums{5,9.3};
+        auto k = nums{3,1.9};
+        auto D = mara::linked_list_t<nums>{i, j, k};
+        REQUIRE(D.sort([] (nums x, nums y) { return x.A < y.A; }) == mara::linked_list_t<nums>{i, k, j});
+        REQUIRE(D.sort([] (nums x, nums y) { return x.B < y.B; }) == mara::linked_list_t<nums>{k, i, j});
     }
 }
 
@@ -394,5 +427,19 @@ TEST_CASE("tree iterator works as expected", "[arithmetic_binary_tree]")
         REQUIRE(tree.size() == n);   
     }
 }
+
+// TEST_CASE("array routines work as expected", "[array_t]")
+// {
+//     SECTION("testing the sort method")
+//     {
+//         auto a = nd::arange(6);
+//         auto b = nd::to_vector<int>(a);
+//         // std::vector<int> v{0,5,1,2,4,3};
+//         // auto b = nd::make_array_from(v);
+//         // // auto c = b | nd::sort;
+//         // auto c = nd::sort(b);
+//     }
+// }
+
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
