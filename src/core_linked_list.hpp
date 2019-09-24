@@ -336,9 +336,14 @@ struct mara::linked_list_t
     {
         return {linked_list_t()};
     }
+
+
+
+
     //=========================================================================
-    
-    
+    //                  Sorting Routines
+    //=========================================================================
+
     /**
      * @brief     Return the front half of a list
      * 
@@ -349,13 +354,14 @@ struct mara::linked_list_t
         auto iter = begin();
 
         linked_list_t<value_type> temp;
-        for(std::size_t n=0; n < size() / 2; n++)
+        for(std::size_t n = 0; n < size() / 2; n++)
         {
             temp = temp.prepend(*iter);
             ++iter;
         }
         return temp.reverse();
     }
+
 
 
 
@@ -368,7 +374,7 @@ struct mara::linked_list_t
     {
         auto iter = begin();
 
-        for(std::size_t n=0; n < size() / 2; n++)
+        for(std::size_t n = 0; n < size() / 2; n++)
         {
             ++iter;
         }
@@ -377,15 +383,16 @@ struct mara::linked_list_t
 
 
 
+
     /**
-     * @brief  Sorts and merges two already sorted lists. Both the calling list
-     *         and the parameter list must already be sorted.
+     * @brief     Sorts and merges two already sorted lists. Both the calling list
+     *            and the parameter list must already be sorted.
      *             
-     * @param  other The other sorted list
-     * 
-     * @return       A sorted list
+     * @param     other  The other sorted list
+     *    
+     * @return    A sorted list
      */
-    const linked_list_t sorted_merge(linked_list_t other, bool (*cmp)(value_type, value_type)) const
+    const linked_list_t sorted_merge(const linked_list_t other, bool (*cmp)(value_type, value_type)) const
     {
         auto result = linked_list_t<value_type>();
 
@@ -412,6 +419,7 @@ struct mara::linked_list_t
 
 
 
+
     /**
      * @brief      Basic function to sort values in ascending order
      * 
@@ -429,14 +437,17 @@ struct mara::linked_list_t
         auto B =  back_half().sort();
 
         //Stitch together sorted lists
-        return A.sorted_merge(B, [] (auto x, auto y) { return y > x; });
+        return A.sorted_merge(B, [] (auto x, auto y) { return x < y; });
     }
+
+
 
 
     /**
      * @brief     Function to sort based on the provided boolean function
      *
-     * @param     cmp  A function taking two parameters and returning a bool
+     * @param     cmp   A boolean function that compares two parameters of 
+     *                  the same type
      *
      * @return    The sorted list
      */
@@ -452,9 +463,11 @@ struct mara::linked_list_t
 
         return A.sorted_merge(B, cmp);
     }
-    //=========================================================================
-    
 
+
+
+
+    //=========================================================================
     /**
      * @brief      Determine whether two sequences are equal.
      *
