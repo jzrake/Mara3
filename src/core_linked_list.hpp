@@ -468,6 +468,7 @@ struct mara::linked_list_t
 
 
     //=========================================================================
+
     /**
      * @brief      Determine whether two sequences are equal.
      *
