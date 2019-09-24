@@ -140,7 +140,7 @@ struct mara::tree_index_t
      */
     bool is_last_child() const
     {
-        return level == 0 || sibling_index() == child_count() - 1;
+    return level == 0 || sibling_index() == child_count() - 1;
     }
 
 
@@ -1271,5 +1271,5 @@ std::size_t mara::hilbert_index(tree_index_t<2> index)
 
 std::size_t mara::global_hilbert_index(tree_index_t<2> index)
 {
-    return mara::hilbert_index(index) + index.indexes_below();
+    return mara::hilbert_index(index) + 4 * index.parent_index().sibling_index() + index.indexes_below();
 }
