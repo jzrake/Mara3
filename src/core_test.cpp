@@ -205,7 +205,6 @@ TEST_CASE("linked lists work as expected", "[linked_list]")
         {
             int A;
             double B;
-
             bool operator==(const nums other) const {return A==other.A && B==other.B; }
         };
         auto i = nums{1,3.2};
@@ -214,6 +213,21 @@ TEST_CASE("linked lists work as expected", "[linked_list]")
         auto D = mara::linked_list_t<nums>{i, j, k};
         REQUIRE(D.sort([] (nums x, nums y) { return x.A < y.A; }) == mara::linked_list_t<nums>{i, k, j});
         REQUIRE(D.sort([] (nums x, nums y) { return x.B < y.B; }) == mara::linked_list_t<nums>{k, i, j});
+    }
+    SECTION("test linked list pairing")
+    {
+        auto A = mara::linked_list_t<int>{1,3,5};
+        auto B = mara::linked_list_t<double>{1.1,3.3,5.5};
+        auto C = A.pair(B);
+
+        REQUIRE_THROWS(A.prepend(7).pair(B));
+        REQUIRE_THROWS(A.pair(B.prepend(7.7)));
+
+        auto i = std::make_pair(1, 1.1);
+        auto j = std::make_pair(3, 3.3);
+        auto k = std::make_pair(5, 5.5);
+        auto z = mara::linked_list_t<std::pair<int,double>>{i,j,k};
+        REQUIRE(C == z);
     }
 }
 
