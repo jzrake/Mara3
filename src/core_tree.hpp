@@ -1233,6 +1233,41 @@ auto mara::tree_of(const arithmetic_sequence_t<ValueType, 1 << Rank>& child_valu
  *
  * @return     The Hilbert linear index of the given tree index
  */
+// std::size_t mara::hilbert_index(tree_index_t<2> index)
+// {
+//     // https://en.wikipedia.org/wiki/Hilbert_curve
+
+//     auto rot = [] (int n, int *x, int *y, int rx, int ry)
+//     {
+//         if (ry == 0)
+//         {
+//             if (rx == 1)
+//             {
+//                 *x = n-1 - *x;
+//                 *y = n-1 - *y;
+//             }
+//             int t = *x;
+//             *x = *y;
+//             *y = t;
+//         }
+//     };
+
+//     auto xy2d = [rot] (int n, int x, int y)
+//     {
+//         int rx, ry, s, d=0;
+
+//         for (s = n/2; s > 0; s /= 2)
+//         {
+//             rx = (x & s) > 0;
+//             ry = (y & s) > 0;
+//             d += s * s * ((3 * rx) ^ ry);
+//             rot(n, &x, &y, rx, ry);
+//         }
+//         return d;
+//     };
+
+//     return xy2d(index.level, index.coordinates[0], index.coordinates[1]);
+// }
 std::size_t mara::hilbert_index(tree_index_t<2> index)
 {
     // https://en.wikipedia.org/wiki/Hilbert_curve
@@ -1266,10 +1301,10 @@ std::size_t mara::hilbert_index(tree_index_t<2> index)
         return d;
     };
 
-    return xy2d(index.level, index.coordinates[0], index.coordinates[1]);
+    return xy2d(1 << index.level, index.coordinates[0], index.coordinates[1]);
 }
 
 std::size_t mara::global_hilbert_index(tree_index_t<2> index)
 {
-    return mara::hilbert_index(index) + 4 * index.parent_index().sibling_index() + index.indexes_below();
+    return mara::hilbert_index(index)  + index.indexes_below();
 }

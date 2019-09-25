@@ -440,6 +440,17 @@ TEST_CASE("tree iterator works as expected", "[arithmetic_binary_tree]")
         }
         REQUIRE(tree.size() == n);   
     }
+    SECTION("make sure hilbert indexing works properly at level 2")
+    {
+        auto tree = mara::tree_of<2>(std::size_t())
+        .bifurcate_all([] (auto i) { return mara::iota<4>(); })
+        .bifurcate_all([] (auto i) { return mara::iota<4>(); })
+        .indexes()
+        .map([] (auto i) { return mara::hilbert_index(i); });
+
+        auto b = mara::linked_list_t<int>({0,1,3,2,14,15,13,12,4,7,5,6,8,11,9,10});
+        REQUIRE(mara::linked_list_t<int>{tree.begin(), tree.end()} == b);
+    }
 }
 
 // TEST_CASE("array routines work as expected", "[array_t]")
