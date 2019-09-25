@@ -30,6 +30,7 @@
 #include <vector>
 #include <thread>
 #include "core_ndarray.hpp"
+#include "core_tree.hpp"
 
 
 
@@ -45,6 +46,9 @@ namespace mara
 
     template<std::size_t Rank>
     auto create_access_pattern_array(nd::shape_t<Rank> global_shape, nd::shape_t<Rank> blocks_shape);
+
+    template<typename ValueType, std::size_t Rank>
+    auto build_rank_tree(mara::arithmetic_binary_tree_t<ValueType, Rank> topology, std::size_t size);
 }
 
 
@@ -218,4 +222,50 @@ nd::shared_array<int, 1> mara::parallel::detail::prime_factors(int num)
     std::vector<int> result;
     prime_factors_impl(result, num);
     return nd::make_array_from(result);
+}
+
+
+
+//=============================================================================
+template<typename ValueType, std::size_t Rank>
+auto mara::build_rank_tree(const mara::arithmetic_binary_tree_t<ValueType, Rank> topology, std::size_t size)
+{
+    auto topo_indexes = topology.indexes();
+
+
+    // 1. Get Hilbert Indeces
+    auto hindexes = topo_indexes.map([] (auto i) { return mara::hilbert_index(i); });
+
+
+    // 2. Create list of hindex-index pairs
+    auto I = mara::linked_list_t<mara::tree_index_t<Rank>>{topo_indexes.begin(), topo_indexes.end()};
+    auto H = mara::linked_list_t<int>{hindexes.begin(), hindexes.end()};
+    auto hi_pair = H.pair(I);
+
+
+    // 3. Sort the pair-list by hilbert index
+    auto hi_sorted = hi_pair.sort([] (auto a, auto b) { return a.first < b.first; });
+    
+
+    // 4. Convert to nd::array and divvy into equal sized segments
+    auto rank_sequences = nd::make_array_from(hi_sorted) | nd::divvy(size);
+
+
+    // 5. Build the tree of ranks and return
+    auto get_rank = [rank_sequences, size] (mara::tree_index_t<Rank> idx)
+    {
+        //TODO: Better search
+        for(int i = 0; i < size; i++)
+        {
+            for(int j = 0; j < rank_sequences(i).size(); j++)
+            {
+                if (rank_sequences(i)(j).second == idx)
+                {
+                    return i;
+                }
+            }
+        }
+        throw std::logic_error("an index was not found");
+    };
+    return topo_indexes.map(get_rank);
 }

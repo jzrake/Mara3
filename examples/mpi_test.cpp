@@ -99,16 +99,50 @@ int main(int argc, char* argv[])
     // auto session = mpi::Session();
     // auto comm    = mpi::comm_world();
     // printf("Running on %d processes\n", comm.size());
+    auto size = 8;
 
 
     // 1. Build topology of rank tree
     auto to_zeros = [] (int value) { return mara::arithmetic_sequence_t<int, 4>{0, 0, 0, 0}; };
-    auto topology = mara::tree_of<tree_rank>(0).bifurcate_all(to_zeros).bifurcate_all(to_zeros);
+    // auto topology = mara::tree_of<tree_rank>(0).bifurcate_all(to_zeros).bifurcate_all(to_zeros);
+    // auto topology_indexes = topology.indexes();
+    
+
+    // auto topology = mara::tree_of<2>(std::size_t())
+    //     .bifurcate_if([] (auto val) { return true; }, [] (auto i) { return mara::iota<4>(); })
+    //     .bifurcate_if([] (auto val) { return val % 2 == 0; }, [] (auto i) { return mara::iota<4>() + 100 + i*10; })
+    //     .bifurcate_if([] (auto val) { return val == 102; }, [] (auto i) { return mara::iota<4>() + 500; });
+
+
+    auto innner_zones = [] (std::size_t n)
+    {
+        return [n] (auto i)
+        {
+            return i == n;
+        };
+    };
+    auto topology = mara::tree_of<2>(0)
+    .bifurcate_all([] (auto val) { return mara::iota<4>(); })
+    .bifurcate_all([] (auto val) { return mara::iota<4>(); })
+    .indexes().map([] (auto i) { return mara::hilbert_index(i); })
+    .bifurcate_if(innner_zones(2) , [] (auto val) { return mara::iota<4>(); })
+    .bifurcate_if(innner_zones(13), [] (auto val) { return mara::iota<4>(); })
+    .bifurcate_if(innner_zones(7) , [] (auto val) { return mara::iota<4>(); })
+    .bifurcate_if(innner_zones(8) , [] (auto val) { return mara::iota<4>(); });
+
+
+
     auto topology_indexes = topology.indexes();
 
 
     // 2. Get hilbert indexes
-    auto hindexes = topology_indexes.map([] (auto i) { return mara::global_hilbert_index(i); });
+    // auto hindexes = topology_indexes.map([] (auto i) { return mara::global_hilbert_index(i); });
+    auto hindexes = topology_indexes.map([] (auto i) { return mara::hilbert_index(i); });
+
+    for(auto i = hindexes.begin(); i != hindexes.end(); ++i)
+    {
+        std::printf("(%lu, [%lu, %lu]) : %lu\n", i.current.level, i.current.coordinates[0], i.current.coordinates[1], *i);
+    }
 
 
     // 3. Create lists of index-hindex pairs
@@ -122,7 +156,6 @@ int main(int argc, char* argv[])
     
 
     // 5. Convert to nd::array and divvy into equal sized segments
-    auto size = 7;
     auto rank_sequences = nd::make_array_from(hi_sorted) | nd::divvy(size);
     
 

@@ -73,6 +73,7 @@ namespace mpi
         static std::ofstream null;
         return null;
     }
+
 }
 
 // template <> int mpi::detail::make_datatype_for<char>  (const char&)   { return MPI_CHAR; }
