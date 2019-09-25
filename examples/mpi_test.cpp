@@ -101,32 +101,33 @@ int main(int argc, char* argv[])
     // printf("Running on %d processes\n", comm.size());
 
 
-    //Build topology of rank tree
+    // 1. Build topology of rank tree
     auto to_zeros = [] (int value) { return mara::arithmetic_sequence_t<int, 4>{0, 0, 0, 0}; };
     auto topology = mara::tree_of<tree_rank>(0).bifurcate_all(to_zeros).bifurcate_all(to_zeros);
     auto topology_indexes = topology.indexes();
 
 
-    //Get hilbert indexes
+    // 2. Get hilbert indexes
     auto hindexes = topology_indexes.map([] (auto i) { return mara::global_hilbert_index(i); });
 
 
-    //Create lists of index-hindex pairs
+    // 3. Create lists of index-hindex pairs
     auto I = mara::linked_list_t<mara::tree_index_t<tree_rank>>{topology_indexes.begin(), topology_indexes.end()};
     auto H = mara::linked_list_t<int>{hindexes.begin(), hindexes.end()};
     auto hi_pair = H.pair(I);
     
     
-    //Sort the pair-list by hilbert index
+    // 4. Sort the pair-list by hilbert index
     auto hi_sorted = hi_pair.sort([] (auto a, auto b) { return a.first < b.first; });
     
 
-    //Convert to nd::array and divvy into equal sized segments
+    // 5. Convert to nd::array and divvy into equal sized segments
     auto size = 7;
     auto rank_sequences = nd::make_array_from(hi_sorted) | nd::divvy(size);
     
 
-    //Print out ragged array of each rank's assigned hilbert indexes
+    // 5a. Print out ragged array of each rank's assigned hilbert indexes
+    std::printf("\nRank : assigned_hilbert_indices\n");
     for(int i = 0; i < size; i++)
     {
         std::printf("Rank %d: ", i);
@@ -136,6 +137,34 @@ int main(int argc, char* argv[])
         }
         std::printf("\n");
     }
+
+
+    // 6. Build the tree of ranks
+    auto get_rank = [rank_sequences, size] (mara::tree_index_t<tree_rank> idx)
+    {
+        //find idx in rank_sequences
+        for(int i = 0; i < size; i++)
+        {
+            for(int j = 0; j < rank_sequences(i).size(); j++)
+            {
+                if (rank_sequences(i)(j).second == idx)
+                {
+                    return i;
+                }
+            }
+        }
+        throw std::logic_error("an index was not found");
+    };
+    auto rank_tree = topology_indexes.map(get_rank);
+
+
+    // 6a. Print out the indexes and the rank it's been assigneds
+    std::printf("\n(index) : assigned_rank\n");
+    for(auto i = rank_tree.begin(); i != rank_tree.end(); ++i)
+    {
+        std::printf("(%lu, [%lu, %lu]) : %d\n", i.current.level, i.current.coordinates[0], i.current.coordinates[1], *i);
+    }
+
 
     return 0;
 }
