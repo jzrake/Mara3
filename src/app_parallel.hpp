@@ -47,8 +47,15 @@ namespace mara
     template<std::size_t Rank>
     auto create_access_pattern_array(nd::shape_t<Rank> global_shape, nd::shape_t<Rank> blocks_shape);
 
+    //=========================================================================
     template<typename ValueType, std::size_t Rank>
     auto build_rank_tree(mara::arithmetic_binary_tree_t<ValueType, Rank> topology, std::size_t size);
+
+    template<std::size_t Rank>
+    auto get_target_ranks(mara::arithmetic_binary_tree_t<std::size_t, Rank> rank_tree, mara::tree_index_t<Rank> target);
+
+    inline auto get_comm_map(arithmetic_binary_tree_t<std::size_t, 2> rank_tree, tree_index_t<2> idx);
+    // inline auto get_comm_map(mara::arithmetic_binary_tree_t<std::size_t, 3> rank_tree, mara::tree_index_t<3> idx);
 }
 
 
@@ -239,7 +246,7 @@ auto mara::build_rank_tree(const mara::arithmetic_binary_tree_t<ValueType, Rank>
 
     // 2. Create list of hindex-index pairs
     auto I = mara::linked_list_t<mara::tree_index_t<Rank>>{topo_indexes.begin(), topo_indexes.end()};
-    auto H = mara::linked_list_t<int>{hindexes.begin(), hindexes.end()};
+    auto H = mara::linked_list_t<std::size_t>{hindexes.begin(), hindexes.end()};
     auto hi_pair = H.pair(I);
 
 
@@ -255,9 +262,9 @@ auto mara::build_rank_tree(const mara::arithmetic_binary_tree_t<ValueType, Rank>
     auto get_rank = [rank_sequences, size] (mara::tree_index_t<Rank> idx)
     {
         //TODO: Better search
-        for(int i = 0; i < size; i++)
+        for(std::size_t i = 0; i < size; i++)
         {
-            for(int j = 0; j < rank_sequences(i).size(); j++)
+            for(std::size_t j = 0; j < rank_sequences(i).size(); j++)
             {
                 if (rank_sequences(i)(j).second == idx)
                 {
@@ -269,3 +276,69 @@ auto mara::build_rank_tree(const mara::arithmetic_binary_tree_t<ValueType, Rank>
     };
     return topo_indexes.map(get_rank);
 }
+
+
+
+
+template<std::size_t Rank>
+auto mara::get_target_ranks(mara::arithmetic_binary_tree_t<std::size_t, Rank> rank_tree, mara::tree_index_t<Rank> target)
+{
+    auto result = mara::linked_list_t<std::size_t>();
+
+    if (rank_tree.contains_node(target))  //if the target index is either a node or a leaf in the tree
+    {  
+       
+        if (rank_tree.contains(target)) //if leaf
+        {
+            return result.prepend(rank_tree.at(target));
+        }
+        else  //if node
+        {
+            for(auto i : rank_tree.node_at(target))
+            {
+                result = result.prepend(i);
+            }
+            return result.reverse();
+        }
+    }
+    //else: target index is not in the current tree --> need refinement
+    //iterate until find first parent that is in the tree
+    
+    auto parent = target.parent_index();
+
+    while (! rank_tree.contains(parent))
+    {
+        parent = parent.parent_index();
+    }
+    return result.prepend(rank_tree.at(parent));
+}
+
+
+
+
+inline auto mara::get_comm_map(arithmetic_binary_tree_t<std::size_t, 2> rank_tree, tree_index_t<2> idx) 
+{
+    std::map<std::string, mara::linked_list_t<std::size_t>> comm_map;
+    comm_map.insert(std::make_pair("north", mara::get_target_ranks<2>(rank_tree, idx.next_on(1))));
+    comm_map.insert(std::make_pair("south", mara::get_target_ranks<2>(rank_tree, idx.prev_on(1))));
+    comm_map.insert(std::make_pair("east" , mara::get_target_ranks<2>(rank_tree, idx.next_on(0))));
+    comm_map.insert(std::make_pair("west" , mara::get_target_ranks<2>(rank_tree, idx.prev_on(0))));
+
+    return comm_map;
+}
+
+
+
+
+// inline auto mara::get_comm_map(mara::arithmetic_binary_tree_t<std::size_t, 3> rank_tree, mara::tree_index_t<3> idx) 
+// {
+//     std::map<std::string, mara::linked_list_t<std::size_t>> comm_map;
+//     comm_map.insert(std::make_pair("north", mara::get_target_ranks<3>(rank_tree, idx.next_on(0))));
+//     comm_map.insert(std::make_pair("south", mara::get_target_ranks<3>(rank_tree, idx.prev_on(0))));
+//     comm_map.insert(std::make_pair("east" , mara::get_target_ranks<3>(rank_tree, idx.next_on(1))));
+//     comm_map.insert(std::make_pair("west" , mara::get_target_ranks<3>(rank_tree, idx.prev_on(1))));
+//     comm_map.insert(std::make_pair("up"   , mara::get_target_ranks<3>(rank_tree, idx.next_on(2))));
+//     comm_map.insert(std::make_pair("down" , mara::get_target_ranks<3>(rank_tree, idx.prev_on(2))));
+
+//     return comm_map;
+// }
