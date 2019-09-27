@@ -456,7 +456,7 @@ TEST_CASE("communication maps work properly", "[arithmetic_binary_tree, linked_l
     *  -----------------------------
    */
   
-  
+
     auto tree = mara::tree_of<2>(0)
     .bifurcate_all([] (auto i) { return mara::iota<4>(); })
     .bifurcate_if([] (auto i) {return i < 2;  }, [] (auto j) { return mara::iota<4>() * 2 + j * 10; })
@@ -467,11 +467,6 @@ TEST_CASE("communication maps work properly", "[arithmetic_binary_tree, linked_l
     
     auto rank_tree    = mara::build_rank_tree<std::size_t, 2>(tree, size);
     auto tree_of_maps = rank_tree.indexes().map([rank_tree] (auto idx) { return mara::get_comm_map(rank_tree, idx);});
-
-    for(auto i : rank_tree)
-    {
-        std::printf("%lu\n", i);
-    }
 
     //block with rank 1 looking north and east
     auto idx = mara::make_tree_index(0,1).with_level(1);
