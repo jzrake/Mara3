@@ -319,8 +319,8 @@ auto mara::get_target_ranks(mara::arithmetic_binary_tree_t<std::size_t, Rank> ra
 inline auto mara::get_comm_map(arithmetic_binary_tree_t<std::size_t, 2> rank_tree, tree_index_t<2> idx) 
 {
     std::map<std::string, mara::linked_list_t<std::size_t>> comm_map;
-    comm_map.insert(std::make_pair("north", mara::get_target_ranks<2>(rank_tree, idx.next_on(1))));
-    comm_map.insert(std::make_pair("south", mara::get_target_ranks<2>(rank_tree, idx.prev_on(1))));
+    comm_map.insert(std::make_pair("north", mara::get_target_ranks<2>(rank_tree, idx.prev_on(1))));
+    comm_map.insert(std::make_pair("south", mara::get_target_ranks<2>(rank_tree, idx.next_on(1))));
     comm_map.insert(std::make_pair("east" , mara::get_target_ranks<2>(rank_tree, idx.next_on(0))));
     comm_map.insert(std::make_pair("west" , mara::get_target_ranks<2>(rank_tree, idx.prev_on(0))));
 
