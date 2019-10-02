@@ -613,7 +613,7 @@ struct mara::arithmetic_binary_tree_t
 
 
     template<typename Function, typename ThreadPool>
-    auto map(Function&& fn, ThreadPool& thread_pool)
+    auto map(Function&& fn, ThreadPool& thread_pool) const
     {
         return map([fn, &thread_pool] (auto&& v)
         {
@@ -651,7 +651,7 @@ struct mara::arithmetic_binary_tree_t
     }
 
     template<typename Function, typename ThreadPool>
-    auto apply(Function&& fn, ThreadPool& thread_pool)
+    auto apply(Function&& fn, ThreadPool& thread_pool) const
     {
         return map([fn] (auto&& t) { return std::apply(fn, t); }, thread_pool);
     }

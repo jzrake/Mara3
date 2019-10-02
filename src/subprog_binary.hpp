@@ -181,6 +181,8 @@ namespace binary
     primitive_field_t            create_disk_profile (const mara::config_t& run_config);
 
     diagnostic_fields_t          diagnostic_fields    (const solution_t& solution, const mara::config_t& run_config);
+    solution_t                   advance_u            (const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode=false);
+    solution_t                   advance_q            (const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode=false);
     solution_t                   advance              (const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode=false);
     mara::unit_mass  <double>    disk_mass            (const solution_t& solution, const solver_data_t& solver_data);
     mara::unit_angmom<double>    disk_angular_momentum(const solution_t& solution, const solver_data_t& solver_data);
