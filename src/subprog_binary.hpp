@@ -86,6 +86,7 @@ namespace binary
         double                                                plm_theta;
         int                                                   rk_order;
         bool                                                  axisymmetric_cs2;
+        bool                                                  conserve_linear_p;
         std::size_t                                           block_size;
         reconstruct_method_t                                  reconstruct_method;
         riemann_solver_t                                      riemann_solver;
@@ -93,7 +94,8 @@ namespace binary
         quad_tree_t<location_2d_t>                            vertices;
         quad_tree_t<location_2d_t>                            cell_centers;
         quad_tree_t<mara::unit_area<double>>                  cell_areas;
-        quad_tree_t<mara::iso2d::conserved_angmom_per_area_t> initial_conserved;
+        quad_tree_t<mara::iso2d::conserved_per_area_t>        initial_conserved_u;
+        quad_tree_t<mara::iso2d::conserved_angmom_per_area_t> initial_conserved_q;
         quad_tree_t<mara::unit_rate<double>>                  buffer_rate_field;
     };
 
@@ -103,7 +105,8 @@ namespace binary
     {
         mara::unit_time<double>                                   time = 0.0;
         mara::rational_number_t                                   iteration = 0;
-        quad_tree_t<mara::iso2d::conserved_angmom_per_area_t>     conserved;
+        quad_tree_t<mara::iso2d::conserved_per_area_t>            conserved_u;
+        quad_tree_t<mara::iso2d::conserved_angmom_per_area_t>     conserved_q;
 
         mara::arithmetic_sequence_t<mara::unit_mass  <double>, 2> mass_accreted_on = {};
         mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2> angular_momentum_accreted_on = {};
@@ -186,6 +189,10 @@ namespace binary
     void prepare_filesystem    (const mara::config_t& run_config);
     void set_scheme_globals    (const mara::config_t& run_config);
     void print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf);
+
+    quad_tree_t<mara::iso2d::primitive_t> recover_primitive(
+        const solution_t& solution,
+        const solver_data_t& solver_data);
 }
 
 

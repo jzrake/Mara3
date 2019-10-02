@@ -74,16 +74,20 @@ int main(int argc, const char* argv[])
     }
     else if (programs.count(argv[1]))
     {
-        try {
-            auto [code, perf] = mara::time_execution([&] { return programs.at(argv[1])->main(argc - 1, argv + 1); });
-            std::cout << "total execution time: " << perf.execution_time_ms / 1e3 << " seconds" << std::endl;
-            return code;
-        }
-        catch (const std::exception& e)
-        {
-            std::cout << e.what() << std::endl;
-            return 1;
-        }
+        auto [code, perf] = mara::time_execution([&] { return programs.at(argv[1])->main(argc - 1, argv + 1); });
+        std::cout << "total execution time: " << perf.execution_time_ms / 1e3 << " seconds" << std::endl;
+        return code;
+
+        // try {
+        //     auto [code, perf] = mara::time_execution([&] { return programs.at(argv[1])->main(argc - 1, argv + 1); });
+        //     std::cout << "total execution time: " << perf.execution_time_ms / 1e3 << " seconds" << std::endl;
+        //     return code;
+        // }
+        // catch (const std::exception& e)
+        // {
+        //     std::cout << e.what() << std::endl;
+        //     return 1;
+        // }
     }
 
     std::cout << "invalid sub-program '" << argv[1] << "'\n";

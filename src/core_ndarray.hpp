@@ -1232,7 +1232,7 @@ public:
 
     auto shape() const { return the_shape; }
     auto size() const { return the_shape.volume(); }
-    const ValueType* data() const { return buffer->data(); }
+    const ValueType* data() const { return buffer ? buffer->data() : nullptr; }
     template<std::size_t R> auto reshape(shape_t<R> new_shape) const { return shared_provider_t<ValueType, R>(new_shape, buffer); }
 
 private:

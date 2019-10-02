@@ -131,7 +131,8 @@ void mara::write<binary::solution_t>(h5::Group& group, std::string name, const b
     auto location = group.require_group(name);
     mara::write(location, "time",                         solution.time);
     mara::write(location, "iteration",                    solution.iteration);
-    mara::write(location, "conserved",                    solution.conserved);
+    mara::write(location, "conserved_u",                  solution.conserved_u);
+    mara::write(location, "conserved_q",                  solution.conserved_q);
     mara::write(location, "mass_accreted_on",             solution.mass_accreted_on);
     mara::write(location, "angular_momentum_ejected",     solution.angular_momentum_ejected);
     mara::write(location, "integrated_torque_on",         solution.integrated_torque_on);
@@ -172,7 +173,8 @@ void mara::read<binary::solution_t>(h5::Group& group, std::string name, binary::
     auto location = group.require_group(name);
     mara::read(location, "time",                         solution.time);
     mara::read(location, "iteration",                    solution.iteration);
-    mara::read(location, "conserved",                    solution.conserved);
+    mara::read(location, "conserved_u",                  solution.conserved_u);
+    mara::read(location, "conserved_q",                  solution.conserved_q);
     mara::read(location, "mass_accreted_on",             solution.mass_accreted_on);
     mara::read(location, "angular_momentum_ejected",     solution.angular_momentum_ejected);
     mara::read(location, "integrated_torque_on",         solution.integrated_torque_on);
