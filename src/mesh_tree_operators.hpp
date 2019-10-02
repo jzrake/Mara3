@@ -132,8 +132,6 @@ auto mara::ensure_valid_quadtree(mara::arithmetic_binary_tree_t<ValueType, 2> tr
 {
     auto map_2nd = [] (auto&& f)
     {
-        // z = (x, y) -> [y0, y1, y2, y3] -> [(x, y0), (x, y1), (x, y2), (x, y3)]
-        // where f(y) = [y0, y1, y2, y3]
         return [f] (auto&& z)
         {
             return f(z.second).map([x=z.first] (auto&& y)
@@ -177,7 +175,9 @@ inline mara::arithmetic_binary_tree_t<std::nullptr_t, 2> create_quadtree_topolog
     }
 
     //Ensure tree is valid here, or let user do this after defining topology?
-    // return ensure_value_quadtree(tree.map([] (auto i) { return nullptr; }));
+    // return ensure_value_quadtree(
+    //  tree.map([] (auto i) { return nullptr; }),
+    //  [] (auto i) { return mara::arithmetic_sequence_t<std::nullptr_t, 4>(); });
     return tree.map([] (auto i) { return nullptr; });
 }
 
