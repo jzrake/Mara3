@@ -156,5 +156,20 @@ TEST_CASE("can refine a tree of arrays in 1d", "[amr arithmetic_binary_tree]")
     REQUIRE(mara::tree_of<1>(linspace(0.0, 1.0, 11)).bifurcate_all(refine_value_no_share).size() == 2);
     REQUIRE(mara::tree_of<1>(linspace(0.0, 1.0, 11).shared()).bifurcate_if([] (auto) { return true; }, refine_value_share).size() == 2);
 }
+TEST_CASE("Can create topology tree and fix over-refined neighbors")
+{
+    auto predicate = [] (auto i) { return i.sibling_index() == i.level; };
+    auto tree = create_quadtree_topology(predicate, 3);
+    REQUIRE(tree.size() == 10);
+    REQUIRE(tree.contains(mara::make_tree_index(5,3).with_level(3)));
+    REQUIRE_FALSE(tree.contains(mara::make_tree_index(7,7).with_level(3)));
+    REQUIRE_FALSE(tree.contains(mara::make_tree_index(2,1).with_level(2)));
+
+    auto fixed_tree = mara::ensure_valid_quadtree(tree, [] (auto i) { return mara::arithmetic_sequence_t<std::nullptr_t, 4>(); });
+    REQUIRE(fixed_tree.size() == 16);
+    REQUIRE(fixed_tree.contains(mara::make_tree_index(0,1).with_level(2)));
+    REQUIRE(fixed_tree.contains(mara::make_tree_index(2,3).with_level(2)));
+    REQUIRE_FALSE(fixed_tree.contains(mara::make_tree_index(1,2).with_level(2)));
+}
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
