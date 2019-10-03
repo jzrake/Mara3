@@ -229,6 +229,12 @@ TEST_CASE("linked lists work as expected", "[linked_list]")
         auto z = mara::linked_list_t<std::pair<int,double>>{i,j,k};
         REQUIRE(C == z);
     }
+    SECTION("test uniqueness")
+    {
+        auto A = mara::linked_list_t<int>{1,3,5,3,7,2,8,9,3,5,2,1,1};
+        auto B = mara::linked_list_t<int>{1,2,3,5,7,8,9};
+        REQUIRE(A.unique() == B);
+    }
 }
 
 TEST_CASE("binary tree indexes methods work correctly", "[tree_index]")

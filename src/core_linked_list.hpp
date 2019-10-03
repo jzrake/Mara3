@@ -501,6 +501,33 @@ struct mara::linked_list_t
 
 
 
+    /**
+     * @brief     Function to create a list of all unique values in a given list
+     * 
+     * @return    A sorted list of unique values
+     *
+     * @note      This is expensive: it doest a sort, the traverses the list once
+     *            to check for uniqueness, and then traverses again to reverse
+     */
+    const linked_list_t unique() const
+    {
+        auto sorted = sort();
+        auto prev   = sorted.head();
+        auto result = linked_list_t<value_type>();
+
+        for(auto i = sorted.begin(); i != sorted.end(); ++i)
+        {
+            if (prev != *i || i == sorted.begin())
+            {
+                result = result.prepend(*i);
+            }
+            prev = *i;
+        }
+        return result.reverse();
+    }
+
+
+
 
     //=========================================================================
 
