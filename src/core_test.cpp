@@ -451,6 +451,11 @@ TEST_CASE("tree iterator works as expected", "[arithmetic_binary_tree]")
         auto b = mara::linked_list_t<int>({0,1,3,2,14,15,13,12,4,7,5,6,8,11,9,10});
         REQUIRE(mara::linked_list_t<int>{tree.begin(), tree.end()} == b);
     }
+    SECTION("test tree_with_topology")
+    {
+        auto predicate = [] (auto i) { return i.sibling_index() == i.level; };
+        REQUIRE(predicate(mara::make_tree_index(5,5).with_level(3)));
+    }
 }
 
 // TEST_CASE("array routines work as expected", "[array_t]")
