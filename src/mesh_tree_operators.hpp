@@ -43,6 +43,10 @@ namespace mara
         using vertex_2d_t              = arithmetic_sequence_t<dimensional_value_t<1, 0, 0, double>, 2>;
         using vertex_2d_shared_array_t = nd::shared_array<vertex_2d_t, 2>;
         using vertex_2d_tree_t         = arithmetic_binary_tree_t<vertex_2d_shared_array_t, 2>;
+
+        //For pruning trees -> a leaf is either a vertex block or a nullptr
+        using vertex_2d_array_prll_t   = std::variant<vertex_2d_shared_array_t, std::nullptr_t>;
+        using vertex_2d_tree_prll_t    = arithmetic_binary_tree_t<vertex_2d_array_prll_t, 2>;
     }
 
     template<typename ValueType>
@@ -50,12 +54,9 @@ namespace mara
         -> arithmetic_binary_tree_t<bool, 2>;
 
     template<typename ValueType, typename Bifurcate>
-    auto ensure_valid_quadtree(arithmetic_binary_tree_t<ValueType, 2> tree, Bifurcate&& bifurcate)
+    auto ensure_valid_quadtree(arithmetic_binary_tree_t<ValueType, 2> tree, Bifurcate&& bifurcate) 
         -> arithmetic_binary_tree_t<ValueType, 2>;
 
-    inline mara::arithmetic_binary_tree_t<std::nullptr_t, 2> create_quadtree_topology(
-        std::function<bool(mara::tree_index_t<2>)> predicate, 
-        std::size_t max_depth);
 
     //===========================================================================
 
@@ -112,7 +113,6 @@ auto mara::over_refined_neighbors(mara::arithmetic_binary_tree_t<ValueType, 2> t
 
 
 
-
 /**
  * @brief      Return a tree guaranteed to not have any over-refined neighbors.
  *             This is accomplished only by adding branching nodes where necessary.
@@ -127,7 +127,7 @@ auto mara::over_refined_neighbors(mara::arithmetic_binary_tree_t<ValueType, 2> t
  * @return     A tree for which over_refined_neighbors(tree).any() == false.
  */
 template<typename ValueType, typename Bifurcate>
-auto mara::ensure_valid_quadtree(mara::arithmetic_binary_tree_t<ValueType, 2> tree, Bifurcate&& bifurcate ) 
+auto mara::ensure_valid_quadtree(mara::arithmetic_binary_tree_t<ValueType, 2> tree, Bifurcate&& bifurcate) 
 -> arithmetic_binary_tree_t<ValueType, 2>
 {
     auto map_2nd = [] (auto&& f)
@@ -149,37 +149,6 @@ auto mara::ensure_valid_quadtree(mara::arithmetic_binary_tree_t<ValueType, 2> tr
     return over_refined_neighbors(result).any() ? ensure_valid_quadtree(result, bifurcate) : result;
 }
 
-
-
-
-/**
- * @brief      Returns a new quadtree of vertex blocks given some parameters.
- *
- * @param[in]  predicate          A function taking a tree index indicating whether that
- *                                index should be refined further
- *
- * @param[in]  depth              The maximum depth of the tree
- *
- * @return     A new quadtree of null pointers
- */
-inline mara::arithmetic_binary_tree_t<std::nullptr_t, 2> create_quadtree_topology(
-    std::function<bool(mara::tree_index_t<2>)> predicate,
-    std::size_t depth)
-{
-    auto tree = mara::tree_of<2>(mara::tree_index_t<2>());
-    for (std::size_t i = 0; i < depth; ++i)
-    {
-        tree = tree.bifurcate_if(
-            [predicate] (auto index) { return predicate(index); },
-            [] (auto index) { return index.child_indexes(); });
-    }
-
-    //Ensure tree is valid here, or let user do this after defining topology?
-    // return ensure_value_quadtree(
-    //  tree.map([] (auto i) { return nullptr; }),
-    //  [] (auto i) { return mara::arithmetic_sequence_t<std::nullptr_t, 4>(); });
-    return tree.map([] (auto i) { return nullptr; });
-}
 
 
 

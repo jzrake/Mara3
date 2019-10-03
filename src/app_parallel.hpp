@@ -54,8 +54,8 @@ namespace mara
     template<std::size_t Rank>
     auto get_target_ranks(mara::arithmetic_binary_tree_t<std::size_t, Rank> rank_tree, mara::tree_index_t<Rank> target);
 
-    inline auto get_comm_map(arithmetic_binary_tree_t<std::size_t, 2> rank_tree, tree_index_t<2> idx);
-    // inline auto get_comm_map(mara::arithmetic_binary_tree_t<std::size_t, 3> rank_tree, mara::tree_index_t<3> idx);
+    inline auto get_quad_map(arithmetic_binary_tree_t<std::size_t, 2> rank_tree, tree_index_t<2> idx);
+    inline auto get_oct_map (arithmetic_binary_tree_t<std::size_t, 3> rank_tree, tree_index_t<3> idx);
 }
 
 
@@ -316,7 +316,7 @@ auto mara::get_target_ranks(mara::arithmetic_binary_tree_t<std::size_t, Rank> ra
 
 
 
-inline auto mara::get_comm_map(arithmetic_binary_tree_t<std::size_t, 2> rank_tree, tree_index_t<2> idx) 
+inline auto mara::get_quad_map(arithmetic_binary_tree_t<std::size_t, 2> rank_tree, tree_index_t<2> idx) 
 {
     std::map<std::string, mara::linked_list_t<std::size_t>> comm_map;
     comm_map.insert(std::make_pair("north", mara::get_target_ranks<2>(rank_tree, idx.prev_on(1))));
@@ -330,15 +330,15 @@ inline auto mara::get_comm_map(arithmetic_binary_tree_t<std::size_t, 2> rank_tre
 
 
 
-// inline auto mara::get_comm_map(mara::arithmetic_binary_tree_t<std::size_t, 3> rank_tree, mara::tree_index_t<3> idx) 
-// {
-//     std::map<std::string, mara::linked_list_t<std::size_t>> comm_map;
-//     comm_map.insert(std::make_pair("north", mara::get_target_ranks<3>(rank_tree, idx.next_on(0))));
-//     comm_map.insert(std::make_pair("south", mara::get_target_ranks<3>(rank_tree, idx.prev_on(0))));
-//     comm_map.insert(std::make_pair("east" , mara::get_target_ranks<3>(rank_tree, idx.next_on(1))));
-//     comm_map.insert(std::make_pair("west" , mara::get_target_ranks<3>(rank_tree, idx.prev_on(1))));
-//     comm_map.insert(std::make_pair("up"   , mara::get_target_ranks<3>(rank_tree, idx.next_on(2))));
-//     comm_map.insert(std::make_pair("down" , mara::get_target_ranks<3>(rank_tree, idx.prev_on(2))));
+inline auto mara::get_oct_map(mara::arithmetic_binary_tree_t<std::size_t, 3> rank_tree, mara::tree_index_t<3> idx) 
+{
+    std::map<std::string, mara::linked_list_t<std::size_t>> comm_map;
+    comm_map.insert(std::make_pair("east" , mara::get_target_ranks<3>(rank_tree, idx.next_on(0))));
+    comm_map.insert(std::make_pair("west" , mara::get_target_ranks<3>(rank_tree, idx.prev_on(0))));
+    comm_map.insert(std::make_pair("north", mara::get_target_ranks<3>(rank_tree, idx.prev_on(1))));
+    comm_map.insert(std::make_pair("south", mara::get_target_ranks<3>(rank_tree, idx.next_on(1))));
+    comm_map.insert(std::make_pair("up"   , mara::get_target_ranks<3>(rank_tree, idx.next_on(2))));
+    comm_map.insert(std::make_pair("down" , mara::get_target_ranks<3>(rank_tree, idx.prev_on(2))));
 
-//     return comm_map;
-// }
+    return comm_map;
+}

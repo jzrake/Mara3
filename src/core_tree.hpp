@@ -62,6 +62,11 @@ namespace mara
     template<std::size_t Rank, typename ValueType>
     auto tree_of(const arithmetic_sequence_t<ValueType, 1 << Rank>& child_values);
 
+    template<std::size_t Rank>
+    arithmetic_binary_tree_t<tree_index_t<Rank>, Rank> tree_with_topology(
+        std::function<bool(tree_index_t<Rank>)> predicate);
+    
+
     inline std::size_t hilbert_index(tree_index_t<2> index);
     inline std::size_t global_hilbert_index(tree_index_t<2> index);
 
@@ -1220,6 +1225,36 @@ auto mara::tree_of(const arithmetic_sequence_t<ValueType, 1 << Rank>& child_valu
     {
         detail::to_shared_ptr(child_values.map([] (auto&& c) { return tree_of<Rank>(c); }))
     };
+}
+
+
+
+
+/**
+ * @brief      Returns a new tree of indexes given a predicate.
+ *
+ * @param[in]  predicate          A function taking a tree index indicating whether that
+ *                                index should be refined further
+ *
+ * @param[in]  depth              The maximum depth of the tree
+ *
+ * @return     A new tree of indexes
+ */
+template<std::size_t Rank>
+mara::arithmetic_binary_tree_t<mara::tree_index_t<Rank>, Rank> tree_with_topology(
+    std::function<bool(mara::tree_index_t<Rank>)> predicate)
+{
+    auto tree = mara::tree_of<Rank>(mara::tree_index_t<Rank>());
+    auto old_size = tree.size();
+    do
+    {
+        tree = tree.bifurcate_if(
+            [predicate] (auto index) { return predicate(index); },
+            [] (auto index) { return index.child_indexes(); });
+
+    }while (tree.size() != old_size);
+
+    return tree;
 }
 
 
