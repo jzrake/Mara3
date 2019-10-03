@@ -190,7 +190,7 @@ namespace binary
     void set_scheme_globals    (const mara::config_t& run_config);
     void prepare_filesystem    (const mara::config_t& run_config);
     void set_scheme_globals    (const mara::config_t& run_config);
-    void print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf);
+    void print_run_loop_message(const state_t& state, const solver_data_t& solver_data, mara::perf_diagnostics_t perf);
 
     quad_tree_t<mara::iso2d::primitive_t> recover_primitive(
         const solution_t& solution,

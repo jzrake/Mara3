@@ -374,11 +374,9 @@ void binary::prepare_filesystem(const mara::config_t& run_config)
     mara::filesystem::require_dir(outdir);
 }
 
-void binary::print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf)
+void binary::print_run_loop_message(const state_t& state, const solver_data_t& solver_data, mara::perf_diagnostics_t perf)
 {
-    auto kzps = state
-    .solution
-    .conserved_q
+    auto kzps = solver_data.cell_centers
     .map([] (auto&& block) { return block.size(); })
     .sum() / perf.execution_time_ms;
 
@@ -412,7 +410,7 @@ public:
         while (binary::simulation_should_continue(state))
         {
             std::tie(state, perf) = mara::time_execution(mara::compose(tasks, next), state);
-            binary::print_run_loop_message(state, perf);
+            binary::print_run_loop_message(state, solver_data, perf);
         }
 
         tasks(next(state));
