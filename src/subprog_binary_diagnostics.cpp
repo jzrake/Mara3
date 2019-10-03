@@ -20,16 +20,25 @@ mara::unit_mass<double> binary::disk_mass(const solution_t& solution, const solv
 {
     auto v0 = solver_data.vertices;
     auto dA = solver_data.cell_areas;
-    auto q0 = solution.conserved_q;
-    auto sigma = q0.map(component<0>());
-    return (sigma * dA).map(nd::sum()).sum();
+
+    return solver_data.conserve_linear_p
+    ? (solution.conserved_u.map(component<0>()) * dA).map(nd::sum()).sum()
+    : (solution.conserved_q.map(component<0>()) * dA).map(nd::sum()).sum();
 }
 
 mara::unit_angmom<double> binary::disk_angular_momentum(const solution_t& solution, const solver_data_t& solver_data)
 {
     auto dA = solver_data.cell_areas;
-    auto q0 = solution.conserved_q;
-    return (q0 * dA).map(component<2>()).map(nd::sum()).sum();
+
+    if (solver_data.conserve_linear_p)
+    {
+        auto lz = solution.conserved_u
+        .pair(solver_data.cell_centers)
+        .apply([] (auto U, auto X) { return nd::zip(U, X) | nd::apply(mara::iso2d::angular_momentum); });
+
+        return (lz * dA).map(nd::sum()).sum();
+    }
+    return (solution.conserved_q * dA).map(component<2>()).map(nd::sum()).sum();
 }
 
 
