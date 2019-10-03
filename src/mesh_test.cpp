@@ -159,6 +159,8 @@ TEST_CASE("can refine a tree of arrays in 1d", "[amr arithmetic_binary_tree]")
 TEST_CASE("Can create topology tree and fix over-refined neighbors")
 {
     auto predicate = [] (auto i) { return i.sibling_index() == i.level; };
+    REQUIRE(predicate(mara::make_tree_index(5,5).with_level(3)));
+
     auto tree = create_quadtree_topology(predicate, 3);
     REQUIRE(tree.size() == 10);
     REQUIRE(tree.contains(mara::make_tree_index(5,3).with_level(3)));
