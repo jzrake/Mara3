@@ -505,9 +505,6 @@ struct mara::linked_list_t
      * @brief     Function to create a list of all unique values in a given list
      * 
      * @return    A sorted list of unique values
-     *
-     * @note      This is expensive: it doest a sort, the traverses the list once
-     *            to check for uniqueness, and then traverses again to reverse
      */
     const linked_list_t unique() const
     {
@@ -525,11 +522,11 @@ struct mara::linked_list_t
         }
         return result.reverse();
     }
-
-
-
-
+    
     //=========================================================================
+
+
+
 
     /**
      * @brief      Determine whether two sequences are equal.
