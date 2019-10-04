@@ -234,6 +234,24 @@ nd::shared_array<int, 1> mara::parallel::detail::prime_factors(int num)
 
 
 //=============================================================================
+
+
+/**
+ * @brief      Distribute the leaves of a tree into a number of bins according to 
+ *             the tree's linear hilbert indexing. Return a tree where each leaf
+ *             stores the bin to which it belongs.
+ *
+ * @param[in]  topology   A tree of irrelevant type
+ * @param[in]  size       The number of bins to divide the leaves among
+ *
+ * @tparam     ValueType  The type of the provided tree
+ * @tparam     Rank       The rank of the provided tree
+ *
+ * @return     A tree of bin numbers
+ *
+ * @note       Intended for use distributing leaves of some global tree out evenly
+ *             to `size` parallel processes, preserving locality as best as possible
+ */
 template<typename ValueType, std::size_t Rank>
 auto mara::build_rank_tree(const mara::arithmetic_binary_tree_t<ValueType, Rank> topology, std::size_t size)
 {
@@ -280,37 +298,49 @@ auto mara::build_rank_tree(const mara::arithmetic_binary_tree_t<ValueType, Rank>
 
 
 
+
+/**
+ * @brief      Given a global tree of process numbers, determine the processes responsible
+ *             for the information at the index given by `target`. Throws exception if tree
+ *             has any over-refined neighbors
+ *
+ * @param[in]  rank_tree  A tree of assigned process numbers.
+ * @param[in]  target     The index under consideration
+ *
+ * @return     A linked list of the processes containing the information required to
+ *             communicate with `target`
+ *
+ * @note       This function might need to be modified to do coarsening/refinement 
+ *             and potentially mpi communications
+ */
 template<std::size_t Rank>
 auto mara::get_target_ranks(mara::arithmetic_binary_tree_t<std::size_t, Rank> rank_tree, mara::tree_index_t<Rank> target)
 {
     auto result = mara::linked_list_t<std::size_t>();
 
-    if (rank_tree.contains_node(target))  //if the target index is either a node or a leaf in the tree
-    {  
-       
-        if (rank_tree.contains(target)) //if leaf
-        {
-            return result.prepend(rank_tree.at(target));
-        }
-        else  //if node
-        {
-            for(auto i : rank_tree.node_at(target))
-            {
-                result = result.prepend(i);
-            }
-            return result.reverse();
-        }
-    }
-    //else: target index is not in the current tree --> need refinement
-    //iterate until find first parent that is in the tree
-    
-    auto parent = target.parent_index();
-
-    while (! rank_tree.contains(parent))
+    //if the target index is a leaf in the tree
+    if (rank_tree.contains(target))
     {
-        parent = parent.parent_index();
+        return result.prepend(rank_tree.at(target));
     }
-    return result.prepend(rank_tree.at(parent));
+
+    //if the tree has a leaf at the node above the target index
+    if (rank_tree.contains(target.parent_index()))
+    {
+        return result.prepend(rank_tree.at(target.parent_index()));
+    }
+
+    for(auto i : rank_tree.node_at(target))
+    {
+        result = result.prepend(i);
+    }
+
+    if(result.size() > 4 || result.size() == 0)
+    {
+        throw std::invalid_argument("mara::get_target_ranks (tree has over-refined neighbors");
+    }
+
+    return result.reverse().unique();
 }
 
 

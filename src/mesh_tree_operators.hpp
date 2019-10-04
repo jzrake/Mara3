@@ -43,10 +43,6 @@ namespace mara
         using vertex_2d_t              = arithmetic_sequence_t<dimensional_value_t<1, 0, 0, double>, 2>;
         using vertex_2d_shared_array_t = nd::shared_array<vertex_2d_t, 2>;
         using vertex_2d_tree_t         = arithmetic_binary_tree_t<vertex_2d_shared_array_t, 2>;
-
-        //For pruning trees -> a leaf is either a vertex block or a nullptr
-        using vertex_2d_array_prll_t   = std::variant<vertex_2d_shared_array_t, std::nullptr_t>;
-        using vertex_2d_tree_prll_t    = arithmetic_binary_tree_t<vertex_2d_array_prll_t, 2>;
     }
 
     template<typename ValueType>
@@ -243,6 +239,7 @@ mara::amr_types::vertex_2d_tree_t mara::create_vertex_quadtree(
     }
     return ensure_valid_vertex_tree(vertices);
 }
+
 
 mara::amr_types::vertex_2d_tree_t mara::create_vertex_quadtree(
     std::function<bool(std::size_t, double)> predicate,

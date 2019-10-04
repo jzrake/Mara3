@@ -42,9 +42,13 @@
 
 #define cs2    1e-1
 
+
+
+
 // ============================================================================
 //                                  Header 
 // ============================================================================
+
 
 template<>
 struct h5::hdf5_type_info<mara::iso2d::conserved_per_area_t>
@@ -58,8 +62,11 @@ struct h5::hdf5_type_info<mara::iso2d::conserved_per_area_t>
     static auto get_address(const native_type& value) { return &value; }
     static auto get_address(native_type& value) { return &value; }
 };
+
 //=============================================================================
-//
+
+
+
 
 namespace euler
 {
@@ -72,15 +79,19 @@ namespace euler
     using primitive_field_t = std::function<mara::iso2d::primitive_t(location_2d_t)>;
 
 
+
+
     // Solver structs
     // ========================================================================
     struct solution_t
     {
         mara::unit_time<double>                                time=0.0;
         mara::rational_number_t                                iteration=0;
-        //location_2d_t                                          vertices;
         nd::shared_array<location_2d_t, 2>                     vertices;
         nd::shared_array<mara::iso2d::conserved_per_area_t, 2> conserved;
+
+
+
 
         // Overload operators to manipulate solution_t types
         //=====================================================================
@@ -104,11 +115,16 @@ namespace euler
         }
     };
 
+
+
+
     struct state_t
     {
         solution_t          solution;
         mara::config_t      run_config;
     };
+
+
 
 
     // Declaration of necessary functions
@@ -126,9 +142,12 @@ namespace euler
 
 
 
+
 // ============================================================================
 //                               Body 
 // ============================================================================
+
+
 
 
 /**
@@ -147,10 +166,15 @@ auto component(std::size_t cmpnt)
 };
 
 
+
+
 auto recover_primitive(const mara::iso2d::conserved_per_area_t& conserved)
 {
     return mara::iso2d::recover_primitive(conserved);
 }
+
+
+
 
 /**
  * @brief      Create the config template
@@ -167,6 +191,9 @@ mara::config_template_t euler::create_config_template()
      .item("domain_radius",  1.0)       // half-size of square domain
      .item("N",              100);      // number of cells in each direction
 }
+
+
+
 
 mara::config_t euler::create_run_config( int argc, const char* argv[] )
 {
@@ -219,6 +246,10 @@ auto initial_condition_shocktube(euler::location_2d_t position)
      .with_velocity_x(vx)
      .with_velocity_y(vy);
 }
+
+
+
+
 
 auto initial_condition_cylinder(euler::location_2d_t position)
 {
@@ -283,6 +314,8 @@ euler::state_t euler::create_state( const mara::config_t& run_config )
 
 euler::solution_t euler::advance( const solution_t& solution, mara::unit_time<double> dt)
 {
+
+
     /**
      * @brief      Return an array of areas dx * dy from the given vertex
      *             locations.
@@ -319,6 +352,7 @@ euler::solution_t euler::advance( const solution_t& solution, mara::unit_time<do
         };
     };
 
+
     //auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
     auto v0  =  solution.vertices;
     auto u0  =  solution.conserved;
@@ -326,6 +360,7 @@ euler::solution_t euler::advance( const solution_t& solution, mara::unit_time<do
     auto dx  =  v0 | component(0) | nd::difference_on_axis(0);
     auto dy  =  v0 | component(1) | nd::difference_on_axis(1);
     auto dA  =  v0 | area_from_vertices;
+
 
     // Extend for ghost-cells and get fluxes with specified riemann solver
     // ========================================================================
@@ -359,6 +394,9 @@ auto euler::simulation_should_continue( const state_t& state )
     return state.solution.time < state.run_config.get_double("tfinal");
 }
 
+
+
+
 mara::unit_time<double> get_timestep( const euler::solution_t& s, double cfl )
 {
     //return 0.01;
@@ -375,6 +413,9 @@ mara::unit_time<double> get_timestep( const euler::solution_t& s, double cfl )
 
     return std::min(min_dx, min_dy) / v_max * cfl;
 }
+
+
+
 
 euler::solution_t euler::next_solution( const state_t& state )
 {
@@ -398,6 +439,9 @@ euler::solution_t euler::next_solution( const state_t& state )
     throw std::invalid_argument("binary::next_solution");
 }
 
+
+
+
 euler::state_t euler::next_state( const euler::state_t& state )
 {
     return euler::state_t{
@@ -405,6 +449,8 @@ euler::state_t euler::next_state( const euler::state_t& state )
         state.run_config
     };
 }
+
+
 
 
 void output_solution_h5( const euler::solution_t& s, std::string fname )
@@ -421,6 +467,10 @@ void output_solution_h5( const euler::solution_t& s, std::string fname )
 
 
 // ============================================================================
+
+
+
+ 
 int main(int argc, const char* argv[])
 {
     auto run_config  = euler::create_run_config(argc, argv);
