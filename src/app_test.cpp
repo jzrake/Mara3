@@ -455,31 +455,45 @@ TEST_CASE("communication maps work properly", "[arithmetic_binary_tree, linked_l
     * |              |             |
     *  -----------------------------
    */
-  
     auto tree = mara::tree_of<2>(0)
     .bifurcate_all([] (auto i) { return mara::iota<4>(); })
-    .bifurcate_if([] (auto i) {return i < 2;  }, [] (auto j) { return mara::iota<4>() * 2 + j * 10; })
-    .bifurcate_if([] (auto i) {return i == 6; }, [] (auto j) { return mara::iota<4>(); });
+    .bifurcate_if([] (auto i) { return i != 2 ; }, [] (auto j) { return mara::iota<4>() + j * 10; })
+    .bifurcate_if([] (auto i) { return i == 12; }, [] (auto j) { return mara::iota<4>(); });
 
-    auto size = 13;
-    REQUIRE(tree.size() == size);
+    auto rtree = mara::build_rank_tree<std::size_t, 2>(tree, 4);
 
-    auto rank_tree    = mara::build_rank_tree<std::size_t, 2>(tree, size);
-    auto tree_of_maps = rank_tree.indexes().map([rank_tree] (auto idx) { return mara::get_comm_map(rank_tree, idx);});
+    // for(auto i : rtree)
+    // {
+    //     printf("%lu \n", i);
+    // }
 
-    //block with rank 1 looking north and east
-    auto idx = mara::make_tree_index(0,1).with_level(1);
-    auto map = tree_of_maps.at(idx);
-    REQUIRE(map["east"] == mara::linked_list_t<std::size_t>{3});
-    REQUIRE(map["north"] == mara::linked_list_t<std::size_t>{0,2,4,5,6,8,7});
+  
+    // Old Test, shouldn't pass anymore -- delete soon
+    // ========================================================================
+    // auto old = mara::tree_of<2>(0)
+    // .bifurcate_all([] (auto i) { return mara::iota<4>(); })
+    // .bifurcate_if([] (auto i) {return i < 2;  }, [] (auto j) { return mara::iota<4>() * 2 + j * 10; })
+    // .bifurcate_if([] (auto i) {return i == 6; }, [] (auto j) { return mara::iota<4>(); });
 
-    //block with rank 7 looking each direction
-    auto j = mara::make_tree_index(3,3).with_level(3);
-    auto n = tree_of_maps.at(j);
-    REQUIRE(n["east"]  == mara::linked_list_t<std::size_t>{10});
-    REQUIRE(n["west"]  == mara::linked_list_t<std::size_t>{8});
-    REQUIRE(n["north"] == mara::linked_list_t<std::size_t>{6});
-    REQUIRE(n["south"] == mara::linked_list_t<std::size_t>{1});
+    // auto size = 13;
+    // REQUIRE(old.size() == size);
+
+    // auto rank_tree    = mara::build_rank_tree<std::size_t, 2>(old, size);
+    // auto tree_of_maps = rank_tree.indexes().map([rank_tree] (auto idx) { return mara::get_quad_map(rank_tree, idx);});
+
+    // //block with rank 1 looking north and east
+    // auto idx = mara::make_tree_index(0,1).with_level(1);
+    // auto map = tree_of_maps.at(idx);
+    // REQUIRE(map["east"] == mara::linked_list_t<std::size_t>{3});
+    // REQUIRE(map["north"] == mara::linked_list_t<std::size_t>{0,2,4,5,6,8,7});
+
+    // //block with rank 7 looking each direction
+    // auto j = mara::make_tree_index(3,3).with_level(3);
+    // auto n = tree_of_maps.at(j);
+    // REQUIRE(n["east"]  == mara::linked_list_t<std::size_t>{10});
+    // REQUIRE(n["west"]  == mara::linked_list_t<std::size_t>{8});
+    // REQUIRE(n["north"] == mara::linked_list_t<std::size_t>{6});
+    // REQUIRE(n["south"] == mara::linked_list_t<std::size_t>{1});
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
