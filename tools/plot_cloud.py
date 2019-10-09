@@ -28,7 +28,7 @@ def plot_single_file(filename):
 
     m0 = axes[0].pcolormesh(Y, X, np.log10(d.T))
     m1 = axes[1].pcolormesh(Y, X, np.log10(p.T))
-    m2 = axes[2].pcolormesh(Y, X, np.log10(u.T), vmin=-3, vmax=2)
+    m2 = axes[2].pcolormesh(Y, X, np.log10(u.T))#, vmin=-3, vmax=2)
     m3 = axes[3].pcolormesh(Y, X, np.log10(dL / dO).T)
 
     axes[0].set_title(r'$\log_{10}(\rho)$')
