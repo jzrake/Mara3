@@ -139,16 +139,18 @@ struct mara::power_law_atmosphere_model
 
 /**
  * @brief      A model describing an expanding gas cloud, with power-law density
- *             profile, surrounded by a balistic envelop. The envelop is
- *             described as an ensemble of balistic shells ejected
- *             simultaneously from the origin at t=0. The shell with mass dm
- *             contains gas with four-velocities between u and u + du. Thus the
- *             envelop profile at time t is given by the distribution du / dm or
- *             equivalently by u(m). Note that u(m) is a monotonically
- *             decreasing function of mass, so the slowest-moving shell is
- *             determined by the total envelop mass, nominally ~ 0.5% of a solar
- *             mass; u_cloud = u(m_envelop). The boundary between the cloud and
- *             the envelop lies at r_cloud = v_cloud * t.
+ *             profile, surrounded by a relativistic envelop. The envelop is an
+ *             ensemble of balistic shells ejected simultaneously from the
+ *             origin at t=0. The shell with mass dm contains gas with
+ *             four-velocities between u and u + du. Thus the envelop profile is
+ *             given by the distribution du / dm or equivalently by u(m) = u1 *
+ *             (m / m1)^(-psi). Note that u(m) is a monotonically decreasing
+ *             function of mass, so the slowest-moving shell is determined by
+ *             the total envelop mass, nominally ~ 0.5% of a solar mass. The
+ *             cloud is a cold wind whose density and velocity match that of the
+ *             slowest moving shell at r = cloud_outer_boundary(t) = v_cloud *
+ *             t. Thus so u_cloud = u(m_envelop) and the cloud density decreases
+ *             as r^-2.
  */
 struct mara::cloud_and_envelop_model
 {
