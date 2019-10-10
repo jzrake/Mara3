@@ -226,14 +226,24 @@ struct mara::cloud_and_envelop_model
 
     double density_at(double r, double t) const
     {
-        r = std::min(r, envelop_outer_boundary(t));
-        return r < cloud_outer_boundary(t) ? power_law_cloud(r, t) : density(mass_coordinate(r, t), t);
+        double r1 = envelop_outer_boundary(t);
+
+        if (r < cloud_outer_boundary(t))
+            return power_law_cloud(r, t);
+        if (r > r1)
+            return density_at(r1, t) * std::pow(r / r1, -2.0);
+        return density(mass_coordinate(r, t), t);
     }
 
     double gamma_beta_at(double r, double t) const
     {
-        r = std::min(r, envelop_outer_boundary(t));
-        return r < cloud_outer_boundary(t) ? cloud_gamma_beta() : gamma_beta(mass_coordinate(r, t));
+        double r1 = envelop_outer_boundary(t);
+
+        if (r < cloud_outer_boundary(t))
+            return cloud_gamma_beta();
+        if (r > r1)
+            return gamma_beta(mass_coordinate(r1, t));
+        return gamma_beta(mass_coordinate(r, t));
     }
 
     double velocity_at(double r, double t) const

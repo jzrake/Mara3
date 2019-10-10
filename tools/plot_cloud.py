@@ -2,6 +2,7 @@
 
 
 
+
 import argparse
 import numpy as np
 import h5py
@@ -9,8 +10,9 @@ import matplotlib.pyplot as plt
 
 
 
-def plot_single_file(filename):
-    fig, (axes, cb_axes) = plt.subplots(nrows=2, ncols=4, figsize=[15, 8], gridspec_kw={'height_ratios': [19, 1]})
+
+def plot_single_file(fig, filename):
+    axes, cb_axes = fig.subplots(nrows=2, ncols=4, gridspec_kw={'height_ratios': [19, 1]})
     h5f = h5py.File(filename, 'r')
 
     r = h5f['radial_vertices'][...]
@@ -26,10 +28,10 @@ def plot_single_file(filename):
     X = np.log10(R) * np.cos(Q)
     Y = np.log10(R) * np.sin(Q)
 
-    m0 = axes[0].pcolormesh(Y, X, np.log10(d.T))
-    m1 = axes[1].pcolormesh(Y, X, np.log10(p.T))
-    m2 = axes[2].pcolormesh(Y, X, np.log10(u.T))#, vmin=-3, vmax=2)
-    m3 = axes[3].pcolormesh(Y, X, np.log10(dL / dO).T)
+    m0 = axes[0].pcolormesh(Y, X, np.log10(d.T),       vmin=-6.0, vmax=0.5)
+    m1 = axes[1].pcolormesh(Y, X, np.log10(p.T),       vmin= 8.0, vmax=18.)
+    m2 = axes[2].pcolormesh(Y, X, np.log10(u.T),       vmin=-1.0, vmax=1.5)
+    m3 = axes[3].pcolormesh(Y, X, np.log10(dL / dO).T, vmin=43.0, vmax=50)
 
     axes[0].set_title(r'$\log_{10}(\rho)$')
     axes[1].set_title(r'$\log_{10}(p)$')
@@ -51,6 +53,7 @@ def plot_single_file(filename):
     fig.suptitle(filename)
 
     return fig
+
 
 
 
@@ -116,15 +119,43 @@ def plot_radial_profile(filename):
 
 
 
+
+def make_movie(args):
+    from matplotlib.animation import FFMpegWriter
+
+    figsize = [15, 8]
+    dpi = 200
+    res = 768
+
+    writer = FFMpegWriter(fps=10)
+    fig = plt.figure(figsize=figsize)
+
+    with writer.saving(fig, args.output, dpi):
+        for filename in args.filenames:
+            print(filename)
+            plot_single_file(fig, filename)
+            writer.grab_frame()
+            fig.clf()
+
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('filenames', nargs='+')
     parser.add_argument('--radial', action='store_true')
+    parser.add_argument("--movie", action='store_true')
+    parser.add_argument("--output", default='output.mp4')
     args = parser.parse_args()
 
-    for filename in args.filenames:
-        if args.radial:
+    if args.movie:
+        make_movie(args)
+    elif args.radial:
+        for filename in args.filenames:
             plot_radial_profile(filename)
-        else:
-            plot_single_file(filename)
-    plt.show()
+        plt.show()
+    else:
+        for filename in args.filenames:
+            fig = plt.figure(figsize=[15, 8])
+            plot_single_file(fig, filename)
+        plt.show()
