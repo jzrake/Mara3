@@ -467,14 +467,14 @@ auto CloudProblem::extend_inflow_nozzle_inner(const app_state_t& app_state)
 {
     auto jet         = make_jet_nozzle_model(app_state.run_config);
     auto reference   = make_reference_units(app_state.run_config);
-    auto atmosphere  = make_cloud_envelop_model(app_state.run_config);
-    auto cloud_u     = atmosphere.gamma_beta_at(atmosphere.inner_radius, app_state.run_config.get_double("jet_delay_time"));
+    // auto atmosphere  = make_cloud_envelop_model(app_state.run_config);
+    // auto cloud_u     = atmosphere.gamma_beta_at(atmosphere.inner_radius, app_state.run_config.get_double("jet_delay_time"));
     auto polar_cells = app_state.solution.polar_vertices | nd::midpoint_on_axis(0);
     auto t_seconds   = app_state.solution.time * reference.time();
 
-    auto inflow_function = [jet, t=t_seconds, cloud_u, reference_density=reference.mass_density()] (double q)
+    auto inflow_function = [jet, t=t_seconds, /*cloud_u,*/ reference_density=reference.mass_density()] (double q)
     {
-        auto u = jet.gamma_beta(q, t) + jet.gamma_beta(M_PI - q, t) + cloud_u;
+        auto u = jet.gamma_beta(q, t) + jet.gamma_beta(M_PI - q, t);// + cloud_u;
         auto d = jet.density_at_base() / reference_density;
 
         return mara::srhd::primitive_t()
