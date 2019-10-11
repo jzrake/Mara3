@@ -73,7 +73,7 @@ static auto config_template()
     .item("cloud_mass",            2e-2)   // cloud mass (in solar masses)
     .item("density_index",          2.0)   // index n of the cloud density profile, rho ~ r^(-n) where r < rc
     .item("density_index2",         6.0)   // index n2 of the density beyond rc
-    .item("jet_delay_time",        1e50)   // time for which the envelop propagates before engine oneset
+    .item("jet_delay_time",         1.0)   // time for which the envelop propagates before engine oneset
     .item("jet_total_energy",      1e50)   // total energy (solid-angle and time-integrated) to be injected (erg)
     .item("jet_duration",           1.0)   // engine duration (in seconds)
     .item("jet_gamma_beta",        10.0)   // jet gamma-beta on-axis
