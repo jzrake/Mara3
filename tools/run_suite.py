@@ -74,7 +74,7 @@ if __name__ == "__main__":
         suite_name          = suite.get('name', pathlib.Path(args.suite_file).stem)
         suite_dir           = suite.get('root_dir', pathlib.Path(args.suite_file).parent)
         mara_opts           = copy.deepcopy(suite.get('mara_opts', dict()))
-        run_dir             = os.path.join(suite_dir, suite_name, runid)
+        run_dir             = os.path.join(str(suite_dir), suite_name, runid)
         submit_file         = os.path.join(run_dir, 'submit.sh')
         readme_file         = os.path.join(run_dir, 'README')
         mara_opts['outdir'] = run_dir

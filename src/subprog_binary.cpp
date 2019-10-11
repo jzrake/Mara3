@@ -383,6 +383,7 @@ void binary::print_run_loop_message(const state_t& state, const solver_data_t& s
     std::printf("[%04d] orbits=%3.7lf kzps=%3.2lf\n",
         state.solution.iteration.as_integral(),
         state.solution.time.value / (2 * M_PI), kzps);
+    std::fflush(stdout);
 }
 
 
