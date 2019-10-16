@@ -35,6 +35,8 @@
 #include "app_config.hpp"
 #include "app_parallel.hpp"
 #include "app_serialize.hpp"
+#include "app_serialize_tree.hpp"
+#include "app_loads_dumps.hpp"
 #include "app_performance.hpp"
 #include "core_mpi.hpp"
 #include "core_hdf5.hpp"
@@ -43,10 +45,9 @@
 #include "core_linked_list.hpp"
 #include "mesh_tree_operators.hpp"
 #include "physics_iso2d.hpp"
-
-
 #define cs2    1e-1
 #define ng     1
+
 
 
 
@@ -66,17 +67,15 @@ struct h5::hdf5_type_info<mara::iso2d::conserved_per_area_t>
 
 
 
-// ============================================================================
-//                                  Header 
-// ============================================================================
 
 namespace euler
 {
+
     // Type definitions for simplicity later
     // ========================================================================
     using location_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
     using primitive_field_t = std::function<mara::iso2d::primitive_t(location_2d_t)>;
-    
+
     using index_tree_t    = mara::arithmetic_binary_tree_t<mara::tree_index_t<2>, 2>;
     using neighbor_tree_t = mara::arithmetic_binary_tree_t<std::map<std::string, mara::linked_list_t<std::size_t>>, 2>;
 
@@ -85,7 +84,6 @@ namespace euler
 
 
 
-    // Solver structs
     // ========================================================================
     struct solution_t
     {
@@ -118,20 +116,27 @@ namespace euler
     };
 
 
+
+
+    //=========================================================================
     struct mpi_setup_t
     {
-        mpi::Session                                    session;
         mpi::Communicator                               comm;
         mara::arithmetic_binary_tree_t<std::size_t, 2>  decomposition;
         neighbor_tree_t                                 neighbors;
     };
 
 
+
+
+    //=========================================================================
     struct state_t
     {
         solution_t          solution;
         mara::config_t      run_config;
     };
+
+
 
 
     // Declaration of necessary functions
@@ -147,41 +152,25 @@ namespace euler
     solution_t  advance      (const solution_t& solution, const mpi_setup_t& mpi_setup, mara::unit_time<double> dt);
     solution_t  next_solution(const state_t& state, const mpi_setup_t& mpi_setup);
     state_t     next_state   (const state_t& state, const mpi_setup_t& mpi_setup);
-    
+
     auto simulation_should_continue(const state_t& state);
-    // auto mpi_fill_tree(const quad_tree_t<mara::iso2d::primitive_t> block_tree,const mpi_setup_t& mpi_setup);
 }
 
 
 
 
-// ============================================================================
-//                               Body 
-// ============================================================================
-
-
-
-
-/**
- * @brief      An operator on arrays of sequences: takes a single component
- *             of a sequence and returns an array.
- *
- * @param[in]  component  The component to take
- *
- * @return     An array whose value type is the sequence value type
- */
+//=============================================================================
 auto component(std::size_t cmpnt)
 {
-	//WHEN PULL NEW VERSION:
-	//   going to need to become a template that instead of std::size_t will need something else...
     return nd::map([cmpnt] (auto p) { return p[cmpnt]; });
 };
 
+template<std::size_t I>
+static auto component()
+{
+    return nd::map([] (auto p) { return mara::get<I>(p); });
+};
 
-
-/**
- * @brief      Cons -> Prim
- */
 auto recover_primitive(const mara::iso2d::conserved_per_area_t& conserved)
 {
     return mara::iso2d::recover_primitive(conserved);
@@ -190,24 +179,18 @@ auto recover_primitive(const mara::iso2d::conserved_per_area_t& conserved)
 
 
 
-/**
- * @brief      Create the config template
- *
- */
+//=============================================================================
 mara::config_template_t euler::create_config_template()
 {
     return mara::make_config_template()
      .item("outdir", "hydro_run")       // directory where data products are written
      .item("cpi",           10.0)       // checkpoint interval
      .item("rk_order",         1)		// timestepping order
-     .item("tfinal",         1.0)       
-     .item("cfl",            0.4)       // courant number 
+     .item("tfinal",         1.0)
+     .item("cfl",            0.4)       // courant number
      .item("domain_radius",  1.0)       // half-size of square domain
-     .item("block_size",      24);       // number of cells in each direction
+     .item("block_size",      24);      // number of cells in each direction
 }
-
-
-
 
 mara::config_t euler::create_run_config( int argc, const char* argv[] )
 {
@@ -217,22 +200,29 @@ mara::config_t euler::create_run_config( int argc, const char* argv[] )
 
 
 
+
+//=============================================================================
 euler::index_tree_t euler::create_domain_topology(const mara::config_t& run_config)
 {
-    // TODO: Need to be able to generate topology from run_config parameters
-    // ========================================================================
-    return mara::tree_of<2>(0)
-    .bifurcate_all([] (auto i) { return mara::iota<4>(); })
-    .bifurcate_all([] (auto i) { return mara::iota<4>(); })
-    .bifurcate_all([] (auto i) { return mara::iota<4>(); })
-    .indexes();
+    auto centroid_radius = [] (mara::tree_index_t<2> index)
+    {
+        double x = 2.0 * ((index.coordinates[0] + 0.5) / (1 << index.level) - 0.5);
+        double y = 2.0 * ((index.coordinates[1] + 0.5) / (1 << index.level) - 0.5);
+        return std::sqrt(x * x + y * y);
+    };
+
+    return mara::tree_with_topology<2>([centroid_radius] (auto index)
+    {
+        return centroid_radius(index) < 0.25 ? (index.level < 4) : (index.level < 3);
+    });
 }
+
 
 
 
 /**
  * @brief             Create 2D array of location_2d_t points representing the vertices
- * 
+ *
  * @param  run_config Config object
  *
  * @return            2D array of vertices
@@ -246,9 +236,8 @@ euler::quad_tree_t<euler::location_2d_t> euler::create_vertex_blocks(
     auto block_size    = run_config.get_int("block_size");
     auto domain_radius = run_config.get_double("domain_radius");
 
-    auto build_my_vertex_blocks = [my_rank, domain_radius, block_size] (auto iv) 
+    auto build_my_vertex_blocks = [my_rank, domain_radius, block_size] (auto iv)
     {
-        // if my rank owns this block, build the vertices
         if (iv.second == my_rank)
         {
             auto index = iv.first;
@@ -263,9 +252,7 @@ euler::quad_tree_t<euler::location_2d_t> euler::create_vertex_blocks(
                 | nd::apply([] (double x, double y) { return euler::location_2d_t{x, y}; })
                 | nd::to_shared();
         }
-
-        // else, return an empty array
-        return nd::shared_array<euler::location_2d_t, 2>{} | nd::to_shared();
+        return nd::shared_array<euler::location_2d_t, 2>{};
     };
     return rank_tree.pair_indexes().map(build_my_vertex_blocks);
 }
@@ -279,7 +266,7 @@ euler::quad_tree_t<euler::location_2d_t> euler::create_vertex_blocks(
  */
 auto initial_condition_shocktube(euler::location_2d_t position)
 {
-    auto density = position[0] > 0.0 ? 0.1 : 1.0; 
+    auto density = position[0] > 1.0 ? 0.1 : 1.0;
     auto vx      = 0.0;
     auto vy      = 0.0;
 
@@ -294,11 +281,12 @@ auto initial_condition_cylinder(euler::location_2d_t position)
 	auto x = position[0];
 	auto y = position[1];
 
-	auto r  = x*x + y*y;
+	auto r  = (x - 1) * (x - 1) + (y - 1) * (y - 1);
 	auto vx = 0.0;
 	auto vy = 0.0;
 
-	auto density = r<0.2 ? 1.0 : 0.1;
+	// auto density = r < 0.2 ? 1.0 : 0.1;
+    auto density = std::exp(-r.value * r.value / 0.01) + 0.1;
 
 	return mara::iso2d::primitive_t()
 	 .with_sigma(density)
@@ -315,22 +303,24 @@ auto initial_condition_cylinder(euler::location_2d_t position)
  */
 euler::solution_t euler::create_solution(const mara::config_t& run_config, const mpi_setup_t& mpi_setup)
 {
-    
     auto vertices = create_vertex_blocks(run_config, mpi_setup);
     auto cell_centers = vertices.map([] (auto block)
     {
-        return block | nd::midpoint_on_axis(0) | nd::midpoint_on_axis(1);
+        if (block.size() == 0)
+        {
+            return block | nd::to_shared();
+        }
+        return block | nd::midpoint_on_axis(0) | nd::midpoint_on_axis(1) | nd::to_shared();
     });
 
     auto conserved = cell_centers.map([] (auto block)
     {
-        return block 
-         | nd::map(initial_condition_shocktube)
-         | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area)) // prim2cons
-         | nd::to_shared();
-     });
-
-    return solution_t{ 0.0, 0, vertices, conserved };
+        return block
+        | nd::map(initial_condition_cylinder)
+        | nd::map(std::mem_fn(&mara::iso2d::primitive_t::to_conserved_per_area))
+        | nd::to_shared();
+    });
+    return solution_t{0.0, 0, vertices, conserved};
 }
 
 
@@ -342,18 +332,16 @@ euler::solution_t euler::create_solution(const mara::config_t& run_config, const
  */
 euler::mpi_setup_t euler::create_mpi_setup(const mara::config_t& run_config)
 {
-    //For now a uniformly refined tree of depth 3
+    // For now a uniformly refined tree of depth 3
     auto topology = create_domain_topology(run_config);
-
-    auto session = mpi::Session();
-    auto comm    = mpi::comm_world();
+    auto comm     = mpi::comm_world();
 
     auto decomposition = mara::build_rank_tree<2>(topology, comm.size());
     auto neighbors     = decomposition
                          .indexes()
                          .map([decomposition] (auto idx) { return mara::get_quad_map(decomposition, idx); });
 
-    return {session, comm, decomposition, neighbors};
+    return {comm, decomposition, neighbors};
 }
 
 
@@ -361,9 +349,9 @@ euler::mpi_setup_t euler::create_mpi_setup(const mara::config_t& run_config)
 
 /**
  * @brief               Creates state object
- * 
+ *
  * @param   run_config  configuration object
- * 
+ *
  * @return              a state object
  */
 euler::state_t euler::create_state(const mara::config_t& run_config, const mpi_setup_t& mpi_setup)
@@ -375,24 +363,7 @@ euler::state_t euler::create_state(const mara::config_t& run_config, const mpi_s
 }
 
 
-//=============================================================================
-//                           Update Routines
-//=============================================================================
-//
-//            NEED TO UPDATE THESE FOR TREE AND MPI COMMUNICATIONS!!!
-//     
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-
-template<std::size_t I>
-static auto component()
-{
-    return nd::map([] (auto p) { return mara::get<I>(p); });
-};
-
-
-
-//=============================================================================
 
 /**
  * @note      tree should be the tree of prims after it has been filled with info
@@ -401,7 +372,7 @@ static auto component()
 template<typename TreeType>
 static auto extend(TreeType tree, std::size_t axis, std::size_t guard_count)
 {
-    return [tree, axis, guard_count] (auto index) 
+    return [tree, axis, guard_count] (auto index)
     {
         auto C = tree.at(index);
         auto L = mara::get_cell_block(tree, index.prev_on(axis), mara::compose(nd::to_shared(), nd::select_final(guard_count, axis)));
@@ -412,397 +383,9 @@ static auto extend(TreeType tree, std::size_t axis, std::size_t guard_count)
 
 
 
-//=============================================================================
-// static auto correct_fluxes_xl = [] (auto fhat_tree, mara::tree_index_t<2> index)
-// {
-//     return [fhat_tree, index] (auto fhat)
-//     {
-//         if (fhat_tree.contains(index.prev_on(0)))
-//             return fhat;
-
-//         if (fhat_tree.contains(index.prev_on(0).parent_index()))
-//             return fhat;
-
-//         auto nodel = fhat_tree.node_at(index.prev_on(0));
-//         auto fluxl = nodel.at({1, {1, 0}})
-//         | nd::concat(nodel.at({1, {1, 1}})).on_axis(1)
-//         | mara::restrict_extrinsic(1)
-//         | nd::take_final_on_axis(0);
-
-//         auto fluxr = fhat | nd::drop_first_on_axis(0);
-//         return fluxl | nd::concat(fluxr).on_axis(0) | nd::to_shared();
-//     };
-// };
-
-// static auto correct_fluxes_xr = [] (auto fhat_tree, mara::tree_index_t<2> index)
-// {
-//     return [fhat_tree, index] (auto fhat)
-//     {
-//         if (fhat_tree.contains(index.next_on(0)))
-//             return fhat;
-
-//         if (fhat_tree.contains(index.next_on(0).parent_index()))
-//             return fhat;
-
-//         auto noder = fhat_tree.node_at(index.next_on(0));
-//         auto fluxr = noder.at({1, {0, 0}})
-//         | nd::concat(noder.at({1, {0, 1}})).on_axis(1)
-//         | mara::restrict_extrinsic(1)
-//         | nd::take_first_on_axis(0);
-
-//         auto fluxl = fhat | nd::drop_final_on_axis(0);
-//         return fluxl | nd::concat(fluxr).on_axis(0) | nd::to_shared();
-//     };
-// };
-
-// static auto correct_fluxes_yl = [] (auto fhat_tree, mara::tree_index_t<2> index)
-// {
-//     return [fhat_tree, index] (auto fhat)
-//     {
-//         if (fhat_tree.contains(index.prev_on(1)))
-//             return fhat;
-
-//         if (fhat_tree.contains(index.prev_on(1).parent_index()))
-//             return fhat;
-
-//         auto nodel = fhat_tree.node_at(index.prev_on(1));
-//         auto fluxl = nodel.at({1, {0, 1}})
-//         | nd::concat(nodel.at({1, {1, 1}})).on_axis(0)
-//         | mara::restrict_extrinsic(0)
-//         | nd::take_final_on_axis(1);
-
-//         auto fluxr = fhat | nd::drop_first_on_axis(1);
-//         return fluxl | nd::concat(fluxr).on_axis(1) | nd::to_shared();
-//     };
-// };
-
-// static auto correct_fluxes_yr = [] (auto fhat_tree, mara::tree_index_t<2> index)
-// {
-//     return [fhat_tree, index] (auto fhat)
-//     {
-//         if (fhat_tree.contains(index.next_on(1)))
-//             return fhat;
-
-//         if (fhat_tree.contains(index.next_on(1).parent_index()))
-//             return fhat;
-
-//         auto noder = fhat_tree.node_at(index.next_on(1));
-//         auto fluxr = noder.at({1, {0, 0}})
-//         | nd::concat(noder.at({1, {1, 0}})).on_axis(0)
-//         | mara::restrict_extrinsic(0)
-//         | nd::take_first_on_axis(1);
-
-//         auto fluxl = fhat | nd::drop_final_on_axis(1);
-//         return fluxl | nd::concat(fluxr).on_axis(1) | nd::to_shared();
-//     };
-// };
-
-
-// //=============================================================================
-// auto correct_fluxes_x = [] (auto fhat_x)
-// {
-//     return [fhat_x] (mara::tree_index_t<2> index)
-//     {
-//         return fhat_x.at(index)
-//         | correct_fluxes_xl(fhat_x, index)
-//         | correct_fluxes_xr(fhat_x, index);
-//     };
-// };
-
-// auto correct_fluxes_y = [] (auto fhat_y)
-// {
-//     return [fhat_y] (mara::tree_index_t<2> index)
-//     {
-//         return fhat_y.at(index)
-//         | correct_fluxes_yl(fhat_y, index)
-//         | correct_fluxes_yr(fhat_y, index);
-//     };
-// };
-
-
-
-// ============================================================================
-
-
-/**
- * @brief      Do mpi communications to fill in my block tree with neighboring 
- *             guard cells by first issuing all receive requests and then
- *             fulfilling the sends.
- *
- * @return     A tree of conservative/primitive blocks 
- */
-auto mpi_fill_tree_1 = [] (const auto block_tree, const euler::mpi_setup_t& mpi_setup)
-{
-    //=========================================================================
-    auto comm       = mpi_setup.comm;
-    auto rank_tree  = mpi_setup.decomposition;
-    auto neigh_tree = mpi_setup.neighbors;
-    auto my_rank    = comm.rank();
-
-
-    // Issue all recv requests and move-reference to linked-list
-    //=========================================================================
-    using index_request_pair = std::pair<mara::tree_index_t<2>, mpi::Request>;
-
-    std::vector<index_request_pair> requests;
-    for (auto i : rank_tree.pair_indexes())
-    {
-        auto idx  = i.first;
-        auto rank = i.second;
-        if (rank == my_rank)
-        {
-            auto map = neigh_tree.at(idx);
-            //map["direction"] returns a linked_list of ranks to communicate with
-            // -> for uniform grid, should just be one index
-            // 
-            // TODO: need to handle flux corrections etc. for non-uniform refinement
-            
-            auto north = map["north"].head();
-            auto south = map["south"].head();
-            auto east  = map[ "east"].head();
-            auto west  = map[ "west"].head();
-
-            if (north != my_rank)
-            {
-                auto request = comm.irecv(north, 0);                
-                requests.push_back(std::pair(idx.prev_on(1), std::move(request)));
-            }
-
-            if (south != my_rank)
-            {
-                auto request = comm.irecv(south, 0);                
-                requests.push_back(std::pair(idx.next_on(1), std::move(request)));
-            }
-
-            if (east != my_rank)
-            {
-                auto request = comm.irecv(east, 0);                
-                requests.push_back(std::pair(idx.next_on(0), std::move(request)));
-            }
-
-            if (west != my_rank)
-            {
-                auto request = comm.irecv(west, 0);                
-                requests.push_back(std::pair(idx.prev_on(0), std::move(request)));
-            }
-        }
-    }
-    comm.barrier();
-
-
-    // Do the sends
-    //=========================================================================
-    for (auto i : rank_tree.pair_indexes())
-    {
-        auto idx  = i.first;
-        auto rank = i.second;
-        if (rank == my_rank)
-        {
-            auto map = neigh_tree.at(idx);
-            //map["direction"] returns a linked_list of ranks to communicate with
-            // -> for uniform grid, should just be one index
-            // 
-            // TODO: need to handle flux corrections etc. for non-uniform refinement
-            
-            auto north = map["north"].head();
-            auto south = map["south"].head();
-            auto east  = map[ "east"].head();
-            auto west  = map[ "west"].head();
-
-            if (north != my_rank)
-            {
-                auto send_block = block_tree.at(idx) | nd::select_first(ng, 1);
-                comm.send(send_block, north, 0);
-            }
-
-            if (south != my_rank)
-            {
-                auto send_block = block_tree.at(idx) | nd::select_final(ng, 1);
-                comm.send(send_block, south, 0);
-            }
-
-            if (east != my_rank)
-            {
-                auto send_block = block_tree.at(idx) | nd::select_final(ng, 0);
-                comm.send(send_block, east, 0);
-            }
-
-            if (west != my_rank)
-            {
-                auto send_block = block_tree.at(idx) | nd::select_first(ng, 0);
-                comm.send(send_block, west, 0);
-            }
-        }
-    }
-    comm.barrier();
-
-
-    // Move receive buffers into their location in the tree:
-    //     -> this might be bad/not-totally-functional...
-    // ========================================================================
-    auto full_tree = block_tree;
-    for(std::size_t i=0; i < requests.size(); ++i)
-    {
-        if(! requests[i].second.is_ready())
-        {
-            throw std::logic_error("A receive request was not matched with its expected send...");
-        }
-        auto index = requests[i].first;
-        auto block = requests[i].second.get();
-        full_tree  = full_tree.insert(index, block);
-    }
-    comm.barrier();
-
-
-    // Return block_tree with necessary guard_zones put in the block they came from
-    // ========================================================================
-    return full_tree;
-};
-
-
-/*
- * @brief      Do mpi communications to fill in my block tree with neighboring 
- *             guard cells by first posting all the sends and then
- *             issuing the receives.
- *
- * @return     A tree of conservative/primitive blocks 
-*/ 
-auto mpi_fill_tree_2 = [] (const auto block_tree, const euler::mpi_setup_t& mpi_setup)
-{
-    using primitive_array_t  = nd::shared_array<mara::iso2d::primitive_t, 2>;
-    using block_request_pair = std::pair<primitive_array_t, mpi::Request>;
-
-    //=========================================================================
-    auto comm       = mpi_setup.comm;
-    auto rank_tree  = mpi_setup.decomposition;
-    auto neigh_tree = mpi_setup.neighbors;
-    auto my_rank    = comm.rank();
-
-
-    // Issue all sends move-reference buffer reference to linked-list
-    //=========================================================================
-    std::vector<block_request_pair> requests;
-    for (auto i : rank_tree.pair_indexes())
-    {
-        auto idx  = i.first;
-        auto rank = i.second;
-        if (rank == my_rank)
-        {
-            auto map = neigh_tree.at(idx);
-            //map["direction"] returns a linked_list of ranks to communicate with
-            // -> for uniform grid, should just be one index
-            // 
-            // TODO: need to handle flux corrections etc. for non-uniform refinement
-            
-            auto north = map["north"].head();
-            auto south = map["south"].head();
-            auto east  = map[ "east"].head();
-            auto west  = map[ "west"].head();
-
-            if (north != my_rank)
-            {
-                auto send_block = block_tree.at(idx) | nd::select_first(ng, 1);
-                auto request = comm.send(send_block, north, 0);
-
-                requests.push_back(std::pair(std::move(send_block), std::move(request)));
-            }
-
-            if (south != my_rank)
-            {
-                auto send_block = block_tree.at(idx) | nd::select_final(ng, 1);
-                auto request = comm.send(send_block, south, 0);
-
-                requests.push_back(std::pair(std::move(send_block), std::move(request)));
-            }
-
-            if (east != my_rank)
-            {
-                auto send_block = block_tree.at(idx) | nd::select_final(ng, 0);
-                auto request = comm.send(send_block, east, 0);
-
-                requests.push_back(std::pair(std::move(send_block), std::move(request)));
-            }
-
-            if (west != my_rank)
-            {
-                auto send_block = block_tree.at(idx) | nd::select_first(ng, 0);
-                auto request = comm.send(send_block, west, 0);
-
-                requests.push_back(std::pair(std::move(send_block), std::move(request)));
-            }
-        }
-    }
-    comm.barrier();
-
-
-    // Issue all of the blocking receives and insert into tree
-    //=========================================================================
-    auto full_tree = block_tree;
-    for (auto i : rank_tree.pair_indexes())
-    {
-        auto idx  = i.first;
-        auto rank = i.second;
-        if (rank == my_rank)
-        {
-            auto map = neigh_tree.at(idx);
-            //map["direction"] returns a linked_list of ranks to communicate with
-            // -> for uniform grid, should just be one index
-            // 
-            // TODO: need to handle flux corrections etc. for non-uniform refinement
-            
-            auto north = map["north"].head();
-            auto south = map["south"].head();
-            auto east  = map[ "east"].head();
-            auto west  = map[ "west"].head();
-
-            if (north != my_rank)
-            {
-                auto block = comm.recv(north, 0);
-                full_tree  = full_tree.insert(idx.prev_on(1), block);
-            }
-
-            if (south != my_rank)
-            {
-                auto block = comm.recv(south, 0);
-                full_tree  = full_tree.insert(idx.next_on(1), block);
-            }
-
-            if (east != my_rank)
-            {
-                auto block = comm.recv(east, 0);
-                full_tree  = full_tree.insert(idx.next_on(0), block);
-            }
-
-            if (west != my_rank)
-            {
-                auto block = comm.recv(west, 0);
-                full_tree  = full_tree.insert(idx.prev_on(0), block);
-            }
-        }
-    }
-    comm.barrier();
-
-
-    // Make sure all sends completed succesfully
-    // ========================================================================
-    for(std::size_t i = 0; i < requests.size(); ++i)
-    {
-        if (! requests[i].second.is_ready())
-        {
-            throw std::logic_error("A recieve request was not matched with its expected send...");
-        }
-    }
-    comm.barrier();
-
-
-    // Return block_tree with necessary guard_zones put in the block they came from
-    // ========================================================================
-    return full_tree;
-};
-
 
 //=============================================================================
-euler::solution_t euler::advance( const solution_t& solution, const mpi_setup_t& mpi_setup, mara::unit_time<double> dt)
+euler::solution_t euler::advance(const solution_t& solution, const mpi_setup_t& mpi_setup, mara::unit_time<double> dt)
 {
 
 
@@ -874,7 +457,7 @@ euler::solution_t euler::advance( const solution_t& solution, const mpi_setup_t&
         };
     };
 
-    // ========================================================================    
+    // ========================================================================
     auto u0  =  solution.conserved;
     auto w0  =  u0.map([] (auto Q) { return Q | nd::map(recover_primitive); });
 
@@ -887,8 +470,8 @@ euler::solution_t euler::advance( const solution_t& solution, const mpi_setup_t&
 
     // Extend for ghost-cells and get fluxes with specified riemann solver
     // ========================================================================
-    // auto ng = 1;  //number of ghost cells
-    // auto w0_full = mpi_fill_tree(w0, mpi_setup);  //(prim_tree, number_ghost_zones, mpi_info)
+    // auto ng = 1;  // number of ghost cells
+    // auto w0_full = mpi_fill_tree_1(w0, mpi_setup);  //(prim_tree, number_ghost_zones, mpi_info)
     auto w0_full = w0;
     auto w0_ex   = w0.indexes().map(extend(w0_full, 0, ng));
     auto w0_ey   = w0.indexes().map(extend(w0_full, 1, ng));
@@ -898,17 +481,9 @@ euler::solution_t euler::advance( const solution_t& solution, const mpi_setup_t&
     auto fhat_y = fhat.map([] (auto t) { return std::get<1>(t); });
 
 
-    //Flux correcting not necessary for uniform refinement
-    //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    // auto fhat_xc = fhat_x.indexes().map(correct_fluxes_x(fhat_x));
-    // auto fhat_yc = fhat_y.indexes().map(correct_fluxes_y(fhat_y));
-    auto fhat_xc = fhat_x;
-    auto fhat_yc = fhat_y;
-
-
     // Updated conserved densities
     //=========================================================================
-    auto u1 = u0.indexes().map(block_update(solution, fhat_xc, fhat_yc, cell_areas, dt));
+    auto u1 = u0.indexes().map(block_update(solution, fhat_x, fhat_y, cell_areas, dt));
 
 
     // Updated solution state
@@ -923,18 +498,15 @@ euler::solution_t euler::advance( const solution_t& solution, const mpi_setup_t&
 
 
 
-mara::unit_time<double> get_timestep( const euler::solution_t& s, double cfl )
-{
-    //return 0.01;
 
+mara::unit_time<double> get_timestep(const euler::solution_t& s, double cfl)
+{
     auto v      = s.vertices;
     auto min_dx = v.map([] (auto v) { return v | component<0>() | nd::difference_on_axis(0) | nd::min(); }).min();
     auto min_dy = v.map([] (auto v) { return v | component<1>() | nd::difference_on_axis(1) | nd::min(); }).min();
 
-    //=========================================================================
     auto get_velocity_mag = std::mem_fn(&mara::iso2d::primitive_t::velocity_magnitude);
 
-    //=========================================================================
     auto primitive = s.conserved.map([] (auto Q) { return Q | nd::map(recover_primitive); });
     auto velocity  = primitive.map([get_velocity_mag] (auto W) { return W | nd::map(get_velocity_mag); });
     auto v_max     = velocity.map([] (auto v) { return std::max(v | nd::max(), mara::make_velocity(1.0)); }).max();
@@ -944,14 +516,12 @@ mara::unit_time<double> get_timestep( const euler::solution_t& s, double cfl )
 
 
 
+
 // ============================================================================
-
-
 auto euler::simulation_should_continue(const state_t& state)
 {
     return state.solution.time < state.run_config.get_double("tfinal");
 }
-
 
 euler::solution_t euler::next_solution(const state_t& state, const mpi_setup_t& mpi)
 {
@@ -975,8 +545,6 @@ euler::solution_t euler::next_solution(const state_t& state, const mpi_setup_t& 
     throw std::invalid_argument("binary::next_solution");
 }
 
-
-
 euler::state_t euler::next_state(const euler::state_t& state, const euler::mpi_setup_t& mpi_setup)
 {
     return euler::state_t{
@@ -985,44 +553,365 @@ euler::state_t euler::next_state(const euler::state_t& state, const euler::mpi_s
     };
 }
 
+void output_solution_h5(const euler::solution_t& s, std::string fname)
+{
+    // TODO: write parallel I/O
+	std::cout << "   Outputting: " << fname << std::endl;
+	auto group = h5::File(fname, "w" ).open_group("/");
 
-//=============================================================================
-//TODO: Need updated outputting for trees and parallel processes
-// void output_solution_h5( const euler::solution_t& s, std::string fname )
-// {	
-// 	std::cout << "   Outputting: " << fname << std::endl;
-// 	auto group = h5::File( fname, "w" ).open_group("/");
-//     //auto recover_primitive = std::bind(mara::iso2d::recover_primitive, std::placeholders::_1, 0.0);
+	mara::write(group, "time"      , s.time     );
+	mara::write(group, "vertices"  , s.vertices );
+	mara::write(group, "conserved" , s.conserved);
+}
 
-// 	mara::write(group, "time"      , s.time      );
-// 	mara::write(group, "vertices"  , s.vertices  );
-// 	mara::write(group, "conserved" , s.conserved );
-// 	//h5f.write( "primitive" , s.conserved | nd::map(recover_primitive) | nd::to_shared() );
-// }
 
 
 
 // ============================================================================
-
 int main(int argc, const char* argv[])
 {
+    auto session     = mpi::Session();
     auto run_config  = euler::create_run_config(argc, argv);
     auto mpi_setup   = euler::create_mpi_setup(run_config);
     auto state       = euler::create_state(run_config, mpi_setup);
+    auto comm        = mpi::comm_world();
 
-    mara::pretty_print( std::cout, "config", run_config );
-    // output_solution_h5( state.solution, "initial.h5" );
-
-    while( euler::simulation_should_continue(state) )
+    for (int rank = 0; rank < comm.size(); ++rank)
     {
-        state = euler::next_state(state, mpi_setup);
-
-        //if( (state.solution.iteration)%1  == 0)
-		printf( " %d : t = %0.2f \n", state.solution.iteration.as_integral(), state.solution.time.value );
-
+        if (rank == comm.rank())
+        {
+            auto fname = std::string("output.") + std::to_string(rank) + ".h5";
+            output_solution_h5(state.solution, fname);
+        }
+        comm.barrier();
     }
 
-    // output_solution_h5( state.solution, "output.h5" );
+
+  //   auto mpi_setup   = euler::create_mpi_setup(run_config);
+  //   auto state       = euler::create_state(run_config, mpi_setup);
+
+  //   mara::pretty_print(std::cout, "config", run_config);
+  //   output_solution_h5( state.solution, "initial.h5" );
+
+  //   while (euler::simulation_should_continue(state))
+  //   {
+  //       state = euler::next_state(state, mpi_setup);
+		// std::printf(" %d : t = %0.2f \n", state.solution.iteration.as_integral(), state.solution.time.value);
+  //   }
+  //   output_solution_h5(state.solution, "final.h5");
 
     return 0;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ * @brief      Do mpi communications to fill in my block tree with neighboring
+ *             guard cells by first issuing all receive requests and then
+ *             fulfilling the sends.
+ *
+ * @return     A tree of conservative/primitive blocks
+ */
+// auto mpi_fill_tree_1 = [] (const auto block_tree, const euler::mpi_setup_t& mpi_setup)
+// {
+//     //=========================================================================
+//     auto comm       = mpi_setup.comm;
+//     auto rank_tree  = mpi_setup.decomposition;
+//     auto neigh_tree = mpi_setup.neighbors;
+//     auto my_rank    = comm.rank();
+
+
+//     // Issue all recv requests and move-reference to linked-list
+//     //=========================================================================
+//     using index_request_pair = std::pair<mara::tree_index_t<2>, mpi::Request>;
+
+//     std::vector<index_request_pair> requests;
+//     for (auto i : rank_tree.pair_indexes())
+//     {
+//         auto idx  = i.first;
+//         auto rank = i.second;
+//         if (rank == my_rank)
+//         {
+//             auto map = neigh_tree.at(idx);
+//             //map["direction"] returns a linked_list of ranks to communicate with
+//             // -> for uniform grid, should just be one index
+//             //
+//             // TODO: need to handle flux corrections etc. for non-uniform refinement
+
+//             auto north = map["north"].head();
+//             auto south = map["south"].head();
+//             auto east  = map[ "east"].head();
+//             auto west  = map[ "west"].head();
+
+//             if (north != my_rank)
+//             {
+//                 auto request = comm.irecv(north, 0);
+//                 requests.push_back(std::pair(idx.prev_on(1), std::move(request)));
+//             }
+
+//             if (south != my_rank)
+//             {
+//                 auto request = comm.irecv(south, 0);
+//                 requests.push_back(std::pair(idx.next_on(1), std::move(request)));
+//             }
+
+//             if (east != my_rank)
+//             {
+//                 auto request = comm.irecv(east, 0);
+//                 requests.push_back(std::pair(idx.next_on(0), std::move(request)));
+//             }
+
+//             if (west != my_rank)
+//             {
+//                 auto request = comm.irecv(west, 0);
+//                 requests.push_back(std::pair(idx.prev_on(0), std::move(request)));
+//             }
+//         }
+//     }
+//     comm.barrier();
+
+
+//     // Do the sends
+//     //=========================================================================
+//     for (auto i : rank_tree.pair_indexes())
+//     {
+//         auto idx  = i.first;
+//         auto rank = i.second;
+//         if (rank == my_rank)
+//         {
+//             auto map = neigh_tree.at(idx);
+//             //map["direction"] returns a linked_list of ranks to communicate with
+//             // -> for uniform grid, should just be one index
+//             //
+//             // TODO: need to handle flux corrections etc. for non-uniform refinement
+
+//             auto north = map["north"].head();
+//             auto south = map["south"].head();
+//             auto east  = map[ "east"].head();
+//             auto west  = map[ "west"].head();
+
+//             if (north != my_rank)
+//             {
+//                 auto send_block = block_tree.at(idx) | nd::select_first(ng, 1);
+//                 comm.send(send_block, north, 0);
+//             }
+
+//             if (south != my_rank)
+//             {
+//                 auto send_block = block_tree.at(idx) | nd::select_final(ng, 1);
+//                 comm.send(send_block, south, 0);
+//             }
+
+//             if (east != my_rank)
+//             {
+//                 auto send_block = block_tree.at(idx) | nd::select_final(ng, 0);
+//                 comm.send(send_block, east, 0);
+//             }
+
+//             if (west != my_rank)
+//             {
+//                 auto send_block = block_tree.at(idx) | nd::select_first(ng, 0);
+//                 comm.send(send_block, west, 0);
+//             }
+//         }
+//     }
+//     comm.barrier();
+
+
+//     // Move receive buffers into their location in the tree:
+//     //     -> this might be bad/not-totally-functional...
+//     // ========================================================================
+//     auto full_tree = block_tree;
+//     for(std::size_t i=0; i < requests.size(); ++i)
+//     {
+//         if(! requests[i].second.is_ready())
+//         {
+//             throw std::logic_error("A receive request was not matched with its expected send...");
+//         }
+//         auto index = requests[i].first;
+//         auto block = requests[i].second.get();
+//         full_tree  = full_tree.insert(index, block);
+//     }
+//     comm.barrier();
+
+
+//     // Return block_tree with necessary guard_zones put in the block they came from
+//     // ========================================================================
+//     return full_tree;
+// };
+
+
+
+//  * @brief      Do mpi communications to fill in my block tree with neighboring
+//  *             guard cells by first posting all the sends and then
+//  *             issuing the receives.
+//  *
+//  * @return     A tree of conservative/primitive blocks
+
+// auto mpi_fill_tree_2 = [] (const auto block_tree, const euler::mpi_setup_t& mpi_setup)
+// {
+//     using primitive_array_t  = nd::shared_array<mara::iso2d::primitive_t, 2>;
+//     using block_request_pair = std::pair<primitive_array_t, mpi::Request>;
+
+//     //=========================================================================
+//     auto comm       = mpi_setup.comm;
+//     auto rank_tree  = mpi_setup.decomposition;
+//     auto neigh_tree = mpi_setup.neighbors;
+//     auto my_rank    = comm.rank();
+
+
+//     // Issue all sends move-reference buffer reference to linked-list
+//     //=========================================================================
+//     std::vector<block_request_pair> requests;
+//     for (auto i : rank_tree.pair_indexes())
+//     {
+//         auto idx  = i.first;
+//         auto rank = i.second;
+//         if (rank == my_rank)
+//         {
+//             auto map = neigh_tree.at(idx);
+//             //map["direction"] returns a linked_list of ranks to communicate with
+//             // -> for uniform grid, should just be one index
+//             //
+//             // TODO: need to handle flux corrections etc. for non-uniform refinement
+
+//             auto north = map["north"].head();
+//             auto south = map["south"].head();
+//             auto east  = map[ "east"].head();
+//             auto west  = map[ "west"].head();
+
+//             if (north != my_rank)
+//             {
+//                 auto send_block = block_tree.at(idx) | nd::select_first(ng, 1);
+//                 auto request = comm.send(send_block, north, 0);
+
+//                 requests.push_back(std::pair(std::move(send_block), std::move(request)));
+//             }
+
+//             if (south != my_rank)
+//             {
+//                 auto send_block = block_tree.at(idx) | nd::select_final(ng, 1);
+//                 auto request = comm.send(send_block, south, 0);
+
+//                 requests.push_back(std::pair(std::move(send_block), std::move(request)));
+//             }
+
+//             if (east != my_rank)
+//             {
+//                 auto send_block = block_tree.at(idx) | nd::select_final(ng, 0);
+//                 auto request = comm.send(send_block, east, 0);
+
+//                 requests.push_back(std::pair(std::move(send_block), std::move(request)));
+//             }
+
+//             if (west != my_rank)
+//             {
+//                 auto send_block = block_tree.at(idx) | nd::select_first(ng, 0);
+//                 auto request = comm.send(send_block, west, 0);
+
+//                 requests.push_back(std::pair(std::move(send_block), std::move(request)));
+//             }
+//         }
+//     }
+//     comm.barrier();
+
+
+//     // Issue all of the blocking receives and insert into tree
+//     //=========================================================================
+//     auto full_tree = block_tree;
+//     for (auto i : rank_tree.pair_indexes())
+//     {
+//         auto idx  = i.first;
+//         auto rank = i.second;
+//         if (rank == my_rank)
+//         {
+//             auto map = neigh_tree.at(idx);
+//             //map["direction"] returns a linked_list of ranks to communicate with
+//             // -> for uniform grid, should just be one index
+//             //
+//             // TODO: need to handle flux corrections etc. for non-uniform refinement
+
+//             auto north = map["north"].head();
+//             auto south = map["south"].head();
+//             auto east  = map[ "east"].head();
+//             auto west  = map[ "west"].head();
+
+//             if (north != my_rank)
+//             {
+//                 auto block = comm.recv(north, 0);
+//                 full_tree  = full_tree.insert(idx.prev_on(1), block);
+//             }
+
+//             if (south != my_rank)
+//             {
+//                 auto block = comm.recv(south, 0);
+//                 full_tree  = full_tree.insert(idx.next_on(1), block);
+//             }
+
+//             if (east != my_rank)
+//             {
+//                 auto block = comm.recv(east, 0);
+//                 full_tree  = full_tree.insert(idx.next_on(0), block);
+//             }
+
+//             if (west != my_rank)
+//             {
+//                 auto block = comm.recv(west, 0);
+//                 full_tree  = full_tree.insert(idx.prev_on(0), block);
+//             }
+//         }
+//     }
+//     comm.barrier();
+
+
+//     // Make sure all sends completed succesfully
+//     // ========================================================================
+//     for(std::size_t i = 0; i < requests.size(); ++i)
+//     {
+//         if (! requests[i].second.is_ready())
+//         {
+//             throw std::logic_error("A recieve request was not matched with its expected send...");
+//         }
+//     }
+//     comm.barrier();
+
+
+//     // Return block_tree with necessary guard_zones put in the block they came from
+//     // ========================================================================
+//     return full_tree;
+// };

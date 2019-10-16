@@ -63,8 +63,7 @@ namespace mara
     auto tree_of(const arithmetic_sequence_t<ValueType, 1 << Rank>& child_values);
 
     template<std::size_t Rank>
-    arithmetic_binary_tree_t<tree_index_t<Rank>, Rank> tree_with_topology(
-        std::function<bool(tree_index_t<Rank>)> predicate);
+    auto tree_with_topology(std::function<bool(tree_index_t<Rank>)> predicate);
     
 
     inline std::size_t hilbert_index(tree_index_t<2> index);
@@ -1241,19 +1240,21 @@ auto mara::tree_of(const arithmetic_sequence_t<ValueType, 1 << Rank>& child_valu
  * @return     A new tree of indexes
  */
 template<std::size_t Rank>
-mara::arithmetic_binary_tree_t<mara::tree_index_t<Rank>, Rank> tree_with_topology(
-    std::function<bool(mara::tree_index_t<Rank>)> predicate)
+auto mara::tree_with_topology(std::function<bool(mara::tree_index_t<Rank>)> predicate)
 {
     auto tree = mara::tree_of<Rank>(mara::tree_index_t<Rank>());
-    auto old_size = tree.size();
-    do
+
+    while (true)
     {
-        tree = tree.bifurcate_if(
+        auto new_tree = tree.bifurcate_if(
             [predicate] (auto index) { return predicate(index); },
             [] (auto index) { return index.child_indexes(); });
 
-    }while (tree.size() != old_size);
+        if (new_tree.size() == tree.size())
+            break;
 
+        std::swap(new_tree, tree);
+    }
     return tree;
 }
 

@@ -96,6 +96,7 @@ public:
     {
         MPI_Finalize();
     }
+    Session(const Session& other) = delete;
 };
 
 
