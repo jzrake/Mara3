@@ -29,8 +29,9 @@
 #pragma once
 #include <vector>
 #include <thread>
-#include "core_ndarray.hpp"
 #include "core_tree.hpp"
+#include "core_ndarray.hpp"
+#include "core_linked_list.hpp"
 
 
 
@@ -48,14 +49,14 @@ namespace mara
     auto create_access_pattern_array(nd::shape_t<Rank> global_shape, nd::shape_t<Rank> blocks_shape);
 
     //=========================================================================
-    template<typename ValueType, std::size_t Rank>
-    auto build_rank_tree(mara::arithmetic_binary_tree_t<ValueType, Rank> topology, std::size_t size);
+    template<std::size_t Rank>
+    auto build_rank_tree(mara::arithmetic_binary_tree_t<tree_index_t<Rank>, Rank> topology, std::size_t size);
 
     template<std::size_t Rank>
     auto get_target_ranks(mara::arithmetic_binary_tree_t<std::size_t, Rank> rank_tree, mara::tree_index_t<Rank> target);
 
     inline auto get_quad_map(arithmetic_binary_tree_t<std::size_t, 2> rank_tree, tree_index_t<2> idx);
-    inline auto get_oct_map (arithmetic_binary_tree_t<std::size_t, 3> rank_tree, tree_index_t<3> idx);
+    // inline auto get_oct_map (arithmetic_binary_tree_t<std::size_t, 3> rank_tree, tree_index_t<3> idx);
 }
 
 
@@ -233,6 +234,9 @@ nd::shared_array<int, 1> mara::parallel::detail::prime_factors(int num)
 
 
 
+
+//=============================================================================
+//        put all of this in new file: mesh_tree_parallel.h
 //=============================================================================
 
 
@@ -241,10 +245,9 @@ nd::shared_array<int, 1> mara::parallel::detail::prime_factors(int num)
  *             the tree's linear hilbert indexing. Return a tree where each leaf
  *             stores the bin to which it belongs.
  *
- * @param[in]  topology   A tree of irrelevant type
+ * @param[in]  topology   A tree of indexes
  * @param[in]  size       The number of bins to divide the leaves among
  *
- * @tparam     ValueType  The type of the provided tree
  * @tparam     Rank       The rank of the provided tree
  *
  * @return     A tree of bin numbers
@@ -252,8 +255,8 @@ nd::shared_array<int, 1> mara::parallel::detail::prime_factors(int num)
  * @note       Intended for use distributing leaves of some global tree out evenly
  *             to `size` parallel processes, preserving locality as best as possible
  */
-template<typename ValueType, std::size_t Rank>
-auto mara::build_rank_tree(const mara::arithmetic_binary_tree_t<ValueType, Rank> topology, std::size_t size)
+template<std::size_t Rank>
+auto mara::build_rank_tree(const mara::arithmetic_binary_tree_t<tree_index_t<Rank>, Rank> topology, std::size_t size)
 {
     auto topo_indexes = topology.indexes();
 
@@ -360,15 +363,17 @@ inline auto mara::get_quad_map(arithmetic_binary_tree_t<std::size_t, 2> rank_tre
 
 
 
-inline auto mara::get_oct_map(mara::arithmetic_binary_tree_t<std::size_t, 3> rank_tree, mara::tree_index_t<3> idx) 
-{
-    std::map<std::string, mara::linked_list_t<std::size_t>> comm_map;
-    comm_map.insert(std::make_pair("east" , mara::get_target_ranks<3>(rank_tree, idx.next_on(0))));
-    comm_map.insert(std::make_pair("west" , mara::get_target_ranks<3>(rank_tree, idx.prev_on(0))));
-    comm_map.insert(std::make_pair("north", mara::get_target_ranks<3>(rank_tree, idx.prev_on(1))));
-    comm_map.insert(std::make_pair("south", mara::get_target_ranks<3>(rank_tree, idx.next_on(1))));
-    comm_map.insert(std::make_pair("up"   , mara::get_target_ranks<3>(rank_tree, idx.next_on(2))));
-    comm_map.insert(std::make_pair("down" , mara::get_target_ranks<3>(rank_tree, idx.prev_on(2))));
+// inline auto mara::get_oct_map(mara::arithmetic_binary_tree_t<std::size_t, 3> rank_tree, mara::tree_index_t<3> idx) 
+// {
+//     std::map<std::string, mara::linked_list_t<std::size_t>> comm_map;
+//     comm_map.insert(std::make_pair("east" , mara::get_target_ranks<3>(rank_tree, idx.next_on(0))));
+//     comm_map.insert(std::make_pair("west" , mara::get_target_ranks<3>(rank_tree, idx.prev_on(0))));
+//     comm_map.insert(std::make_pair("north", mara::get_target_ranks<3>(rank_tree, idx.prev_on(1))));
+//     comm_map.insert(std::make_pair("south", mara::get_target_ranks<3>(rank_tree, idx.next_on(1))));
+//     comm_map.insert(std::make_pair("up"   , mara::get_target_ranks<3>(rank_tree, idx.next_on(2))));
+//     comm_map.insert(std::make_pair("down" , mara::get_target_ranks<3>(rank_tree, idx.prev_on(2))));
 
-    return comm_map;
-}
+//     return comm_map;
+// }
+
+

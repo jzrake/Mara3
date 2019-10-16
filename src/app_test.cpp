@@ -460,7 +460,7 @@ TEST_CASE("communication maps work properly", "[arithmetic_binary_tree, linked_l
     .bifurcate_if([] (auto i) { return i != 2 ; }, [] (auto j) { return mara::iota<4>() + j * 10; })
     .bifurcate_if([] (auto i) { return i == 12; }, [] (auto j) { return mara::iota<4>(); });
 
-    auto rtree = mara::build_rank_tree<std::size_t, 2>(tree, 4);
+    // auto rtree = mara::build_rank_tree<std::size_t, 2>(tree, 4);
 
     // for(auto i : rtree)
     // {
