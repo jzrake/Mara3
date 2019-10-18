@@ -722,9 +722,9 @@ auto euler::simulation_should_continue(const state_t& state)
 euler::solution_t euler::next_solution(const state_t& state, const mpi_setup_t& mpi)
 {
     auto s0  = state.solution;
-    auto dt = get_timestep( s0, state.run_config.get_double("cfl") );
+    auto dt = get_timestep(s0, state.run_config.get_double("cfl"));
 
-    switch( state.run_config.get_int("rk_order") )
+    switch (state.run_config.get_int("rk_order"))
     {
         case 1:
         {

@@ -76,16 +76,16 @@ namespace mpi
 
     enum class operation
     {
-        max = MPI_MAX,
-        min = MPI_MIN,
-        sum = MPI_SUM,
-        prod = MPI_PROD,
-        land = MPI_LAND,
-        lor = MPI_LOR,
-        band = MPI_BAND,
-        bor = MPI_BOR,
-        maxloc = MPI_MAXLOC,
-        minloc = MPI_MINLOC,
+        max,
+        min,
+        sum,
+        prod,
+        land,
+        lor,
+        band,
+        bor,
+        maxloc,
+        minloc,
     };
 
     inline auto get_op(operation op)
