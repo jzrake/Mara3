@@ -705,7 +705,7 @@ mara::unit_time<double> get_timestep(const euler::solution_t& s, double cfl)
     // return std::min(min_dx, min_dy) / v_max * cfl;
 
     double local_dt = 0.01;
-    double global_dt = mpi::comm_world().all_reduce(local_dt, mpi::operation::min);
+    double global_dt = local_dt; //mpi::comm_world().all_reduce(local_dt, mpi::operation::min);
 
     return mara::make_time(global_dt);
 }
@@ -774,8 +774,11 @@ int main(int argc, const char* argv[])
     auto comm        = mpi::comm_world();
 
 
-    if( mpi::is_master())
+    if (mpi::is_master())
+    {
         mara::pretty_print(std::cout, "config", run_config);
+    }
+
 
     // write initial state to a file
     //=========================================================================

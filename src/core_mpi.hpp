@@ -87,6 +87,23 @@ namespace mpi
         maxloc = MPI_MAXLOC,
         minloc = MPI_MINLOC,
     };
+
+    inline auto get_op(operation op)
+    {
+        switch (op)
+        {
+            case operation::max:    return MPI_MAX;
+            case operation::min:    return MPI_MIN;
+            case operation::sum:    return MPI_SUM;
+            case operation::prod:   return MPI_PROD;
+            case operation::land:   return MPI_LAND;
+            case operation::lor:    return MPI_LOR;
+            case operation::band:   return MPI_BAND;
+            case operation::bor:    return MPI_BOR;
+            case operation::maxloc: return MPI_MAXLOC;
+            case operation::minloc: return MPI_MINLOC;
+        }
+    }
 }
 
 // template <> int mpi::detail::make_datatype_for<char>  (const char&)   { return MPI_CHAR; }
@@ -875,10 +892,10 @@ public:
     }
 
 
-    double all_reduce(double local_value, operation mpi_operation)
+    double all_reduce(double local_value, operation op)
     {
         double result_value;
-        MPI_Allreduce(&local_value, &result_value, 1, MPI_DOUBLE, static_cast<int>(mpi_operation), comm);
+        MPI_Allreduce(&local_value, &result_value, 1, MPI_DOUBLE, get_op(op), comm);
         return result_value;
     }
 
