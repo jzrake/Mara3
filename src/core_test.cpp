@@ -464,18 +464,4 @@ TEST_CASE("tree iterator works as expected", "[arithmetic_binary_tree]")
     }
 }
 
-// TEST_CASE("array routines work as expected", "[array_t]")
-// {
-//     SECTION("testing the sort method")
-//     {
-//         auto a = nd::arange(6);
-//         auto b = nd::to_vector<int>(a);
-//         // std::vector<int> v{0,5,1,2,4,3};
-//         // auto b = nd::make_array_from(v);
-//         // // auto c = b | nd::sort;
-//         // auto c = nd::sort(b);
-//     }
-// }
-
-
 #endif // MARA_COMPILE_SUBPROGRAM_TEST

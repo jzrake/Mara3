@@ -380,15 +380,48 @@ auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_se
 {
     using message_type_t = std::pair<mara::tree_index_t<2>, nd::shared_array<mara::iso2d::primitive_t, 2>>;
 
-
     auto comm       = mpi_setup.comm;
     auto rank_tree  = mpi_setup.decomposition;
     auto neigh_tree = mpi_setup.neighbors;
     auto my_rank    = comm.rank();
 
 
+
+    // 1. indexes_of_nonlocal_blocks : (rank, mpi_setup) -> what it sounds like
+    // 2. filter                     : (iterable, predicate) -> std::vector
+    // 3. block_is_owned_by          : (rank, mpi_setup) -> (rank -> bool)
+
+
+
+    // auto indexes_that_need_fetching = indexes_of_nonlocal_blocks(block_tree);   
+    // auto indexes_needed_by_each_proc = comm.all_gather(indexes_that_need_fetching);
+
+    // for (auto rank : filter(nd::arange(comm.size()), [rank=comm.rank()] (auto r) { return r != rank; }))
+    // {
+    //     for (auto i : filter(indexes_needed_by_each_proc, block_is_owned_by(rank, mpi_setup)))
+    //     {
+    //         auto message = mara::dumps(std::pair(i, block_tree.at(i)));
+    //         requests.push_back(comm.isend(message, rank, 0));
+    //     }
+    // }
+
+    // auto full_tree = block_tree;
+
+    // for (auto index : index_vector)
+    // {
+    //     auto [idx, block] = mara::loads<message_type_t>(comm.recv(rank_tree.at(index), 0));
+    //     full_tree = full_tree.insert(idx, block);
+    // }
+
+    // return full_tree;
+
+
+
+
+
     // 1. Accumulate all the indexes I need to fill my block_tree
     std::vector<mara::tree_index_t<2>> index_vector;
+
 
     for (auto [idx, rank] : rank_tree.pair_indexes())
     {
@@ -414,24 +447,19 @@ auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_se
         }
     }
 
+
     // 1a. Keep only unique indexes
-    std::vector<mara::tree_index_t<2>>::iterator it;
-    it = std::unique(index_vector.begin(), index_vector.end());
-    index_vector.resize(distance(index_vector.begin(), it));
+    index_vector.erase(std::unique(index_vector.begin(), index_vector.end()), index_vector.end());
 
 
     // 2. All_gather this vector of indexes
     auto rank_needs = comm.all_gather(index_vector);
 
-    if (rank_needs.size() != comm.size())
-    {
-        throw std::logic_error("vector all_gather made wrong size vector");
-    }
-
 
     // 3. Look through ragged_vector of indeces for requests from me
     //        -> do these isends and keep the request around
     std::vector<mpi::Request> requests;
+
     for (std::size_t rank=0; rank < comm.size(); ++rank)
     {
         if (rank != my_rank)
@@ -440,13 +468,13 @@ auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_se
             {
                 if (rank_tree.at(index) == my_rank)
                 {
-                    //auto block_s = mara::dumps(block_tree.at(index));
                     auto block_pair_s = mara::dumps(std::pair(index, block_tree.at(index)));
                     requests.push_back(comm.isend(block_pair_s, rank, 0));
                 }
             }
         }
     }
+
 
     // 3a. Make sure all sends  have been issued
     comm.barrier();
@@ -455,22 +483,19 @@ auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_se
     // 4. Look through my vector, get rank that owns that index, post
     //    recv's, and put them in full_tree
     auto full_tree = block_tree;
-    for(auto index : index_vector)
+
+    for (auto index : index_vector)
     {
-        // auto block = mara::loads(comm.recv(rank_tree.at(index), 0));
-        // full_tree  = full_tree.insert(index, block);
         auto [idx, block] = mara::loads<message_type_t>(comm.recv(rank_tree.at(index), 0));
         full_tree = full_tree.insert(idx, block);
     }
 
+
     // 4a. Make sure all send requests were completed
-    // for(std::size_t r = 0; r < requests.size(); ++r)
-    // {
-    //     if (! requests[r].is_ready())
-    //     {
-    //         throw std::logic_error("A recieve request was not matched with its expected send...");
-    //     }
-    // }
+    for (std::size_t r = 0; r < requests.size(); ++r)
+        if (! requests[r].is_ready())
+            throw std::logic_error("A receive request was not matched with its expected send...");
+
 
     // 5. Return full_tree
     return full_tree.map([] (auto b) { return b.shared(); });

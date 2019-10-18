@@ -384,12 +384,12 @@ struct mara::linked_list_t
      * 
      * @return    A list
      */
-    const linked_list_t front_half() const
+    linked_list_t front_half() const
     {
         auto iter = begin();
+        auto temp = linked_list_t<value_type>();
 
-        linked_list_t<value_type> temp;
-        for(std::size_t n = 0; n < size() / 2; n++)
+        for (std::size_t n = 0; n < size() / 2; n++)
         {
             temp = temp.prepend(*iter);
             ++iter;
@@ -405,11 +405,11 @@ struct mara::linked_list_t
      * 
      * @return    A list
      */
-    const linked_list_t back_half() const
+    linked_list_t back_half() const
     {
         auto iter = begin();
 
-        for(std::size_t n = 0; n < size() / 2; n++)
+        for (std::size_t n = 0; n < size() / 2; n++)
         {
             ++iter;
         }
@@ -427,52 +427,22 @@ struct mara::linked_list_t
      *    
      * @return    A sorted list
      */
-    const linked_list_t sorted_merge(const linked_list_t other, bool (*cmp)(value_type, value_type)) const
+    template<typename ComparatorType>
+    linked_list_t sorted_merge(const linked_list_t& other, ComparatorType cmp) const
     {
-        auto result = linked_list_t<value_type>();
-
         if (empty())
         {
             return other;
         }
-        else if (other.empty())
+        if (other.empty())
         {
             return *this;
         }
-        else if (cmp(head(), other.head()))
+        if (cmp(head(), other.head()))
         {
-            auto temp = result.prepend(head()); 
-            result = temp.concat(tail().sorted_merge(other, cmp));
+            return linked_list_t{}.prepend(head()).concat(tail().sorted_merge(other, cmp));
         }
-        else
-        {
-            auto temp = result.prepend(other.head());
-            result = temp.concat(other.tail().sorted_merge(*this, cmp));
-        }
-        return result;
-    }
-
-
-
-
-    /**
-     * @brief      Basic function to sort values in ascending order
-     * 
-     * @return     A sorted list
-     */
-    const linked_list_t sort() const
-    {
-        if (size() <= 1)
-        {
-            return *this;
-        }
-        
-        //Split in half and sort
-        auto A = front_half().sort();
-        auto B =  back_half().sort();
-
-        //Stitch together sorted lists
-        return A.sorted_merge(B, [] (auto x, auto y) { return x < y; });
+        return linked_list_t{}.prepend(other.head()).concat(other.tail().sorted_merge(*this, cmp));
     }
 
 
@@ -486,9 +456,10 @@ struct mara::linked_list_t
      *
      * @return    The sorted list
      */
-    const linked_list_t sort(bool (*cmp)(value_type, value_type)) const
+    template<typename ComparatorType>
+    linked_list_t sort(ComparatorType cmp) const
     {
-        if(size() <= 1)
+        if (size() <= 1)
         {
             return *this;
         }
@@ -501,18 +472,32 @@ struct mara::linked_list_t
 
 
 
+
+    /**
+     * @brief      Basic function to sort values in ascending order
+     * 
+     * @return     A sorted list
+     */
+    linked_list_t sort() const
+    {
+        return sort([] (auto x, auto y) { return x < y; });
+    }
+
+
+
+
     /**
      * @brief     Function to create a list of all unique values in a given list
      * 
      * @return    A sorted list of unique values
      */
-    const linked_list_t unique() const
+    linked_list_t unique() const
     {
         auto sorted = sort();
         auto prev   = sorted.head();
         auto result = linked_list_t<value_type>();
 
-        for(auto i = sorted.begin(); i != sorted.end(); ++i)
+        for (auto i = sorted.begin(); i != sorted.end(); ++i)
         {
             if (prev != *i || i == sorted.begin())
             {
@@ -522,8 +507,6 @@ struct mara::linked_list_t
         }
         return result.reverse();
     }
-    
-    //=========================================================================
 
 
 
