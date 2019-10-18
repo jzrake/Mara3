@@ -40,20 +40,23 @@
 namespace mara
 {
     template<std::size_t Rank>
+    using tree_index_predicate_t = std::function<bool(tree_index_t<Rank>)>;
+
+    template<std::size_t Rank>
     std::string format_tree_index(const tree_index_t<Rank>& index);
 
     template<std::size_t Rank>
     tree_index_t<Rank> read_tree_index(std::string str);
 
     template<typename ValueType, std::size_t Rank>
-    void read_tree(h5::Group&& group, arithmetic_binary_tree_t<ValueType, Rank>& tree);
+    void read_tree(h5::Group&& group, arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_predicate_t<Rank> filter=nullptr);
     template<typename ValueType, std::size_t Rank>
-    void read(h5::Group& group, std::string name, arithmetic_binary_tree_t<ValueType, Rank>& tree);
+    void read(h5::Group& group, std::string name, arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_predicate_t<Rank> filter=nullptr);
 
     template<typename ValueType, std::size_t Rank>
-    void write_tree(h5::Group&& group, const arithmetic_binary_tree_t<ValueType, Rank>& tree);
+    void write_tree(h5::Group&& group, const arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_predicate_t<Rank> filter=nullptr);
     template<typename ValueType, std::size_t Rank>
-    void write(h5::Group& group, std::string name, const arithmetic_binary_tree_t<ValueType, Rank>& tree);
+    void write(h5::Group& group, std::string name, const arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_predicate_t<Rank> filter=nullptr);
 }
 
 
@@ -128,24 +131,31 @@ mara::tree_index_t<Rank> mara::read_tree_index(std::string str)
  *
  * @param      group      The group to read from
  * @param      tree       The tree to modify
+ * @param[in]  filter     The filter (no filter is applied if this argument is
+ *                        omitted)
  *
  * @tparam     ValueType  The tree's value type
  * @tparam     Rank       The rank of the tree
  */
 template<typename ValueType, std::size_t Rank>
-void mara::read_tree(h5::Group&& group, arithmetic_binary_tree_t<ValueType, Rank>& tree)
+void mara::read_tree(h5::Group&& group, arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_predicate_t<Rank> filter)
 {
     for (auto dataset : group)
     {
-        auto value = group.read<ValueType>(dataset);
-        tree = std::move(tree).insert(mara::read_tree_index<2>(dataset), value);
+        auto index = mara::read_tree_index<Rank>(dataset);
+
+        if (! filter || filter(index))
+        {
+            auto value = group.read<ValueType>(dataset);
+            tree = std::move(tree).insert(index, value);
+        }
     }
 }
 
 template<typename ValueType, std::size_t Rank>
-void mara::read(h5::Group& group, std::string name, arithmetic_binary_tree_t<ValueType, Rank>& tree)
+void mara::read(h5::Group& group, std::string name, arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_predicate_t<Rank> filter)
 {
-    read_tree(group.open_group(name), tree);
+    read_tree(group.open_group(name), tree, filter);
 }
 
 
@@ -164,17 +174,21 @@ void mara::read(h5::Group& group, std::string name, arithmetic_binary_tree_t<Val
  *             Traversing deeply nested HDF5 files can be annoying, and slow.
  */
 template<typename ValueType, std::size_t Rank>
-void mara::write_tree(h5::Group&& group, const arithmetic_binary_tree_t<ValueType, Rank>& tree)
+void mara::write_tree(h5::Group&& group, const arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_predicate_t<Rank> filter)
 {
-    tree.indexes().pair(tree).sink([&group] (auto&& index_and_value)
+    tree.indexes().pair(tree).sink([&group, filter] (auto&& index_and_value)
     {
         auto [index, value] = index_and_value;
-        group.write(format_tree_index(index), value);
+
+        if (! filter || filter(index))
+        {
+            group.write(format_tree_index(index), value);
+        }
     });
 }
 
 template<typename ValueType, std::size_t Rank>
-void mara::write(h5::Group& group, std::string name, const arithmetic_binary_tree_t<ValueType, Rank>& tree)
+void mara::write(h5::Group& group, std::string name, const arithmetic_binary_tree_t<ValueType, Rank>& tree, tree_index_predicate_t<Rank> filter)
 {
-    write_tree(group.require_group(name), tree);
+    write_tree(group.require_group(name), tree, filter);
 }
