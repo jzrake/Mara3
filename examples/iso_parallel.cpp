@@ -385,7 +385,7 @@ auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_se
     auto rank_tree  = mpi_setup.decomposition;
     auto neigh_tree = mpi_setup.neighbors;
     auto my_rank    = comm.rank();
-    
+
 
     // 1. Accumulate all the indexes I need to fill my block_tree
     std::vector<mara::tree_index_t<2>> index_vector;
@@ -500,6 +500,7 @@ static auto extend(TreeType tree, std::size_t axis, std::size_t guard_count)
         return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis) | nd::to_shared();
     };
 };
+
 
 
 
@@ -690,12 +691,6 @@ mara::unit_time<double> get_timestep(const euler::solution_t& s, double cfl)
 
     // auto my_max_dt = lmin / vmax * cfl;
 
-    // NEED TO WRITE AN MPI_REDUCE/ALL_REDUCE
-    //
-    // global_dt = mpi_reduce(my_max_dt, std::min());
-    // 
-    // return global_dt;
-
 
     // auto v      = s.vertices;
     // auto min_dx = v.map([] (auto v) { return v | component<0>() | nd::difference_on_axis(0) | nd::min(); }).min();
@@ -708,8 +703,11 @@ mara::unit_time<double> get_timestep(const euler::solution_t& s, double cfl)
     // auto v_max     = velocity.map([] (auto v) { return std::max(v | nd::max(), mara::make_velocity(1.0)); }).max();
 
     // return std::min(min_dx, min_dy) / v_max * cfl;
-    
-    return mara::make_time(0.01);
+
+    double local_dt = 0.01;
+    double global_dt = mpi::comm_world().all_reduce(local_dt, mpi::operation::min);
+
+    return mara::make_time(global_dt);
 }
 
 

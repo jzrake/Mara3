@@ -74,6 +74,19 @@ namespace mpi
         return null;
     }
 
+    enum class operation
+    {
+        max = MPI_MAX,
+        min = MPI_MIN,
+        sum = MPI_SUM,
+        prod = MPI_PROD,
+        land = MPI_LAND,
+        lor = MPI_LOR,
+        band = MPI_BAND,
+        bor = MPI_BOR,
+        maxloc = MPI_MAXLOC,
+        minloc = MPI_MINLOC,
+    };
 }
 
 // template <> int mpi::detail::make_datatype_for<char>  (const char&)   { return MPI_CHAR; }
@@ -862,6 +875,14 @@ public:
     }
 
 
+    double all_reduce(double local_value, operation mpi_operation)
+    {
+        double result_value;
+        MPI_Allreduce(&local_value, &result_value, 1, MPI_DOUBLE, static_cast<int>(mpi_operation), comm);
+        return result_value;
+    }
+
+
 private:
     // ========================================================================
     friend Communicator comm_world();
@@ -878,4 +899,3 @@ mpi::Communicator mpi::comm_world()
     MPI_Comm_dup(MPI_COMM_WORLD, &res.comm);
     return res;
 }
-
