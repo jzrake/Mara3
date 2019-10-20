@@ -52,11 +52,9 @@ namespace mara
     template<std::size_t Rank>
     auto build_rank_tree(mara::arithmetic_binary_tree_t<tree_index_t<Rank>, Rank> topology, std::size_t size);
 
-    template<std::size_t Rank>
-    auto get_target_ranks(mara::arithmetic_binary_tree_t<std::size_t, Rank> rank_tree, mara::tree_index_t<Rank> target);
+    // template<std::size_t Rank>
+    // auto get_target_ranks(mara::arithmetic_binary_tree_t<std::size_t, Rank> rank_tree, mara::tree_index_t<Rank> target);
 
-    inline auto get_quad_map(arithmetic_binary_tree_t<std::size_t, 2> rank_tree, tree_index_t<2> idx);
-    // inline auto get_oct_map (arithmetic_binary_tree_t<std::size_t, 3> rank_tree, tree_index_t<3> idx);
 }
 
 
@@ -316,64 +314,37 @@ auto mara::build_rank_tree(const mara::arithmetic_binary_tree_t<tree_index_t<Ran
  * @note       This function might need to be modified to do coarsening/refinement 
  *             and potentially mpi communications
  */
-template<std::size_t Rank>
-auto mara::get_target_ranks(mara::arithmetic_binary_tree_t<std::size_t, Rank> rank_tree, mara::tree_index_t<Rank> target)
-{
-    auto result = mara::linked_list_t<std::size_t>();
-
-    //if the target index is a leaf in the tree
-    if (rank_tree.contains(target))
-    {
-        return result.prepend(rank_tree.at(target));
-    }
-
-    //if the tree has a leaf at the node above the target index
-    if (rank_tree.contains(target.parent_index()))
-    {
-        return result.prepend(rank_tree.at(target.parent_index()));
-    }
-
-    for(auto i : rank_tree.node_at(target))
-    {
-        result = result.prepend(i);
-    }
-
-    if(result.size() > 4 || result.size() == 0)
-    {
-        throw std::invalid_argument("mara::get_target_ranks (tree has over-refined neighbors");
-    }
-
-    return result.reverse().unique();
-}
-
-
-
-
-inline auto mara::get_quad_map(arithmetic_binary_tree_t<std::size_t, 2> rank_tree, tree_index_t<2> idx) 
-{
-    std::map<std::string, mara::linked_list_t<std::size_t>> comm_map;
-    comm_map.insert(std::make_pair("north", mara::get_target_ranks<2>(rank_tree, idx.prev_on(1))));
-    comm_map.insert(std::make_pair("south", mara::get_target_ranks<2>(rank_tree, idx.next_on(1))));
-    comm_map.insert(std::make_pair("east" , mara::get_target_ranks<2>(rank_tree, idx.next_on(0))));
-    comm_map.insert(std::make_pair("west" , mara::get_target_ranks<2>(rank_tree, idx.prev_on(0))));
-
-    return comm_map;
-}
-
-
-
-
-// inline auto mara::get_oct_map(mara::arithmetic_binary_tree_t<std::size_t, 3> rank_tree, mara::tree_index_t<3> idx) 
+// template<std::size_t Rank>
+// auto mara::get_target_ranks(mara::arithmetic_binary_tree_t<std::size_t, Rank> rank_tree, mara::tree_index_t<Rank> target)
 // {
-//     std::map<std::string, mara::linked_list_t<std::size_t>> comm_map;
-//     comm_map.insert(std::make_pair("east" , mara::get_target_ranks<3>(rank_tree, idx.next_on(0))));
-//     comm_map.insert(std::make_pair("west" , mara::get_target_ranks<3>(rank_tree, idx.prev_on(0))));
-//     comm_map.insert(std::make_pair("north", mara::get_target_ranks<3>(rank_tree, idx.prev_on(1))));
-//     comm_map.insert(std::make_pair("south", mara::get_target_ranks<3>(rank_tree, idx.next_on(1))));
-//     comm_map.insert(std::make_pair("up"   , mara::get_target_ranks<3>(rank_tree, idx.next_on(2))));
-//     comm_map.insert(std::make_pair("down" , mara::get_target_ranks<3>(rank_tree, idx.prev_on(2))));
+//     auto result = mara::linked_list_t<std::size_t>();
 
-//     return comm_map;
+//     //if the target index is a leaf in the tree
+//     if (rank_tree.contains(target))
+//     {
+//         return result.prepend(rank_tree.at(target));
+//     }
+
+//     //if the tree has a leaf at the node above the target index
+//     if (rank_tree.contains(target.parent_index()))
+//     {
+//         return result.prepend(rank_tree.at(target.parent_index()));
+//     }
+
+//     for(auto i : rank_tree.node_at(target))
+//     {
+//         result = result.prepend(i);
+//     }
+
+//     if(result.size() > 4 || result.size() == 0)
+//     {
+//         throw std::invalid_argument("mara::get_target_ranks (tree has over-refined neighbors");
+//     }
+
+//     return result.reverse().unique();
 // }
+
+
+
 
 
