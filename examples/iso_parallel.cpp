@@ -78,7 +78,7 @@ namespace euler
     using primitive_field_t = std::function<mara::iso2d::primitive_t(location_2d_t)>;
 
     using index_tree_t    = mara::arithmetic_binary_tree_t<mara::tree_index_t<2>, 2>;
-    using neighbor_tree_t = mara::arithmetic_binary_tree_t<std::map<std::string, mara::linked_list_t<std::size_t>>, 2>;
+    using neighbor_tree_t = mara::arithmetic_binary_tree_t<mara::linked_list_t<std::size_t>, 2>;
 
     template<typename ArrayValueType>
     using quad_tree_t = mara::arithmetic_binary_tree_t<nd::shared_array<ArrayValueType, 2>, 2>;
@@ -124,7 +124,6 @@ namespace euler
     {
         mpi::Communicator                               comm;
         mara::arithmetic_binary_tree_t<std::size_t, 2>  decomposition;
-        neighbor_tree_t                                 neighbors;
     };
 
 
@@ -348,11 +347,7 @@ euler::mpi_setup_t euler::create_mpi_setup(const mara::config_t& run_config)
     auto comm     = mpi::comm_world();
 
     auto decomposition = mara::build_rank_tree<2>(topology, comm.size());
-    auto neighbors     = decomposition
-                         .indexes()
-                         .map([decomposition] (auto idx) { return mara::get_quad_map(decomposition, idx); });
-
-    return {comm, decomposition, neighbors};
+    return {comm, decomposition};
 }
 
 
@@ -375,6 +370,120 @@ euler::state_t euler::create_state(const mara::config_t& run_config, const mpi_s
 
 
 //=============================================================================
+
+
+/**
+ * @brief   Return a unique vector of all the indexes my process needs in order
+ *          to update all of the blocks that I own
+ */
+auto indexes_of_nonlocal_blocks(const euler::mpi_setup_t& mpi_setup)
+{
+
+    /**
+     * @brief   Gives the index at target, it's parent, or all 4 of its children
+     */
+    auto indexes_at = [] (auto tree, auto target)
+    {
+        // if target is a leaf
+        if (tree.contains(target))
+        {
+            return mara::linked_list_t<mara::tree_index_t<2>>().prepend(target);
+        }
+        // if target.parent_index() is a leaf
+        if (tree.contains(target.parent_index()))
+        {
+            return mara::linked_list_t<mara::tree_index_t<2>>().prepend(target.parent_index());
+        }
+        // else: target is parent to 4 children (unless over-refined)
+        auto result = mara::linked_list_t<mara::tree_index_t<2>>();
+        for(auto i : tree.indexes().node_at(target))
+        {
+            result = result.prepend(i);
+            //Question: Is there a way to identify the 2 that actually border me?
+            //            Instead of returning all 4?
+        }
+        if(result.size() > 4 || result.size() == 0)
+        {
+            throw std::invalid_argument("iso_parallel : get_neighbor_indexes (tree has over-refined neighbors");
+        }
+        return result;
+    };
+
+
+    /**
+     * @brief   Get all neighbor indexes to a given index
+     */
+    auto get_neighbors_at = [indexes_at] (auto tree, auto idx)
+    {
+        return  indexes_at(tree, idx.next_on(0))
+        .concat(indexes_at(tree, idx.prev_on(0)))
+        .concat(indexes_at(tree, idx.next_on(1)))
+        .concat(indexes_at(tree, idx.prev_on(1)));
+    };
+
+
+    //=========================================================================
+    auto rank_tree = mpi_setup.decomposition;
+    auto my_rank   = mpi_setup.comm.rank();
+
+    auto indexes = mara::linked_list_t<mara::tree_index_t<2>>();
+    for (auto ir : rank_tree.pair_indexes())
+    {
+        auto idx  = ir.first;
+        auto rank = ir.second;
+
+        if (rank != my_rank)
+        {
+            continue;
+        }
+
+        indexes = indexes.concat(get_neighbors_at(rank_tree, idx));
+    }
+
+    std::vector<mara::tree_index_t<2>> unique_indexes;
+    for(auto idx : indexes.unique())
+    {
+        unique_indexes.push_back(idx);
+    }
+
+    return unique_indexes;
+}
+
+
+/**
+ * @brief  Takes an iterable object and a predicate (object) -> bool.
+ *         Returns a vector of values for which predicate was satisfied.
+ *
+ * @note   Iterable and Predicate type can be deduced but the ValueType
+ *         in the iterable container must be provided
+ */
+template<typename ValueType, typename Iterable, typename Predicate>
+auto filter(Iterable iterable_object, Predicate predicate)
+{
+    std::vector<ValueType> result;
+
+    for(auto i : iterable_object)
+    {
+        if (predicate(i))
+        {
+            result.push_back(i);
+        }
+    }
+    return result;
+}
+
+
+auto block_is_owned_by(std::size_t rank, const euler::mpi_setup_t& mpi_setup)
+{
+    auto rank_tree = mpi_setup.decomposition;
+
+    return [rank, rank_tree] (auto index)
+    {
+        return rank_tree.at(index) == rank;
+    };
+}
+
+
 template<typename ValueType>
 auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_setup_t& mpi_setup)
 {
@@ -382,131 +491,47 @@ auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_se
 
     auto comm       = mpi_setup.comm;
     auto rank_tree  = mpi_setup.decomposition;
-    auto neigh_tree = mpi_setup.neighbors;
-    auto my_rank    = comm.rank();
 
 
-
-    // 1. indexes_of_nonlocal_blocks : (rank, mpi_setup) -> what it sounds like
-    // 2. filter                     : (iterable, predicate) -> std::vector
-    // 3. block_is_owned_by          : (rank, mpi_setup) -> (rank -> bool)
-
+    //=========================================================================
+    auto indexes_that_need_fetching  = indexes_of_nonlocal_blocks(mpi_setup);   
+    auto indexes_needed_by_each_proc = comm.all_gather(indexes_that_need_fetching);
 
 
-    // auto indexes_that_need_fetching = indexes_of_nonlocal_blocks(block_tree);   
-    // auto indexes_needed_by_each_proc = comm.all_gather(indexes_that_need_fetching);
-
-    // for (auto rank : filter(nd::arange(comm.size()), [rank=comm.rank()] (auto r) { return r != rank; }))
-    // {
-    //     for (auto i : filter(indexes_needed_by_each_proc, block_is_owned_by(rank, mpi_setup)))
-    //     {
-    //         auto message = mara::dumps(std::pair(i, block_tree.at(i)));
-    //         requests.push_back(comm.isend(message, rank, 0));
-    //     }
-    // }
-
-    // auto full_tree = block_tree;
-
-    // for (auto index : index_vector)
-    // {
-    //     auto [idx, block] = mara::loads<message_type_t>(comm.recv(rank_tree.at(index), 0));
-    //     full_tree = full_tree.insert(idx, block);
-    // }
-
-    // return full_tree;
-
-
-
-
-
-    // 1. Accumulate all the indexes I need to fill my block_tree
-    std::vector<mara::tree_index_t<2>> index_vector;
-
-
-    for (auto [idx, rank] : rank_tree.pair_indexes())
-    {
-        if (rank == my_rank)
-        {
-            auto map   = neigh_tree.at(idx);
-            auto north = map["north"].head();
-            auto south = map["south"].head();
-            auto east  = map[ "east"].head();
-            auto west  = map[ "west"].head();
-
-            if (north != my_rank)
-                index_vector.push_back(idx.prev_on(1));
-
-            if (south != my_rank)
-                index_vector.push_back(idx.next_on(1));
-
-            if (east != my_rank)
-                index_vector.push_back(idx.next_on(0));
-
-            if (west != my_rank)
-                index_vector.push_back(idx.prev_on(0));
-        }
-    }
-
-
-    // 1a. Keep only unique indexes
-    index_vector.erase(std::unique(index_vector.begin(), index_vector.end()), index_vector.end());
-
-
-    // 2. All_gather this vector of indexes
-    auto rank_needs = comm.all_gather(index_vector);
-
-
-    // 3. Look through ragged_vector of indeces for requests from me
-    //        -> do these isends and keep the request around
+    //=========================================================================
     std::vector<mpi::Request> requests;
-
-    for (std::size_t rank=0; rank < comm.size(); ++rank)
+    for (auto rank : filter<std::size_t>(nd::arange(comm.size()), [rank=comm.rank()] (auto r) { return r != rank; }))
     {
-        if (rank != my_rank)
+        for (auto i : filter<mara::tree_index_t<2>>(indexes_needed_by_each_proc[rank], block_is_owned_by(rank, mpi_setup)))
         {
-            for (auto index : rank_needs[rank])
-            {
-                if (rank_tree.at(index) == my_rank)
-                {
-                    auto block_pair_s = mara::dumps(std::pair(index, block_tree.at(index)));
-                    requests.push_back(comm.isend(block_pair_s, rank, 0));
-                }
-            }
+            auto message = mara::dumps(std::pair(i, block_tree.at(i)));
+            requests.push_back(comm.isend(message, rank, 0));
         }
     }
 
 
-    // 3a. Make sure all sends  have been issued
-    comm.barrier();
-
-
-    // 4. Look through my vector, get rank that owns that index, post
-    //    recv's, and put them in full_tree
+    //=========================================================================
     auto full_tree = block_tree;
-
-    for (auto index : index_vector)
+    for (auto index : indexes_that_need_fetching)
     {
         auto [idx, block] = mara::loads<message_type_t>(comm.recv(rank_tree.at(index), 0));
         full_tree = full_tree.insert(idx, block);
     }
 
 
-    // 4a. Make sure all send requests were completed
+    //=========================================================================
     for (std::size_t r = 0; r < requests.size(); ++r)
         if (! requests[r].is_ready())
-            throw std::logic_error("A receive request was not matched with its expected send...");
+            throw std::logic_error("A send request was not completed");
 
-
-    // 5. Return full_tree
-    return full_tree.map([] (auto b) { return b.shared(); });
+    return full_tree;
 }
 
 
 
-
 /**
- * @note      tree should be the tree of prims after it has been filled with info
- *            from neighboring processes
+ * @note   Tree should be the tree of prims after it has been filled with info
+ *         from neighboring processes
  */
 template<typename TreeType>
 static auto extend(TreeType tree, std::size_t axis, std::size_t guard_count)
@@ -901,3 +926,103 @@ int main(int argc, const char* argv[])
 
     return 0;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// template<typename ValueType>
+// auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_setup_t& mpi_setup)
+// {
+//     // 1. Accumulate all the indexes I need to fill my block_tree
+//     std::vector<mara::tree_index_t<2>> index_vector;
+
+
+//     for (auto [idx, rank] : rank_tree.pair_indexes())
+//     {
+//         if (rank == my_rank)
+//         {
+//             auto map   = neigh_tree.at(idx);
+//             auto north = map["north"].head();
+//             auto south = map["south"].head();
+//             auto east  = map[ "east"].head();
+//             auto west  = map[ "west"].head();
+
+//             if (north != my_rank)
+//                 index_vector.push_back(idx.prev_on(1));
+
+//             if (south != my_rank)
+//                 index_vector.push_back(idx.next_on(1));
+
+//             if (east != my_rank)
+//                 index_vector.push_back(idx.next_on(0));
+
+//             if (west != my_rank)
+//                 index_vector.push_back(idx.prev_on(0));
+//         }
+//     }
+
+
+//     // 1a. Keep only unique indexes
+//     index_vector.erase(std::unique(index_vector.begin(), index_vector.end()), index_vector.end());
+
+
+//     // 2. All_gather this vector of indexes
+//     auto rank_needs = comm.all_gather(index_vector);
+
+
+//     // 3. Look through ragged_vector of indeces for requests from me
+//     //        -> do these isends and keep the request around
+//     std::vector<mpi::Request> requests;
+
+//     for (std::size_t rank=0; rank < comm.size(); ++rank)
+//     {
+//         if (rank != my_rank)
+//         {
+//             for (auto index : rank_needs[rank])
+//             {
+//                 if (rank_tree.at(index) == my_rank)
+//                 {
+//                     auto block_pair_s = mara::dumps(std::pair(index, block_tree.at(index)));
+//                     requests.push_back(comm.isend(block_pair_s, rank, 0));
+//                 }
+//             }
+//         }
+//     }
+
+
+//     // 4. Look through my vector, get rank that owns that index, post
+//     //    recv's, and put them in full_tree
+//     auto full_tree = block_tree;
+
+//     for (auto index : index_vector)
+//     {
+//         auto [idx, block] = mara::loads<message_type_t>(comm.recv(rank_tree.at(index), 0));
+//         full_tree = full_tree.insert(idx, block);
+//     }
+
+
+//     // 4a. Make sure all send requests were completed
+//     for (std::size_t r = 0; r < requests.size(); ++r)
+//         if (! requests[r].is_ready())
+//             throw std::logic_error("A receive request was not matched with its expected send...");
+
+
+//     // 5. Return full_tree
+//     return full_tree.map([] (auto b) { return b.shared(); });
+// }
