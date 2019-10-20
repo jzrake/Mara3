@@ -234,6 +234,13 @@ TEST_CASE("linked lists work as expected", "[linked_list]")
         auto A = mara::linked_list_t<int>{1,3,5,3,7,2,8,9,3,5,2,1,1};
         auto B = mara::linked_list_t<int>{1,2,3,5,7,8,9};
         REQUIRE(A.unique() == B);
+
+
+        auto a = mara::tree_index_t<3>{3, {3,0,5}};
+        auto b = mara::tree_index_t<3>{3, {3,1,5}};
+        auto c = mara::tree_index_t<3>{2, {2,0,5}};
+        auto L = mara::linked_list_t<mara::tree_index_t<3>>{a, b, b, c, c, c};
+        REQUIRE(L.unique() == mara::linked_list_t<mara::tree_index_t<3>>{c, a, b});
     }
 }
 
