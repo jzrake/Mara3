@@ -308,8 +308,16 @@ struct mara::tree_index_t
     //=========================================================================
     bool operator==(const tree_index_t& other) const { return level == other.level && (coordinates == other.coordinates).all(); }
     bool operator!=(const tree_index_t& other) const { return level != other.level || (coordinates != other.coordinates).any(); }
-
-
+    bool operator< (const tree_index_t& other) const 
+    { 
+        return level  < other.level || (level == other.level && sibling_index() * parent_index().sibling_index() * child_count() < 
+                                                 other.sibling_index() * other.parent_index().sibling_index() * child_count());
+    }
+    bool operator> (const tree_index_t& other) const 
+    { 
+        return level  > other.level || (level == other.level && sibling_index() * parent_index().sibling_index() * child_count() > 
+                                                 other.sibling_index() * other.parent_index().sibling_index() * child_count()); 
+    }
 
 
     //=========================================================================

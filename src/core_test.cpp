@@ -265,6 +265,13 @@ TEST_CASE("binary tree indexes methods work correctly", "[tree_index]")
     REQUIRE((mara::tree_index_t<3>{3, {3, 0, 5}}).prev_on(1) == mara::tree_index_t<3>{3, {3, 7, 5}});
     REQUIRE((mara::tree_index_t<3>{3, {4, 7, 5}}).next_on(1) == mara::tree_index_t<3>{3, {4, 0, 5}});
 
+
+    REQUIRE(mara::tree_index_t<3>{2, {3, 0, 5}} < mara::tree_index_t<3>{3, {3, 0, 5}});
+    REQUIRE(mara::tree_index_t<3>{3, {3, 0, 5}} < mara::tree_index_t<3>{3, {3, 1, 5}});
+    REQUIRE(mara::tree_index_t<3>{3, {3, 0, 5}} > mara::tree_index_t<3>{2, {3, 0, 5}});
+    REQUIRE(mara::tree_index_t<3>{3, {3, 1, 5}} > mara::tree_index_t<3>{3, {3, 0, 5}});
+
+
     REQUIRE(mara::tree_index_t<3>().is_root());
     REQUIRE(mara::tree_index_t<3>().is_last_child());
     REQUIRE(mara::tree_index_t<3>{1, {1, 1, 1}}.is_last_child());
