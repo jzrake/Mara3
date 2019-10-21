@@ -157,7 +157,6 @@ namespace euler
 
     template<typename ValueType>
     auto mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_setup_t& mpi_setup);
-    // auto mpi_fill_tree(quad_tree_t<mara::iso2d::primitive_t> block_tree, euler::mpi_setup_t& mpi_setup);
 
 }
 
@@ -369,7 +368,55 @@ euler::state_t euler::create_state(const mara::config_t& run_config, const mpi_s
 }
 
 
-//=============================================================================
+
+
+/**
+ * @brief      Takes an iterable object and a predicate (object) -> bool.
+ *             Returns a vector of values for which predicate was satisfied.
+ */
+template<typename Iterable, typename Predicate>
+auto filter(const Iterable& container, Predicate predicate)
+{
+    using value_type = std::decay_t<decltype(*container.begin())>;
+
+    std::vector<value_type> result;
+
+    for (auto i : container)
+        if (predicate(i))
+            result.push_back(i);
+
+    return result;
+}
+
+template<typename Iterable, typename Predicate>
+auto remove_if(const Iterable& container, Predicate predicate)
+{
+    return filter(container, [predicate] (auto v) { return ! predicate(v); });
+}
+
+template<typename Iterable>
+auto linked_list_from(const Iterable& container)
+{
+    using value_type = std::decay_t<decltype(*container.begin())>;
+    return mara::linked_list_t<value_type>(container.begin(), container.end());
+}
+
+
+
+
+/**
+ * @return   Returns a boolean function (index) -> bool that gives
+ *           true if my process owns the index
+ */
+auto block_is_owned_by(std::size_t rank, const euler::mpi_setup_t& mpi_setup)
+{
+    return [rank, rank_tree = mpi_setup.decomposition] (auto index)
+    {
+        return rank_tree.at(index) == rank;
+    };
+}
+
+
 
 
 /**
@@ -378,35 +425,18 @@ euler::state_t euler::create_state(const mara::config_t& run_config, const mpi_s
  */
 auto indexes_of_nonlocal_blocks(const euler::mpi_setup_t& mpi_setup)
 {
-
     /**
      * @brief   Gives the index at target, it's parent, or all 4 of its children
      */
     auto indexes_at = [] (auto tree, auto target)
     {
-        // if target is a leaf
         if (tree.contains(target))
-        {
             return mara::linked_list_t<mara::tree_index_t<2>>().prepend(target);
-        }
-        // if target.parent_index() is a leaf
+
         if (tree.contains(target.parent_index()))
-        {
             return mara::linked_list_t<mara::tree_index_t<2>>().prepend(target.parent_index());
-        }
-        // else: target is parent to 4 children (unless over-refined)
-        auto result = mara::linked_list_t<mara::tree_index_t<2>>();
-        for(auto i : tree.indexes().node_at(target))
-        {
-            result = result.prepend(i);
-            //Question: Is there a way to identify the 2 that actually border me?
-            //            Instead of returning all 4?
-        }
-        if(result.size() > 4 || result.size() == 0)
-        {
-            throw std::invalid_argument("iso_parallel : get_neighbor_indexes (tree has over-refined neighbors");
-        }
-        return result;
+
+        return linked_list_from(tree.indexes().node_at(target));
     };
 
 
@@ -426,117 +456,57 @@ auto indexes_of_nonlocal_blocks(const euler::mpi_setup_t& mpi_setup)
     //=========================================================================
     auto rank_tree = mpi_setup.decomposition;
     auto my_rank   = mpi_setup.comm.rank();
+    auto indexes   = mara::linked_list_t<mara::tree_index_t<2>>();
 
-    auto indexes = mara::linked_list_t<mara::tree_index_t<2>>();
     for (auto ir : rank_tree.pair_indexes())
     {
         auto idx  = ir.first;
         auto rank = ir.second;
 
         if (rank != my_rank)
-        {
             continue;
-        }
 
         indexes = indexes.concat(get_neighbors_at(rank_tree, idx));
     }
-
-    std::vector<mara::tree_index_t<2>> unique_indexes;
-    for(auto idx : indexes.unique())
-    {
-        if (rank_tree.at(idx) != my_rank)
-            unique_indexes.push_back(idx);
-    }
-
-    return unique_indexes;
+    return remove_if(indexes.unique(), block_is_owned_by(my_rank, mpi_setup));
 }
 
 
-/**
- * @brief  Takes an iterable object and a predicate (object) -> bool.
- *         Returns a vector of values for which predicate was satisfied.
- *
- * @note   Iterable and Predicate type can be deduced but the ValueType
- *         in the iterable container must be provided
- */
-template<typename ValueType, typename Iterable, typename Predicate>
-auto filter(Iterable iterable_object, Predicate predicate)
-{
-    std::vector<ValueType> result;
-
-    for(auto i : iterable_object)
-    {
-        if (predicate(i))
-        {
-            result.push_back(i);
-        }
-    }
-    return result;
-}
-
-
-
-/**
- * @return   Returns a boolean function (index) -> bool that gives
- *           true if my process owns the index
- */
-auto block_is_owned_by(std::size_t rank, const euler::mpi_setup_t& mpi_setup)
-{
-    auto rank_tree = mpi_setup.decomposition;
-
-    return [rank, rank_tree] (auto index)
-    {
-        return rank_tree.at(index) == rank;
-    };
-}
 
 
 template<typename ValueType>
 auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_setup_t& mpi_setup)
 {
-
     using message_type_t = std::pair<mara::tree_index_t<2>, nd::shared_array<mara::iso2d::primitive_t, 2>>;
 
 
-    auto comm       = mpi_setup.comm;
-    auto rank_tree  = mpi_setup.decomposition;
-
-
-    //=========================================================================
+    auto comm                        = mpi_setup.comm;
+    auto rank_tree                   = mpi_setup.decomposition;
     auto indexes_that_need_fetching  = indexes_of_nonlocal_blocks(mpi_setup);   
     auto indexes_needed_by_each_proc = comm.all_gather(indexes_that_need_fetching);
+    auto requests                    = std::vector<mpi::Request>();
+    auto full_tree                   = block_tree;
 
 
-    //=========================================================================
-    std::vector<mpi::Request> requests;
-    for (auto rank : filter<std::size_t>(nd::arange(comm.size()), [rank=comm.rank()] (auto r) { return r != rank; }))
-    {
-        for (auto i : filter<mara::tree_index_t<2>>(indexes_needed_by_each_proc[rank], block_is_owned_by(comm.rank(), mpi_setup)))
-        {
-            auto message = mara::dumps(std::pair(i, block_tree.at(i)));
-            requests.push_back(comm.isend(message, rank, 0));
-        }
-    }
+    for (auto rank : filter(nd::arange(comm.size()), [rank = comm.rank()] (auto r) { return r != rank; }))
+        for (auto i : filter(indexes_needed_by_each_proc[rank], block_is_owned_by(comm.rank(), mpi_setup)))
+            requests.push_back(comm.isend(mara::dumps(std::pair(i, block_tree.at(i))), rank, 0));
 
 
-    //=========================================================================
-    auto full_tree = block_tree;
     for (auto index : indexes_that_need_fetching)
     {
         auto [idx, block] = mara::loads<message_type_t>(comm.recv(rank_tree.at(index), 0));
         full_tree = full_tree.insert(idx, block);
     }
 
-    // Need to make sure all processes have completed all of their receives before
-    // moving on. This is not otherwise guaranteed.
+
+    // Need to make sure all processes have completed all of their non-blocking
+    // sends before the requests go out of scope.
     comm.barrier();
 
-
-    //=========================================================================
     for (std::size_t r = 0; r < requests.size(); ++r)
         if (! requests[r].is_ready())
             throw std::logic_error("A send request was not completed");
-
 
     return full_tree;
 }
@@ -660,12 +630,11 @@ euler::solution_t euler::advance(const solution_t& solution, const mpi_setup_t& 
 
     auto cell_areas = solution.vertices.map([] (auto block)
     {
-        if(block.size() == 0)
+        if (block.size() == 0)
         {
-            //return type fo cell_areas...
+            // return type of cell_areas...
             return nd::array_t<nd::shared_provider_t<mara::dimensional_value_t<2, 0, 0, double>, 2>>();
         }
-
         auto dx = block | component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
         auto dy = block | component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
         return dx | nd::multiply(dy) | nd::to_shared();
