@@ -422,6 +422,7 @@ auto indexes_of_nonlocal_blocks(const euler::mpi_setup_t& mpi_setup)
     };
 
 
+    // can fix this to make it more logical/efficient but I think it works for now
     //=========================================================================
     auto rank_tree = mpi_setup.decomposition;
     auto my_rank   = mpi_setup.comm.rank();
@@ -443,7 +444,8 @@ auto indexes_of_nonlocal_blocks(const euler::mpi_setup_t& mpi_setup)
     std::vector<mara::tree_index_t<2>> unique_indexes;
     for(auto idx : indexes.unique())
     {
-        unique_indexes.push_back(idx);
+        if (rank_tree.at(idx) != my_rank)
+            unique_indexes.push_back(idx);
     }
 
     return unique_indexes;
@@ -473,6 +475,11 @@ auto filter(Iterable iterable_object, Predicate predicate)
 }
 
 
+
+/**
+ * @return   Returns a boolean function (index) -> bool that gives
+ *           true if my process owns the index
+ */
 auto block_is_owned_by(std::size_t rank, const euler::mpi_setup_t& mpi_setup)
 {
     auto rank_tree = mpi_setup.decomposition;
@@ -487,7 +494,9 @@ auto block_is_owned_by(std::size_t rank, const euler::mpi_setup_t& mpi_setup)
 template<typename ValueType>
 auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_setup_t& mpi_setup)
 {
+
     using message_type_t = std::pair<mara::tree_index_t<2>, nd::shared_array<mara::iso2d::primitive_t, 2>>;
+
 
     auto comm       = mpi_setup.comm;
     auto rank_tree  = mpi_setup.decomposition;
@@ -502,7 +511,7 @@ auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_se
     std::vector<mpi::Request> requests;
     for (auto rank : filter<std::size_t>(nd::arange(comm.size()), [rank=comm.rank()] (auto r) { return r != rank; }))
     {
-        for (auto i : filter<mara::tree_index_t<2>>(indexes_needed_by_each_proc[rank], block_is_owned_by(rank, mpi_setup)))
+        for (auto i : filter<mara::tree_index_t<2>>(indexes_needed_by_each_proc[rank], block_is_owned_by(comm.rank(), mpi_setup)))
         {
             auto message = mara::dumps(std::pair(i, block_tree.at(i)));
             requests.push_back(comm.isend(message, rank, 0));
@@ -518,11 +527,16 @@ auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_se
         full_tree = full_tree.insert(idx, block);
     }
 
+    // Need to make sure all processes have completed all of their receives before
+    // moving on. This is not otherwise guaranteed.
+    comm.barrier();
+
 
     //=========================================================================
     for (std::size_t r = 0; r < requests.size(); ++r)
         if (! requests[r].is_ready())
             throw std::logic_error("A send request was not completed");
+
 
     return full_tree;
 }
@@ -842,7 +856,6 @@ int main(int argc, const char* argv[])
         comm.barrier();
     }
 
-
     while (euler::simulation_should_continue(state))
     {
         state = euler::next_state(state, mpi_setup);
@@ -867,6 +880,9 @@ int main(int argc, const char* argv[])
 
     // auto prim_tree =  state.solution.conserved.map([] (auto Q) { return Q | nd::map(recover_primitive) | nd::to_shared(); });
     // auto full_tree =  euler::mpi_fill_tree(prim_tree, mpi_setup);
+
+    
+
 
 
     // // Output the old and new number of blocks on each process
