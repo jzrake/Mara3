@@ -716,12 +716,6 @@ euler::solution_t euler::advance(const solution_t& solution, const mpi_setup_t& 
 
 mara::unit_time<double> get_timestep(const euler::solution_t& s, double cfl)
 {
-    // 1. get max allowed timestep on each process
-    // 
-    // 2. do communication to get minimum of all processes timesteps
-    // 
-    // 3. return this minimum
-    
 
     auto get_min_spacing  = [] (auto verts)
     {
@@ -756,19 +750,6 @@ mara::unit_time<double> get_timestep(const euler::solution_t& s, double cfl)
     double my_max_dt = (lmin / vmax * cfl).value;
 
 
-    // auto v      = s.vertices;
-    // auto min_dx = v.map([] (auto v) { return v | component<0>() | nd::difference_on_axis(0) | nd::min(); }).min();
-    // auto min_dy = v.map([] (auto v) { return v | component<1>() | nd::difference_on_axis(1) | nd::min(); }).min();
-
-    // auto get_velocity_mag = std::mem_fn(&mara::iso2d::primitive_t::velocity_magnitude);
-
-    // auto primitive = s.conserved.map([] (auto Q) { return Q | nd::map(recover_primitive); });
-    // auto velocity  = primitive.map([get_velocity_mag] (auto W) { return W | nd::map(get_velocity_mag); });
-    // auto v_max     = velocity.map([] (auto v) { return std::max(v | nd::max(), mara::make_velocity(1.0)); }).max();
-
-    // return std::min(min_dx, min_dy) / v_max * cfl;
-
-    // double local_dt  = 0.01;
     double global_dt = mpi::comm_world().all_reduce(my_max_dt, mpi::operation::min);
 
     return mara::make_time(global_dt);
@@ -824,7 +805,30 @@ void output_solution_h5(const euler::solution_t& s, std::string fname)
 	mara::write(group, "conserved" , s.conserved);
 }
 
+void output_parallel_solution_h5(const euler::solution_t& s, const euler::mpi_setup_t mpi, std::string fname)
+{
+    // TODO: write parallel I/O
+    std::cout << "   Outputting: " << fname << std::endl;
 
+    if (mpi::is_master())
+    {
+        auto group = h5::File(fname, "w" ).open_group("/");
+        mara::write(group, "time", s.time);
+        group.close();
+    }
+
+    for(auto rank : nd::arange(mpi.comm.size()))
+    {
+        if (rank == mpi.comm.rank())
+        {
+            auto group = h5::File(fname, "r+").open_group("/");
+            mara::write(group, "vertices"  , s.vertices );
+            mara::write(group, "conserved" , s.conserved);
+            group.close();
+        }
+        mpi.comm.barrier();
+    }
+}
 
 
 // ============================================================================
@@ -855,6 +859,10 @@ int main(int argc, const char* argv[])
         }
         comm.barrier();
     }
+
+
+    output_parallel_solution_h5(state.solution, mpi_setup, "initial_par.h5");
+
 
     while (euler::simulation_should_continue(state))
     {
@@ -956,7 +964,22 @@ int main(int argc, const char* argv[])
 
 
 
+// auto old_get_timestep()
+// {
+//     auto v      = s.vertices;
+//     auto min_dx = v.map([] (auto v) { return v | component<0>() | nd::difference_on_axis(0) | nd::min(); }).min();
+//     auto min_dy = v.map([] (auto v) { return v | component<1>() | nd::difference_on_axis(1) | nd::min(); }).min();
 
+//     auto get_velocity_mag = std::mem_fn(&mara::iso2d::primitive_t::velocity_magnitude);
+
+//     auto primitive = s.conserved.map([] (auto Q) { return Q | nd::map(recover_primitive); });
+//     auto velocity  = primitive.map([get_velocity_mag] (auto W) { return W | nd::map(get_velocity_mag); });
+//     auto v_max     = velocity.map([] (auto v) { return std::max(v | nd::max(), mara::make_velocity(1.0)); }).max();
+
+//     return std::min(min_dx, min_dy) / v_max * cfl;
+
+//     double local_dt  = 0.01;
+// }
 
 
 
