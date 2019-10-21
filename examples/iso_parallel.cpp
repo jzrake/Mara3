@@ -723,37 +723,37 @@ mara::unit_time<double> get_timestep(const euler::solution_t& s, double cfl)
     // 3. return this minimum
     
 
-    // auto get_min_spacing  = [] (auto verts)
-    // {
-    //     if (verts.size() == 0)
-    //     {
-    //         return mara::make_length(1e3);
-    //     }
+    auto get_min_spacing  = [] (auto verts)
+    {
+        if (verts.size() == 0)
+        {
+            return mara::make_length(1e3);
+        }
 
-    //     auto min_dx = verts | component<0>() | nd::difference_on_axis(0) | nd::min();
-    //     auto min_dy = verts | component<1>() | nd::difference_on_axis(1) | nd::min();
-    //     return std::min(min_dx, min_dy);
-    // };
+        auto min_dx = verts | component<0>() | nd::difference_on_axis(0) | nd::min();
+        auto min_dy = verts | component<1>() | nd::difference_on_axis(1) | nd::min();
+        return std::min(min_dx, min_dy);
+    };
 
-    // auto get_max_velocity = [] (auto block)
-    // {
-    //     if (block.size() == 0)
-    //     {
-    //         return mara::make_velocity(1.0);
-    //     }
+    auto get_max_velocity = [] (auto block)
+    {
+        if (block.size() == 0)
+        {
+            return mara::make_velocity(1.0);
+        }
 
-    //     auto vmax =  block | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_magnitude)) | nd::max();
-    //     return std::max(vmax, mara::make_velocity(1.0));
-    // };
+        auto vmax =  block | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_magnitude)) | nd::max();
+        return std::max(vmax, mara::make_velocity(1.0));
+    };
 
 
-    // auto v = s.vertices;
-    // auto w = s.conserved.map([] (auto U) { return U | nd::map(recover_primitive); });
+    auto v = s.vertices;
+    auto w = s.conserved.map([] (auto U) { return U | nd::map(recover_primitive); });
 
-    // auto lmin = v.map(get_min_spacing).min();
-    // auto vmax = w.map(get_max_velocity).max();
+    auto lmin = v.map(get_min_spacing).min();
+    auto vmax = w.map(get_max_velocity).max();
 
-    // auto my_max_dt = lmin / vmax * cfl;
+    double my_max_dt = (lmin / vmax * cfl).value;
 
 
     // auto v      = s.vertices;
@@ -768,8 +768,8 @@ mara::unit_time<double> get_timestep(const euler::solution_t& s, double cfl)
 
     // return std::min(min_dx, min_dy) / v_max * cfl;
 
-    double local_dt = 0.01;
-    double global_dt = local_dt; //mpi::comm_world().all_reduce(local_dt, mpi::operation::min);
+    // double local_dt  = 0.01;
+    double global_dt = mpi::comm_world().all_reduce(my_max_dt, mpi::operation::min);
 
     return mara::make_time(global_dt);
 }
