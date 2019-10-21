@@ -46,8 +46,8 @@
 #include "core_linked_list.hpp"
 #include "mesh_tree_operators.hpp"
 #include "physics_iso2d.hpp"
-#define cs2    1e-1
-#define ng     1
+#define sound_speed_squared    0.1
+#define guard_zone_count       1
 
 
 
@@ -69,27 +69,25 @@ struct h5::hdf5_type_info<mara::iso2d::conserved_per_area_t>
 
 
 
-namespace euler
+namespace iso_mpi
 {
 
-    // Type definitions for simplicity later
-    // ========================================================================
+
+    template<typename ArrayValueType>
+    using quad_tree_t       = mara::arithmetic_binary_tree_t<nd::shared_array<ArrayValueType, 2>, 2>;
+    using index_tree_t      = mara::arithmetic_binary_tree_t<mara::tree_index_t<2>, 2>;
+    using neighbor_tree_t   = mara::arithmetic_binary_tree_t<mara::linked_list_t<std::size_t>, 2>;
     using location_2d_t     = mara::arithmetic_sequence_t<mara::dimensional_value_t<1, 0,  0, double>, 2>;
     using primitive_field_t = std::function<mara::iso2d::primitive_t(location_2d_t)>;
 
-    using index_tree_t    = mara::arithmetic_binary_tree_t<mara::tree_index_t<2>, 2>;
-    using neighbor_tree_t = mara::arithmetic_binary_tree_t<mara::linked_list_t<std::size_t>, 2>;
-
-    template<typename ArrayValueType>
-    using quad_tree_t = mara::arithmetic_binary_tree_t<nd::shared_array<ArrayValueType, 2>, 2>;
 
 
 
     // ========================================================================
     struct solution_t
     {
-        mara::unit_time<double>                         time=0.0;
-        mara::rational_number_t                         iteration=0;
+        mara::unit_time<double>                         time = 0.0;
+        mara::rational_number_t                         iteration = 0;
         quad_tree_t<location_2d_t>                      vertices;
         quad_tree_t<mara::iso2d::conserved_per_area_t>  conserved;
 
@@ -139,7 +137,6 @@ namespace euler
 
 
 
-    // Declaration of necessary functions
     //=========================================================================
     mara::config_template_t             create_config_template();
     mara::config_t                      create_run_config     (int argc, const char* argv[]);
@@ -153,11 +150,9 @@ namespace euler
     solution_t  next_solution(const state_t& state, const mpi_setup_t& mpi_setup);
     state_t     next_state   (const state_t& state, const mpi_setup_t& mpi_setup);
 
-    auto simulation_should_continue(const state_t& state);
-
     template<typename ValueType>
-    auto mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_setup_t& mpi_setup);
-
+    auto mpi_fill_tree(quad_tree_t<ValueType> block_tree, const mpi_setup_t& mpi_setup);
+    auto simulation_should_continue(const state_t& state);
 }
 
 
@@ -184,7 +179,7 @@ auto recover_primitive(const mara::iso2d::conserved_per_area_t& conserved)
 
 
 //=============================================================================
-mara::config_template_t euler::create_config_template()
+mara::config_template_t iso_mpi::create_config_template()
 {
     return mara::make_config_template()
      .item("outdir", "hydro_run")       // directory where data products are written
@@ -196,7 +191,7 @@ mara::config_template_t euler::create_config_template()
      .item("block_size",      24);      // number of cells in each direction
 }
 
-mara::config_t euler::create_run_config( int argc, const char* argv[] )
+mara::config_t iso_mpi::create_run_config( int argc, const char* argv[] )
 {
     auto args = mara::argv_to_string_map( argc, argv );
     return create_config_template().create().update(args);
@@ -206,7 +201,7 @@ mara::config_t euler::create_run_config( int argc, const char* argv[] )
 
 
 //=============================================================================
-euler::index_tree_t euler::create_domain_topology(const mara::config_t& run_config)
+iso_mpi::index_tree_t iso_mpi::create_domain_topology(const mara::config_t& run_config)
 {
     // auto centroid_radius = [] (mara::tree_index_t<2> index)
     // {
@@ -236,9 +231,9 @@ euler::index_tree_t euler::create_domain_topology(const mara::config_t& run_conf
  *
  * @return            2D array of vertices
  */
-euler::quad_tree_t<euler::location_2d_t> euler::create_vertex_blocks(
+iso_mpi::quad_tree_t<iso_mpi::location_2d_t> iso_mpi::create_vertex_blocks(
     const mara::config_t& run_config,
-    const euler::mpi_setup_t& mpi_setup)
+    const iso_mpi::mpi_setup_t& mpi_setup)
 {
     auto my_rank       = mpi_setup.comm.rank();
     auto rank_tree     = mpi_setup.decomposition;
@@ -258,10 +253,10 @@ euler::quad_tree_t<euler::location_2d_t> euler::create_vertex_blocks(
             auto y_points = nd::linspace(0, 1, block_size + 1) * block_length + y0;
 
             return nd::cartesian_product( x_points, y_points )
-                | nd::apply([] (double x, double y) { return euler::location_2d_t{x, y}; })
+                | nd::apply([] (double x, double y) { return iso_mpi::location_2d_t{x, y}; })
                 | nd::to_shared();
         }
-        return nd::shared_array<euler::location_2d_t, 2>{};
+        return nd::shared_array<iso_mpi::location_2d_t, 2>{};
     };
     return rank_tree.pair_indexes().map(build_my_vertex_blocks);
 }
@@ -273,7 +268,7 @@ euler::quad_tree_t<euler::location_2d_t> euler::create_vertex_blocks(
  * @brief     Apply initial condition to a tuple of position coordinates
  *
  */
-auto initial_condition_shocktube(euler::location_2d_t position)
+auto initial_condition_shocktube(iso_mpi::location_2d_t position)
 {
     auto density = position[0] > 1.0 ? 0.1 : 1.0;
     auto vx      = 0.0;
@@ -285,7 +280,7 @@ auto initial_condition_shocktube(euler::location_2d_t position)
      .with_velocity_y(vy);
 }
 
-auto initial_condition_cylinder(euler::location_2d_t position)
+auto initial_condition_cylinder(iso_mpi::location_2d_t position)
 {
 	auto x = position[0];
 	auto y = position[1];
@@ -310,15 +305,14 @@ auto initial_condition_cylinder(euler::location_2d_t position)
  * @brief     Create an initial solution object according to initial_condition()
  *
  */
-euler::solution_t euler::create_solution(const mara::config_t& run_config, const mpi_setup_t& mpi_setup)
+iso_mpi::solution_t iso_mpi::create_solution(const mara::config_t& run_config, const mpi_setup_t& mpi_setup)
 {
     auto vertices = create_vertex_blocks(run_config, mpi_setup);
     auto cell_centers = vertices.map([] (auto block)
     {
         if (block.size() == 0)
-        {
             return block | nd::to_shared();
-        }
+
         return block | nd::midpoint_on_axis(0) | nd::midpoint_on_axis(1) | nd::to_shared();
     });
 
@@ -339,7 +333,7 @@ euler::solution_t euler::create_solution(const mara::config_t& run_config, const
  * @brief     Setup the mpi environment, create tree of ranks for the
  *            domain decomposition, and create tree of neighbor maps
  */
-euler::mpi_setup_t euler::create_mpi_setup(const mara::config_t& run_config)
+iso_mpi::mpi_setup_t iso_mpi::create_mpi_setup(const mara::config_t& run_config)
 {
     // For now a uniformly refined tree of depth 3
     auto topology = create_domain_topology(run_config);
@@ -359,7 +353,7 @@ euler::mpi_setup_t euler::create_mpi_setup(const mara::config_t& run_config)
  *
  * @return              a state object
  */
-euler::state_t euler::create_state(const mara::config_t& run_config, const mpi_setup_t& mpi_setup)
+iso_mpi::state_t iso_mpi::create_state(const mara::config_t& run_config, const mpi_setup_t& mpi_setup)
 {
     return state_t{
         create_solution(run_config, mpi_setup),
@@ -378,8 +372,7 @@ template<typename Iterable, typename Predicate>
 auto filter(const Iterable& container, Predicate predicate)
 {
     using value_type = std::decay_t<decltype(*container.begin())>;
-
-    std::vector<value_type> result;
+    auto result = std::vector<value_type>();
 
     for (auto i : container)
         if (predicate(i))
@@ -408,7 +401,7 @@ auto linked_list_from(const Iterable& container)
  * @return   Returns a boolean function (index) -> bool that gives
  *           true if my process owns the index
  */
-auto block_is_owned_by(std::size_t rank, const euler::mpi_setup_t& mpi_setup)
+auto block_is_owned_by(std::size_t rank, const iso_mpi::mpi_setup_t& mpi_setup)
 {
     return [rank, rank_tree = mpi_setup.decomposition] (auto index)
     {
@@ -423,7 +416,7 @@ auto block_is_owned_by(std::size_t rank, const euler::mpi_setup_t& mpi_setup)
  * @brief   Return a unique vector of all the indexes my process needs in order
  *          to update all of the blocks that I own
  */
-auto indexes_of_nonlocal_blocks(const euler::mpi_setup_t& mpi_setup)
+auto indexes_of_nonlocal_blocks(const iso_mpi::mpi_setup_t& mpi_setup)
 {
     /**
      * @brief   Gives the index at target, it's parent, or all 4 of its children
@@ -475,40 +468,34 @@ auto indexes_of_nonlocal_blocks(const euler::mpi_setup_t& mpi_setup)
 
 
 template<typename ValueType>
-auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_setup_t& mpi_setup)
+auto iso_mpi::mpi_fill_tree(quad_tree_t<ValueType> block_tree, const mpi_setup_t& mpi_setup)
 {
     using message_type_t = std::pair<mara::tree_index_t<2>, nd::shared_array<mara::iso2d::primitive_t, 2>>;
 
-
-    auto comm                        = mpi_setup.comm;
-    auto rank_tree                   = mpi_setup.decomposition;
-    auto indexes_that_need_fetching  = indexes_of_nonlocal_blocks(mpi_setup);   
-    auto indexes_needed_by_each_proc = comm.all_gather(indexes_that_need_fetching);
-    auto requests                    = std::vector<mpi::Request>();
-    auto full_tree                   = block_tree;
-
+    auto comm             = mpi_setup.comm;
+    auto rank_tree        = mpi_setup.decomposition;
+    auto indexes_to_recv  = indexes_of_nonlocal_blocks(mpi_setup);   
+    auto indexes_to_send  = comm.all_gather(indexes_to_recv);
+    auto requests         = std::vector<mpi::Request>();
 
     for (auto rank : filter(nd::arange(comm.size()), [rank = comm.rank()] (auto r) { return r != rank; }))
-        for (auto i : filter(indexes_needed_by_each_proc[rank], block_is_owned_by(comm.rank(), mpi_setup)))
+        for (auto i : filter(indexes_to_send[rank], block_is_owned_by(comm.rank(), mpi_setup)))
             requests.push_back(comm.isend(mara::dumps(std::pair(i, block_tree.at(i))), rank, 0));
 
-
-    for (auto index : indexes_that_need_fetching)
+    for (auto index : indexes_to_recv)
     {
         auto [idx, block] = mara::loads<message_type_t>(comm.recv(rank_tree.at(index), 0));
-        full_tree = full_tree.insert(idx, block);
+        block_tree = block_tree.insert(idx, block);
     }
 
+    comm.barrier(); // This barrier ensures all processes have completed their
+                    // non-blocking sends before the requests go out of scope.
 
-    // Need to make sure all processes have completed all of their non-blocking
-    // sends before the requests go out of scope.
-    comm.barrier();
-
-    for (std::size_t r = 0; r < requests.size(); ++r)
-        if (! requests[r].is_ready())
+    for (const auto& request : requests)
+        if (! request.is_ready())
             throw std::logic_error("A send request was not completed");
 
-    return full_tree;
+    return block_tree;
 }
 
 
@@ -523,10 +510,9 @@ static auto extend(TreeType tree, std::size_t axis, std::size_t guard_count)
     return [tree, axis, guard_count] (auto ib)
     {
         auto [index, block] = ib;
+
         if (block.size() == 0)
-        {
             return block | nd::to_shared();
-        }
 
         auto C = tree.at(index);
         auto L = mara::get_cell_block(tree, index.prev_on(axis), mara::compose(nd::to_shared(), nd::select_final(guard_count, axis)));
@@ -539,7 +525,7 @@ static auto extend(TreeType tree, std::size_t axis, std::size_t guard_count)
 
 
 //=============================================================================
-euler::solution_t euler::advance(const solution_t& solution, const mpi_setup_t& mpi_setup, mara::unit_time<double> dt)
+iso_mpi::solution_t iso_mpi::advance(const solution_t& solution, const mpi_setup_t& mpi_setup, mara::unit_time<double> dt)
 {
 
 
@@ -558,7 +544,7 @@ euler::solution_t euler::advance(const solution_t& solution, const mpi_setup_t& 
         {
             using namespace std::placeholders;
             auto nh = mara::unit_vector_t::on_axis(axis);
-            auto riemann = std::bind(riemann_solver, _1, _2, cs2, cs2, nh);
+            auto riemann = std::bind(riemann_solver, _1, _2, sound_speed_squared, sound_speed_squared, nh);
             return left_and_right_states | nd::apply(riemann);
         };
     };
@@ -610,19 +596,19 @@ euler::solution_t euler::advance(const solution_t& solution, const mpi_setup_t& 
         return [=] (auto tree_index)
         {
             auto u0 = solution.conserved.at(tree_index);
+
             if (u0.size() == 0)
-            {
                 return u0 | nd::to_shared();
-            }
 
             auto lx = fx.at(tree_index) | nd::difference_on_axis(0);
             auto ly = fy.at(tree_index) | nd::difference_on_axis(1);
             auto dA = cell_areas.at(tree_index);
 
-            auto result =  u0 - (lx + ly) * dt / dA;
+            auto result = u0 - (lx + ly) * dt / dA;
             return result | nd::to_shared();
         };
     };
+
 
     // ========================================================================
     auto u0  =  solution.conserved;
@@ -631,34 +617,20 @@ euler::solution_t euler::advance(const solution_t& solution, const mpi_setup_t& 
     auto cell_areas = solution.vertices.map([] (auto block)
     {
         if (block.size() == 0)
-        {
-            // return type of cell_areas...
             return nd::array_t<nd::shared_provider_t<mara::dimensional_value_t<2, 0, 0, double>, 2>>();
-        }
+
         auto dx = block | component(0) | nd::difference_on_axis(0) | nd::midpoint_on_axis(1);
         auto dy = block | component(1) | nd::difference_on_axis(1) | nd::midpoint_on_axis(0);
         return dx | nd::multiply(dy) | nd::to_shared();
     });
 
+
     // Extend for ghost-cells and get fluxes with specified riemann solver
     // ========================================================================
-    // auto ng = 1;  // number of ghost cells
-    auto w0_full = euler::mpi_fill_tree(w0.map([] (auto b) { return b.shared(); }), mpi_setup);  
-    auto w0_ex   = w0.pair_indexes().map(extend(w0_full, 0, ng));
-    auto w0_ey   = w0.pair_indexes().map(extend(w0_full, 1, ng));
+    auto w0_full = iso_mpi::mpi_fill_tree(w0.map([] (auto b) { return b.shared(); }), mpi_setup);  
+    auto w0_ex   = w0.pair_indexes().map(extend(w0_full, 0, guard_zone_count));
+    auto w0_ey   = w0.pair_indexes().map(extend(w0_full, 1, guard_zone_count));
     
-    // auto extend_local = [] (auto axis)
-    // {
-    //     return [axis] (auto block)
-    //     {
-    //         if(block.size() == 0) return block | nd::to_shared();
-    //         return block | nd::extend_periodic_on_axis(axis) | nd::to_shared();
-    //     };
-
-    // };
-    // auto w0_ex = w0.map(extend_local(0));
-    // auto w0_ey = w0.map(extend_local(1));
-
     auto fhat   = w0.indexes().map(block_fluxes(solution, w0_ex, w0_ey));
     auto fhat_x = fhat.map([] (auto t) { return std::get<0>(t); });
     auto fhat_y = fhat.map([] (auto t) { return std::get<1>(t); });
@@ -675,15 +647,14 @@ euler::solution_t euler::advance(const solution_t& solution, const mpi_setup_t& 
         solution.time + dt,
         solution.iteration + 1,
         solution.vertices,
-        // u1.map([] (auto i) { return i.shared(); })
-        u1
+        u1,
     };
 }
 
 
 
 
-mara::unit_time<double> get_timestep(const euler::solution_t& s, double cfl)
+mara::unit_time<double> get_timestep(const iso_mpi::solution_t& s, double cfl)
 {
     // 1. get max allowed timestep on each process
     // 
@@ -747,12 +718,12 @@ mara::unit_time<double> get_timestep(const euler::solution_t& s, double cfl)
 
 
 // ============================================================================
-auto euler::simulation_should_continue(const state_t& state)
+auto iso_mpi::simulation_should_continue(const state_t& state)
 {
     return state.solution.time < state.run_config.get_double("tfinal");
 }
 
-euler::solution_t euler::next_solution(const state_t& state, const mpi_setup_t& mpi)
+iso_mpi::solution_t iso_mpi::next_solution(const state_t& state, const mpi_setup_t& mpi)
 {
     auto s0  = state.solution;
     auto dt = get_timestep(s0, state.run_config.get_double("cfl"));
@@ -774,15 +745,15 @@ euler::solution_t euler::next_solution(const state_t& state, const mpi_setup_t& 
     throw std::invalid_argument("binary::next_solution");
 }
 
-euler::state_t euler::next_state(const euler::state_t& state, const euler::mpi_setup_t& mpi_setup)
+iso_mpi::state_t iso_mpi::next_state(const iso_mpi::state_t& state, const iso_mpi::mpi_setup_t& mpi_setup)
 {
-    return euler::state_t{
-        euler::next_solution(state, mpi_setup),
+    return iso_mpi::state_t{
+        iso_mpi::next_solution(state, mpi_setup),
         state.run_config
     };
 }
 
-void output_solution_h5(const euler::solution_t& s, std::string fname)
+void output_solution_h5(const iso_mpi::solution_t& s, std::string fname)
 {
     // TODO: write parallel I/O
 	std::cout << "   Outputting: " << fname << std::endl;
@@ -801,9 +772,9 @@ int main(int argc, const char* argv[])
 {
 
     auto session     = mpi::Session();
-    auto run_config  = euler::create_run_config(argc, argv);
-    auto mpi_setup   = euler::create_mpi_setup(run_config);
-    auto state       = euler::create_state(run_config, mpi_setup);
+    auto run_config  = iso_mpi::create_run_config(argc, argv);
+    auto mpi_setup   = iso_mpi::create_mpi_setup(run_config);
+    auto state       = iso_mpi::create_state(run_config, mpi_setup);
     auto comm        = mpi::comm_world();
 
 
@@ -825,9 +796,9 @@ int main(int argc, const char* argv[])
         comm.barrier();
     }
 
-    while (euler::simulation_should_continue(state))
+    while (iso_mpi::simulation_should_continue(state))
     {
-        state = euler::next_state(state, mpi_setup);
+        state = iso_mpi::next_state(state, mpi_setup);
         mpi::printf_master(" %d : t = %0.2f \n", state.solution.iteration.as_integral(), state.solution.time.value);
     }
   
@@ -845,169 +816,5 @@ int main(int argc, const char* argv[])
         comm.barrier();
     }
 
-    
-
-    // auto prim_tree =  state.solution.conserved.map([] (auto Q) { return Q | nd::map(recover_primitive) | nd::to_shared(); });
-    // auto full_tree =  euler::mpi_fill_tree(prim_tree, mpi_setup);
-
-    
-
-
-
-    // // Output the old and new number of blocks on each process
-    // //=========================================================================
-    // auto is_a_block = [] (auto block) { return block.size() == 0 ? 0 : 1; };
-    // auto orig_num   = prim_tree.map(is_a_block).sum();
-    // auto finl_num   = full_tree.map(is_a_block).sum();
-    // for(auto rank=0; rank < comm.size(); ++rank)
-    // {
-    //     if(rank == comm.rank())
-    //         std::printf("rank %d: (%d, %d)\n", comm.rank(), orig_num, finl_num);
-    //     comm.barrier();
-    // }
-    // //=========================================================================
-
-
-
-    // // Make sure that my blocks now have all their neighbors
-    // //=========================================================================
-    // auto has_neighbors = [] (auto tree)
-    // {
-    //     return [tree] (auto ib)
-    //     {
-    //         auto [index, block] = ib;
-    //         int  count = 0;
-    //         if(block.size() != 0)
-    //         {
-    //             auto north = index.prev_on(1);
-    //             auto south = index.next_on(1);
-    //             auto east  = index.next_on(0);
-    //             auto west  = index.prev_on(0);
-    //             if (tree.at(north).size() == 0) ++count;
-    //             if (tree.at(south).size() == 0) ++count;
-    //             if (tree.at(east ).size() == 0) ++count;
-    //             if (tree.at(west ).size() == 0) ++count;
-    //         }
-    //         return count;
-    //     };
-    // };
-    // for(auto rank=0; rank < comm.size(); ++rank)
-    // {
-    //     if(rank == comm.rank())
-    //         std::printf("rank %d has_neighbors == false: %d\n", 
-    //                     comm.rank(),
-    //                     prim_tree.pair_indexes().map(has_neighbors(full_tree)).sum());
-    //     comm.barrier();
-    // }
-    // //=========================================================================
-
-
-    // // Do an extend on my blocks
-    // //=========================================================================
-    // auto w0_ex   = prim_tree.pair_indexes().map(extend(full_tree, 0, 1));
-    // auto w0_ey   = prim_tree.pair_indexes().map(extend(full_tree, 1, 1));
-
-
-
     return 0;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// template<typename ValueType>
-// auto euler::mpi_fill_tree(const quad_tree_t<ValueType>& block_tree, const mpi_setup_t& mpi_setup)
-// {
-//     // 1. Accumulate all the indexes I need to fill my block_tree
-//     std::vector<mara::tree_index_t<2>> index_vector;
-
-
-//     for (auto [idx, rank] : rank_tree.pair_indexes())
-//     {
-//         if (rank == my_rank)
-//         {
-//             auto map   = neigh_tree.at(idx);
-//             auto north = map["north"].head();
-//             auto south = map["south"].head();
-//             auto east  = map[ "east"].head();
-//             auto west  = map[ "west"].head();
-
-//             if (north != my_rank)
-//                 index_vector.push_back(idx.prev_on(1));
-
-//             if (south != my_rank)
-//                 index_vector.push_back(idx.next_on(1));
-
-//             if (east != my_rank)
-//                 index_vector.push_back(idx.next_on(0));
-
-//             if (west != my_rank)
-//                 index_vector.push_back(idx.prev_on(0));
-//         }
-//     }
-
-
-//     // 1a. Keep only unique indexes
-//     index_vector.erase(std::unique(index_vector.begin(), index_vector.end()), index_vector.end());
-
-
-//     // 2. All_gather this vector of indexes
-//     auto rank_needs = comm.all_gather(index_vector);
-
-
-//     // 3. Look through ragged_vector of indeces for requests from me
-//     //        -> do these isends and keep the request around
-//     std::vector<mpi::Request> requests;
-
-//     for (std::size_t rank=0; rank < comm.size(); ++rank)
-//     {
-//         if (rank != my_rank)
-//         {
-//             for (auto index : rank_needs[rank])
-//             {
-//                 if (rank_tree.at(index) == my_rank)
-//                 {
-//                     auto block_pair_s = mara::dumps(std::pair(index, block_tree.at(index)));
-//                     requests.push_back(comm.isend(block_pair_s, rank, 0));
-//                 }
-//             }
-//         }
-//     }
-
-
-//     // 4. Look through my vector, get rank that owns that index, post
-//     //    recv's, and put them in full_tree
-//     auto full_tree = block_tree;
-
-//     for (auto index : index_vector)
-//     {
-//         auto [idx, block] = mara::loads<message_type_t>(comm.recv(rank_tree.at(index), 0));
-//         full_tree = full_tree.insert(idx, block);
-//     }
-
-
-//     // 4a. Make sure all send requests were completed
-//     for (std::size_t r = 0; r < requests.size(); ++r)
-//         if (! requests[r].is_ready())
-//             throw std::logic_error("A receive request was not matched with its expected send...");
-
-
-//     // 5. Return full_tree
-//     return full_tree.map([] (auto b) { return b.shared(); });
-// }
