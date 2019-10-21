@@ -765,7 +765,6 @@ euler::state_t euler::next_state(const euler::state_t& state, const euler::mpi_s
 
 void output_solution_h5(const euler::solution_t& s, std::string fname)
 {
-    // TODO: write parallel I/O
 	std::cout << "   Outputting: " << fname << std::endl;
 	auto group = h5::File(fname, "w" ).open_group("/");
 
@@ -774,25 +773,33 @@ void output_solution_h5(const euler::solution_t& s, std::string fname)
 	mara::write(group, "conserved" , s.conserved);
 }
 
-void output_parallel_solution_h5(const euler::solution_t& s, const euler::mpi_setup_t mpi, std::string fname)
+void output_solution_parallel_h5(const euler::solution_t& s, const euler::mpi_setup_t mpi, std::string fname)
 {
-    // TODO: write parallel I/O
-    std::cout << "   Outputting: " << fname << std::endl;
 
     if (mpi::is_master())
     {
+        std::cout << "   Outputting: " << fname << std::endl;
         auto group = h5::File(fname, "w" ).open_group("/");
         mara::write(group, "time", s.time);
         group.close();
     }
+
+    
+    //=========================================================================    
+    std::function<bool(mara::tree_index_t<2>)> is_my_block = [mpi] (auto idx)
+    {
+        printf("I'm in the filter funciton!\n");
+        return mpi.decomposition.at(idx) == mpi.comm.rank();
+    };
+
 
     for(auto rank : nd::arange(mpi.comm.size()))
     {
         if (rank == mpi.comm.rank())
         {
             auto group = h5::File(fname, "r+").open_group("/");
-            mara::write(group, "vertices"  , s.vertices );
-            mara::write(group, "conserved" , s.conserved);
+            mara::write(group, "vertices"  , s.vertices , is_my_block);
+            mara::write(group, "conserved" , s.conserved, is_my_block);
             group.close();
         }
         mpi.comm.barrier();
@@ -819,18 +826,17 @@ int main(int argc, const char* argv[])
 
     // write initial state to a file
     //=========================================================================
-    for (int rank = 0; rank < comm.size(); ++rank)
-    {
-        if (rank == comm.rank())
-        {
-            auto fname = std::string("initial.") + std::to_string(rank) + ".h5";
-            output_solution_h5(state.solution, fname);
-        }
-        comm.barrier();
-    }
+    // for (int rank = 0; rank < comm.size(); ++rank)
+    // {
+    //     if (rank == comm.rank())
+    //     {
+    //         auto fname = std::string("initial.") + std::to_string(rank) + ".h5";
+    //         output_solution_h5(state.solution, fname);
+    //     }
+    //     comm.barrier();
+    // }
 
-
-    output_parallel_solution_h5(state.solution, mpi_setup, "initial_par.h5");
+    output_solution_parallel_h5(state.solution, mpi_setup, "initial_par.h5");
 
 
     while (euler::simulation_should_continue(state))
