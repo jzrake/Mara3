@@ -398,15 +398,8 @@ public:
 
 
     /**
-     * Copy constructor, duplicates the communicator and respects RAII.
+     * Communicator is a unique object, no copy's are permitted..
      */
-    // Communicator(const Communicator& other)
-    // {
-    //     if (! other.is_null())
-    //     {
-    //         MPI_Comm_dup(other.comm, &comm);
-    //     }
-    // }
     Communicator(const Communicator& other) = delete;
 
 
