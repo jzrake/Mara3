@@ -335,12 +335,9 @@ iso_mpi::solution_t iso_mpi::create_solution(const mara::config_t& run_config, c
  */
 iso_mpi::mpi_setup_t iso_mpi::create_mpi_setup(const mara::config_t& run_config)
 {
-    // For now a uniformly refined tree of depth 3
     auto topology = create_domain_topology(run_config);
-    auto comm     = mpi::comm_world();
-
-    auto decomposition = mara::build_rank_tree<2>(topology, comm.size());
-    return {comm, decomposition};
+    auto decomposition = mara::build_rank_tree<2>(topology, mpi::comm_world().size());
+    return {mpi::comm_world(), decomposition};
 }
 
 
@@ -472,23 +469,23 @@ auto iso_mpi::mpi_fill_tree(quad_tree_t<ValueType> block_tree, const mpi_setup_t
 {
     using message_type_t = std::pair<mara::tree_index_t<2>, nd::shared_array<mara::iso2d::primitive_t, 2>>;
 
-    auto comm             = mpi_setup.comm;
+    // auto comm             = mpi_setup.comm;
     auto rank_tree        = mpi_setup.decomposition;
     auto indexes_to_recv  = indexes_of_nonlocal_blocks(mpi_setup);   
-    auto indexes_to_send  = comm.all_gather(indexes_to_recv);
+    auto indexes_to_send  = mpi_setup.comm.all_gather(indexes_to_recv);
     auto requests         = std::vector<mpi::Request>();
 
-    for (auto rank : filter(nd::arange(comm.size()), [rank = comm.rank()] (auto r) { return r != rank; }))
-        for (auto i : filter(indexes_to_send[rank], block_is_owned_by(comm.rank(), mpi_setup)))
-            requests.push_back(comm.isend(mara::dumps(std::pair(i, block_tree.at(i))), rank, 0));
+    for (auto rank : filter(nd::arange(mpi_setup.comm.size()), [rank = mpi_setup.comm.rank()] (auto r) { return r != rank; }))
+        for (auto i : filter(indexes_to_send[rank], block_is_owned_by(mpi_setup.comm.rank(), mpi_setup)))
+            requests.push_back(mpi_setup.comm.isend(mara::dumps(std::pair(i, block_tree.at(i))), rank, 0));
 
     for (auto index : indexes_to_recv)
     {
-        auto [idx, block] = mara::loads<message_type_t>(comm.recv(rank_tree.at(index), 0));
+        auto [idx, block] = mara::loads<message_type_t>(mpi_setup.comm.recv(rank_tree.at(index), 0));
         block_tree = block_tree.insert(idx, block);
     }
 
-    comm.barrier(); // This barrier ensures all processes have completed their
+    mpi_setup.comm.barrier(); // This barrier ensures all processes have completed their
                     // non-blocking sends before the requests go out of scope.
 
     for (const auto& request : requests)
@@ -744,10 +741,10 @@ void output_solution_h5(const iso_mpi::solution_t& s, std::string fname)
 	mara::write(group, "conserved" , s.conserved);
 }
 
-void output_solution_parallel_h5(const iso_mpi::solution_t& s, const iso_mpi::mpi_setup_t mpi, std::string fname)
+void output_solution_parallel_h5(const iso_mpi::solution_t& s, const iso_mpi::mpi_setup_t& mpi, std::string fname)
 {
 
-    std::function<bool(mara::tree_index_t<2>)> is_my_block = [mpi] (auto idx)
+    std::function<bool(mara::tree_index_t<2>)> is_my_block = [&mpi] (auto idx)
     {
         return mpi.decomposition.at(idx) == mpi.comm.rank();
     };
@@ -784,7 +781,6 @@ int main(int argc, const char* argv[])
     auto run_config  = iso_mpi::create_run_config(argc, argv);
     auto mpi_setup   = iso_mpi::create_mpi_setup(run_config);
     auto state       = iso_mpi::create_state(run_config, mpi_setup);
-    auto comm        = mpi::comm_world();
 
 
     if (mpi::is_master())
@@ -793,42 +789,23 @@ int main(int argc, const char* argv[])
     }
 
 
-    // write initial state to a file
-    //=========================================================================
-    // for (int rank = 0; rank < comm.size(); ++rank)
-    // {
-    //     if (rank == comm.rank())
-    //     {
-    //         auto fname = std::string("initial.") + std::to_string(rank) + ".h5";
-    //         output_solution_h5(state.solution, fname);
-    //     }
-    //     comm.barrier();
-    // }
-
-    output_solution_parallel_h5(state.solution, mpi_setup, "initial_par.h5");
+    output_solution_parallel_h5(state.solution, mpi_setup, "chkpt.0.h5");
 
 
     while (iso_mpi::simulation_should_continue(state))
     {
         state = iso_mpi::next_state(state, mpi_setup);
         mpi::printf_master(" %d : t = %0.2f \n", state.solution.iteration.as_integral(), state.solution.time.value);
+
+        if (state.solution.iteration.as_integral() % 10 == 0)
+        {
+            auto fname = "chkpt." + std::to_string(state.solution.iteration.as_integral() / 10) + ".h5";
+            output_solution_parallel_h5(state.solution, mpi_setup, fname);
+        }
     }
   
 
-    output_solution_parallel_h5(state.solution, mpi_setup, "final_par.h5");
-
-
-    // write final state to a file
-    //=========================================================================
-    // for (int rank = 0; rank < comm.size(); ++rank)
-    // {
-    //     if (rank == comm.rank())
-    //     {
-    //         auto fname = std::string("final.") + std::to_string(rank) + ".h5";
-    //         output_solution_h5(state.solution, fname);
-    //     }
-    //     comm.barrier();
-    // }
+    // output_solution_parallel_h5(state.solution, mpi_setup, "final_par.h5");
 
     return 0;
 }
