@@ -422,25 +422,6 @@ public:
     }
 
 
-    /**
-     * Assignment operator: closes this communicator and duplicates the other
-     * one, unless the other one is null in which case sets this one to null,
-     * e.g. you can reset a communicator by writing
-     *
-     *              comm = Communicator();
-     *
-     */
-    Communicator& operator=(const Communicator& other)
-    {
-        close();
-
-        if (! other.is_null())
-        {
-            MPI_Comm_dup(other.comm, &comm);
-        }
-        return *this;
-    }
-
 
     /**
      * Move assignment. Steals the other communicator.
