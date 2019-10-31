@@ -27,6 +27,8 @@
 
 
 #pragma once
+#include <stdexcept>
+#include <algorithm>
 #include <cmath>
 
 

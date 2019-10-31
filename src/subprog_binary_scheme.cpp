@@ -778,20 +778,35 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
     auto u1     = block_results.map([] (const auto& t) { return t.first; });
     auto totals = block_results.map([] (const auto& t) { return t.second; }).sum();
 
+    double dM1 = totals.mass_accreted_on[0].value;
+    double dM2 = totals.mass_accreted_on[1].value;
+    double vx1_gas = totals.momentum_x_accreted_on[0].value / dM1;
+    double vy1_gas = totals.momentum_y_accreted_on[0].value / dM1;
+    double vx2_gas = totals.momentum_x_accreted_on[1].value / dM2;
+    double vy2_gas = totals.momentum_y_accreted_on[1].value / dM2;
+    double vx1_hole = binary.body1.velocity_x;
+    double vy1_hole = binary.body1.velocity_y;
+    double vx2_hole = binary.body2.velocity_x;
+    double vy2_hole = binary.body2.velocity_y;
+    double dvx1 = (vx1_gas - vx1_hole) * dM1 / binary.body1.mass;
+    double dvy1 = (vy1_gas - vy1_hole) * dM1 / binary.body1.mass;
+    double dvx2 = (vx2_gas - vx2_hole) * dM2 / binary.body2.mass;
+    double dvy2 = (vy2_gas - vy2_hole) * dM2 / binary.body2.mass;
+
     auto body1_acc = mara::point_mass_t{
-        binary.body1.mass       + totals.mass_accreted_on[0].value,
+        binary.body1.mass       + dM1,
         binary.body1.position_x,
         binary.body1.position_y,
-        binary.body1.velocity_x + totals.momentum_x_accreted_on[0].value / binary.body1.mass,
-        binary.body1.velocity_y + totals.momentum_y_accreted_on[0].value / binary.body1.mass,
+        binary.body1.velocity_x + dvx1,
+        binary.body1.velocity_y + dvy1,
     };
 
     auto body2_acc = mara::point_mass_t{
-        binary.body2.mass       + totals.mass_accreted_on[1].value,
+        binary.body2.mass       + dM2,
         binary.body2.position_x,
         binary.body2.position_y,
-        binary.body2.velocity_x + totals.momentum_x_accreted_on[1].value / binary.body2.mass,
-        binary.body2.velocity_y + totals.momentum_y_accreted_on[1].value / binary.body2.mass,
+        binary.body2.velocity_x + dvx2,
+        binary.body2.velocity_y + dvy2,
     };
 
     auto body1_grav = mara::point_mass_t{
@@ -813,6 +828,7 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
     auto E0                  = mara::compute_orbital_elements(binary);
     auto delta_E_prime_acc   = mara::compute_orbital_elements({body1_acc,  body2_acc})  - E0;
     auto delta_E_prime_grav  = mara::compute_orbital_elements({body1_grav, body2_grav}) - E0;
+
 
     // The full updated solution state
     //=========================================================================
@@ -873,21 +889,35 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
 
     auto q1     = block_results.map([] (const auto& t) { return t.first; });
     auto totals = block_results.map([] (const auto& t) { return t.second; }).sum();
+    double dM1 = totals.mass_accreted_on[0].value;
+    double dM2 = totals.mass_accreted_on[1].value;
+    double vx1_gas = totals.momentum_x_accreted_on[0].value / dM1;
+    double vy1_gas = totals.momentum_y_accreted_on[0].value / dM1;
+    double vx2_gas = totals.momentum_x_accreted_on[1].value / dM2;
+    double vy2_gas = totals.momentum_y_accreted_on[1].value / dM2;
+    double vx1_hole = binary.body1.velocity_x;
+    double vy1_hole = binary.body1.velocity_y;
+    double vx2_hole = binary.body2.velocity_x;
+    double vy2_hole = binary.body2.velocity_y;
+    double dvx1 = (vx1_gas - vx1_hole) * dM1 / binary.body1.mass;
+    double dvy1 = (vy1_gas - vy1_hole) * dM1 / binary.body1.mass;
+    double dvx2 = (vx2_gas - vx2_hole) * dM2 / binary.body2.mass;
+    double dvy2 = (vy2_gas - vy2_hole) * dM2 / binary.body2.mass;
 
     auto body1_acc = mara::point_mass_t{
-        binary.body1.mass       + totals.mass_accreted_on[0].value,
+        binary.body1.mass       + dM1,
         binary.body1.position_x,
         binary.body1.position_y,
-        binary.body1.velocity_x + totals.momentum_x_accreted_on[0].value / binary.body1.mass,
-        binary.body1.velocity_y + totals.momentum_y_accreted_on[0].value / binary.body1.mass,
+        binary.body1.velocity_x + dvx1,
+        binary.body1.velocity_y + dvy1,
     };
 
     auto body2_acc = mara::point_mass_t{
-        binary.body2.mass       + totals.mass_accreted_on[1].value,
+        binary.body2.mass       + dM2,
         binary.body2.position_x,
         binary.body2.position_y,
-        binary.body2.velocity_x + totals.momentum_x_accreted_on[1].value / binary.body2.mass,
-        binary.body2.velocity_y + totals.momentum_y_accreted_on[1].value / binary.body2.mass,
+        binary.body2.velocity_x + dvx2,
+        binary.body2.velocity_y + dvy2,
     };
 
     auto body1_grav = mara::point_mass_t{

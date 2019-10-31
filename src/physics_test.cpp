@@ -180,7 +180,6 @@ TEST_CASE("Two body model works as expected", "[model_two_body]")
     CHECK(state0.body2.position_x * state0.body2.velocity_y - state0.body2.position_y * state0.body2.velocity_x ==
           state2.body2.position_x * state2.body2.velocity_y - state2.body2.position_y * state2.body2.velocity_x);
 }
-
 TEST_CASE("Two body model perturbation works as expected", "[model_two_body]")
 {
     SECTION("for a circular orbit")
@@ -271,6 +270,16 @@ TEST_CASE("Two body model perturbation works as expected", "[model_two_body]")
         REQUIRE(binary1.elements.eccentricity > binary.eccentricity);
         REQUIRE(std::fabs(binary1.cm_velocity_x) < 1e-12);
         REQUIRE(std::fabs(binary1.cm_velocity_y) < 1e-12);
+    }
+    SECTION("accretion of comoving mass onto both components reduces the semi-major axis")
+    {
+        auto binary1 = mara::orbital_elements_t{};
+        auto state1 = mara::compute_two_body_state(binary1, 0.0);
+        auto state2 = state1;
+        state2.body1.mass += 0.01;
+        state2.body2.mass += 0.01;
+        auto binary2 = mara::compute_orbital_elements(state2).elements;
+        REQUIRE(binary2.separation < binary1.separation);
     }
 }
 
