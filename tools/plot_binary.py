@@ -218,7 +218,6 @@ def unzip_time_series(h5_time_series):
 
 
 def time_series(args):
-
     fig = plt.figure(figsize=[15, 9])
     ax1 = fig.add_subplot(4, 1, 1)
     ax2 = fig.add_subplot(4, 1, 2)
@@ -305,7 +304,6 @@ def time_series(args):
 
 
 def time_series_orbital_elements(args):
-
     fname = args.filenames[0]
     h5f = h5py.File(fname, 'r')
     ts = unzip_time_series(h5f['time_series'])

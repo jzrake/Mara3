@@ -837,14 +837,26 @@ struct mara::arithmetic_binary_tree_t
     {
         return map([fn, launch_mode] (auto&& v)
         {
-            return std::make_shared
-            <std::future
-            <std::invoke_result_t<Function, ValueType>>>
-            (std::async(launch_mode, fn, std::forward<decltype(v)>(v)));
+            using result_type = std::invoke_result_t<Function, ValueType>;
+            using future_type = std::future<result_type>;
+            return std::make_shared<future_type>(std::async(launch_mode, fn, std::forward<decltype(v)>(v)));
         })
         .map([] (auto&& future_ptr) { return future_ptr->get(); });
     }
 
+
+
+    template<typename Function, typename ThreadPool>
+    auto map(Function&& fn, ThreadPool& thread_pool) const
+    {
+        return map([fn, &thread_pool] (auto&& v)
+        {
+            using result_type = std::invoke_result_t<Function, ValueType>;
+            using future_type = std::future<result_type>;
+            return std::make_shared<future_type>(thread_pool.enqueue(fn, std::forward<decltype(v)>(v)));
+        })
+        .map([] (auto&& future_ptr) { return future_ptr->get(); });
+    }
 
 
 
@@ -872,6 +884,11 @@ struct mara::arithmetic_binary_tree_t
         return map([fn] (auto&& t) { return std::apply(fn, t); }, launch_mode);
     }
 
+    template<typename Function, typename ThreadPool>
+    auto apply(Function&& fn, ThreadPool& thread_pool) const
+    {
+        return map([fn] (auto&& t) { return std::apply(fn, t); }, thread_pool);
+    }
 
 
 
@@ -1070,7 +1087,7 @@ struct mara::arithmetic_binary_tree_t
      *             bifurcate function may return sequences of any value type.
      *
      * @param      bifurcate       The bifurcate function to apply to the
-     *                             values: value_type -> sequence<T>
+     *                             values: value_type -> sequence<value_type>
      *
      * @tparam     Bifurcate       The type of the bifurcate function
      * @tparam     ResultTreeType  The function's return value (deduced)
@@ -1132,7 +1149,7 @@ struct mara::arithmetic_binary_tree_t
 /**
  * @brief      Return a boolean sequence {a} representing a number:
  *
- *             value = a[0] + 2^0 + a[1] + 2^1 + ...
+ *             value = a[0] * 2^0 + a[1] * 2^1 + ...
  *
  * @param[in]  value  The number to represent
  *

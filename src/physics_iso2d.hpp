@@ -121,6 +121,7 @@ struct mara::iso2d
         const location_2d_t& x);
 
     static inline auto momentum_vector(const conserved_per_area_t& U);
+    static inline auto angular_momentum(const conserved_per_area_t& U, const location_2d_t& x);
 
     static inline primitive_t roe_average(
         const primitive_t& Pl,
@@ -429,6 +430,11 @@ mara::iso2d::flux_angmom_t mara::iso2d::to_conserved_angmom_flux(const flux_t& F
     auto sr_flux = x[0] * mara::get<1>(F) + x[1] * mara::get<2>(F);
     auto lz_flux = x[0] * mara::get<2>(F) - x[1] * mara::get<1>(F);
     return {{sigma_flux, sr_flux, lz_flux}};
+}
+
+auto mara::iso2d::angular_momentum(const conserved_per_area_t& U, const location_2d_t& x)
+{
+    return x[0] * mara::get<2>(U) - x[1] * mara::get<1>(U);
 }
 
 

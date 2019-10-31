@@ -430,17 +430,17 @@ mara::srhd::primitive_t mara::srhd::recover_primitive(
     if (! solution_found)
     {
         throw std::invalid_argument("mara::srhd::recover_primitive failure: "
-            "root finder not converging U=" + to_string(U));
+            "root finder not converging U=" + mara::to_string(U));
     }
-    if (P.gas_pressure() < 0.0)
-    {
-        throw std::invalid_argument("mara::srhd::recover_primitive failure: "
-            "negative pressure p=" + std::to_string(P.gas_pressure()) + " U=" + mara::to_string(U));
-    }
-    if (P.mass_density() < 0.0)
+    if (P.mass_density() <= 0.0)
     {
         throw std::invalid_argument("mara::srhd::recover_primitive failure: "
             "negative density U=" + mara::to_string(U));
+    }
+    if (P.gas_pressure() <= 0.0)
+    {
+        throw std::invalid_argument("mara::srhd::recover_primitive failure: "
+            "negative pressure p=" + std::to_string(P.gas_pressure()) + " U=" + mara::to_string(U) + " floor=" + mara::to_string(temperature_floor));
     }
     if (std::isnan(W0))
     {

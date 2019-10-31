@@ -82,12 +82,16 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     auto result = solver_data_t();
     result.domain_radius         = run_config.get_double("domain_radius");
     result.mach_number           = run_config.get_double("mach_number");
+    result.alpha_cutoff_radius   = run_config.get_double("alpha_cutoff_radius");
     result.alpha                 = run_config.get_double("alpha");
+    result.nu                    = run_config.get_double("nu");
     result.sink_rate             = run_config.get_double("sink_rate");
     result.sink_radius           = run_config.get_double("sink_radius");
     result.softening_radius      = run_config.get_double("softening_radius");
     result.gst_suppr_radius      = run_config.get_double("source_term_softening") * std::min(min_dx, min_dy).value;
     result.plm_theta             = run_config.get_double("plm_theta");
+    result.axisymmetric_cs2      = run_config.get_int("axisymmetric_cs2");
+    result.conserve_linear_p     = run_config.get_int("conserve_linear_p");
     result.rk_order              = run_config.get_int("rk_order");
     result.block_size            = run_config.get_int("block_size");
     result.recommended_time_step = std::min(min_dx, min_dy) / max_velocity * run_config.get_double("cfl_number");
@@ -96,7 +100,8 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     result.cell_centers          = cell_centers.map(nd::to_shared());
     result.cell_areas            = cell_areas.map(nd::to_shared());
     result.vertices              = vertices;
-    result.initial_conserved     = create_solution(run_config).conserved;
+    result.initial_conserved_u   = create_solution(run_config).conserved_u;
+    result.initial_conserved_q   = create_solution(run_config).conserved_q;
 
     if      (run_config.get_string("riemann") == "hlle") result.riemann_solver = riemann_solver_t::hlle;
     else throw std::invalid_argument("invalid riemann solver '" + run_config.get_string("riemann") + "', must be hlle");

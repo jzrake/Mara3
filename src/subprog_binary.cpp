@@ -65,6 +65,7 @@ mara::config_template_t binary::create_config_template()
     .item("tfinal",               1.0)          // simulation stop time (orbits)
     .item("cfl_number",           0.4)          // the Courant number to use
     .item("depth",                  4)
+    .item("conserve_linear_p",      0)          // set to true to use linear momentum conserving variables
     .item("block_size",            24)
     .item("focus_factor",        2.00)
     .item("focus_index",         2.00)
@@ -87,7 +88,10 @@ mara::config_template_t binary::create_config_template()
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
     .item("counter_rotate",         0)          // retrograde disk option: 0 or 1
     .item("mach_number",         40.0)          // disk mach number; for locally isothermal EOS
-    .item("alpha",                0.0);         // viscous alpha coefficient
+    .item("axisymmetric_cs2",       1)          // if true then cs2 = GM / r / Mach^2; otherwise cs2 = -phi / Mach^2
+    .item("alpha_cutoff_radius",  0.0)          // radius inside of which viscosity is set to zero
+    .item("alpha",                0.0)          // viscous alpha coefficient (if nu == 0 then alpha-viscosity is used)
+    .item("nu",                   0.0);         // kinematic viscosity coefficient (if nu > 0 then constant-nu is used)
 }
 
 
@@ -183,7 +187,16 @@ mara::orbital_elements_t binary::create_binary_params(const mara::config_t& run_
 
 binary::solution_t binary::create_solution(const mara::config_t& run_config)
 {
-    auto conserved = create_vertices(run_config).map([&run_config] (auto block)
+    auto conserved_u = create_vertices(run_config).map([&run_config] (auto block)
+    {
+        auto cell_centers = block | nd::midpoint_on_axis(0) | nd::midpoint_on_axis(1);
+        auto primitive = cell_centers | nd::map(create_disk_profile(run_config));
+        return primitive
+        | nd::map([] (auto p) { return p.to_conserved_per_area(); })
+        | nd::to_shared();
+    });
+
+    auto conserved_q = create_vertices(run_config).map([&run_config] (auto block)
     {
         auto cell_centers = block | nd::midpoint_on_axis(0) | nd::midpoint_on_axis(1);
         auto primitive = cell_centers | nd::map(create_disk_profile(run_config));
@@ -192,8 +205,13 @@ binary::solution_t binary::create_solution(const mara::config_t& run_config)
         | nd::to_shared();
     });
 
+    auto conserve_linear_p = run_config.get_int("conserve_linear_p");
+
     return solution_t{
-        0, 0.0, conserved, {}, {}, {}, {}, {}, {},
+        0, 0.0,
+        conserve_linear_p ? conserved_u : decltype(conserved_u){},
+        conserve_linear_p ? decltype(conserved_q){} : conserved_q,
+        {}, {}, {}, {}, {}, {},
         mara::make_full_orbital_elements_with_zeros(),
         mara::make_full_orbital_elements_with_zeros(),
     };
@@ -356,17 +374,16 @@ void binary::prepare_filesystem(const mara::config_t& run_config)
     mara::filesystem::require_dir(outdir);
 }
 
-void binary::print_run_loop_message(const state_t& state, mara::perf_diagnostics_t perf)
+void binary::print_run_loop_message(const state_t& state, const solver_data_t& solver_data, mara::perf_diagnostics_t perf)
 {
-    auto kzps = state
-    .solution
-    .conserved
+    auto kzps = solver_data.cell_centers
     .map([] (auto&& block) { return block.size(); })
     .sum() / perf.execution_time_ms;
 
     std::printf("[%04d] orbits=%3.7lf kzps=%3.2lf\n",
         state.solution.iteration.as_integral(),
         state.solution.time.value / (2 * M_PI), kzps);
+    std::fflush(stdout);
 }
 
 
@@ -394,7 +411,7 @@ public:
         while (binary::simulation_should_continue(state))
         {
             std::tie(state, perf) = mara::time_execution(mara::compose(tasks, next), state);
-            binary::print_run_loop_message(state, perf);
+            binary::print_run_loop_message(state, solver_data, perf);
         }
 
         tasks(next(state));

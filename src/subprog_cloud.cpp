@@ -50,8 +50,8 @@
 
 
 #define gamma_law_index (4. / 3)
-#define light_speed_cgs 3e10
-#define solar_mass_cgs 2e33
+#define light_speed_cgs 2.998e10
+#define solar_mass_cgs  1.989e33
 
 
 
@@ -73,6 +73,7 @@ static auto config_template()
     .item("cloud_mass",            2e-2)   // cloud mass (in solar masses)
     .item("density_index",          2.0)   // index n of the cloud density profile, rho ~ r^(-n) where r < rc
     .item("density_index2",         6.0)   // index n2 of the density beyond rc
+    .item("jet_delay_time",         1.0)   // time for which the envelop propagates before engine oneset
     .item("jet_total_energy",      1e50)   // total energy (solid-angle and time-integrated) to be injected (erg)
     .item("jet_duration",           1.0)   // engine duration (in seconds)
     .item("jet_gamma_beta",        10.0)   // jet gamma-beta on-axis
@@ -83,7 +84,6 @@ static auto config_template()
     .item("reconstruct_method",       2)   // spatial reconstruction method: 1 for PCM, 2 for PLM
     .item("plm_theta",              1.2)   // PLM theta parameter
     .item("temperature_floor",     1e-8);  // temperature floor (0.0 means no floor is applied)
-
 }
 
 
@@ -196,6 +196,7 @@ struct CloudProblem
 
 
     //=========================================================================
+    static auto make_cloud_envelop_model(const mara::config_t& cfg);
     static auto make_atmosphere_model(const mara::config_t& cfg);
     static auto make_jet_nozzle_model(const mara::config_t& cfg);
     static auto make_reference_units(const mara::config_t& cfg);
@@ -292,6 +293,13 @@ auto CloudProblem::cell_centroids(radial_vertex_array_t r_vertices, polar_vertex
 
 
 //=============================================================================
+auto CloudProblem::make_cloud_envelop_model(const mara::config_t& cfg)
+{
+    return mara::cloud_and_envelop_model()
+    .with_inner_radius  (cfg.get_double("inner_radius"))
+    .with_cloud_index   (cfg.get_double("density_index"));
+}
+
 auto CloudProblem::make_atmosphere_model(const mara::config_t& cfg)
 {
     return mara::power_law_atmosphere_model()
@@ -459,12 +467,14 @@ auto CloudProblem::extend_inflow_nozzle_inner(const app_state_t& app_state)
 {
     auto jet         = make_jet_nozzle_model(app_state.run_config);
     auto reference   = make_reference_units(app_state.run_config);
+    // auto atmosphere  = make_cloud_envelop_model(app_state.run_config);
+    // auto cloud_u     = atmosphere.gamma_beta_at(atmosphere.inner_radius, app_state.run_config.get_double("jet_delay_time"));
     auto polar_cells = app_state.solution.polar_vertices | nd::midpoint_on_axis(0);
     auto t_seconds   = app_state.solution.time * reference.time();
 
-    auto inflow_function = [jet, t=t_seconds, reference_density=reference.mass_density()] (double q)
+    auto inflow_function = [jet, t=t_seconds, /*cloud_u,*/ reference_density=reference.mass_density()] (double q)
     {
-        auto u = jet.gamma_beta(q, t) + jet.gamma_beta(M_PI - q, t);
+        auto u = jet.gamma_beta(q, t) + jet.gamma_beta(M_PI - q, t);// + cloud_u;
         auto d = jet.density_at_base() / reference_density;
 
         return mara::srhd::primitive_t()
@@ -601,16 +611,34 @@ auto CloudProblem::new_solution(const mara::config_t& cfg)
 {
     using namespace std::placeholders;
 
-    auto initial_p = [
-        atmosphere_model = make_atmosphere_model(cfg),
-        reference        = make_reference_units(cfg)] (auto r, auto q)
+    // auto initial_p_v1 = [
+    //     atmosphere_model = make_atmosphere_model(cfg),
+    //     reference        = make_reference_units(cfg)]
+    // (auto r, auto q)
+    // {
+    //     auto temperature = 1e-6;
+    //     auto density = atmosphere_model.density_at(r.value * reference.length()) / reference.mass_density();
+
+    //     return mara::srhd::primitive_t()
+    //     .with_mass_density(density)
+    //     .with_gas_pressure(density * temperature);
+    // };
+
+    auto initial_p_v2 = [
+        atmosphere_model  = make_cloud_envelop_model(cfg),
+        reference         = make_reference_units(cfg),
+        jet_delay_time    = cfg.get_double("jet_delay_time")]
+    (auto r, auto q)
     {
+        auto r_cm        = r.value * reference.length();
         auto temperature = 1e-6;
-        auto density = atmosphere_model.density_at(r.value * reference.length()) / reference.mass_density();
+        auto density     = atmosphere_model.density_at   (r_cm, jet_delay_time) / reference.mass_density();
+        auto gamma_beta  = atmosphere_model.gamma_beta_at(r_cm, jet_delay_time);
 
         return mara::srhd::primitive_t()
         .with_mass_density(density)
-        .with_gas_pressure(density * temperature);
+        .with_gas_pressure(density * temperature)
+        .with_gamma_beta_1(gamma_beta);
     };
 
     auto to_conserved   = std::bind(&mara::srhd::primitive_t::to_conserved_density, _1, gamma_law_index);
@@ -629,7 +657,7 @@ auto CloudProblem::new_solution(const mara::config_t& cfg)
     state.radial_vertices = r_vertices;
     state.polar_vertices = q_vertices;
     state.conserved = cell_centroids(r_vertices, q_vertices)
-    | nd::apply(initial_p)
+    | nd::apply(initial_p_v2)
     | nd::map(to_conserved)
     | nd::multiply(dv)
     | nd::to_shared();
@@ -835,22 +863,28 @@ void CloudProblem::print_run_loop_message(const solution_t& solution, mara::perf
 void CloudProblem::print_run_dimensions(std::ostream& output, const mara::config_t& cfg)
 {
     auto c2 = light_speed_cgs * light_speed_cgs;
-    auto atmosphere_model = make_atmosphere_model(cfg);
+    // auto atmosphere_model = make_atmosphere_model(cfg);
+    auto atmosphere_model = make_cloud_envelop_model(cfg);
     auto jet_nozzle_model = make_jet_nozzle_model(cfg);
+    auto jet_delay_time   = cfg.get_double("jet_delay_time");
 
     output << "====================================================\n";
     output << "model description:\n\n";
-    output << "\treference length.................. " << atmosphere_model.r0 << " cm" << std::endl;
-    output << "\treference time.................... " << atmosphere_model.r0 / light_speed_cgs << " s" << std::endl;
-    output << "\treference mass.................... " << atmosphere_model.total_mass() << " g" << std::endl;
-    output << "\treference density................. " << atmosphere_model.total_mass() / std::pow(atmosphere_model.r0, 3) << " g/cm^3" << std::endl;
-    output << "\treference energy.................. " << atmosphere_model.total_mass() * c2 << " erg" << std::endl;
-    output << "\tdensity at cloud base............. " << atmosphere_model.density_at(atmosphere_model.r0) << " g/cm^3" << std::endl;
-    output << "\tdensity at cloud cutoff........... " << atmosphere_model.density_at(atmosphere_model.rc) << " g/cm^3" << std::endl;
+    output << "\treference length.................. " << atmosphere_model.inner_radius << " cm" << std::endl;
+    output << "\treference time.................... " << atmosphere_model.inner_radius / light_speed_cgs << " s" << std::endl;
+    output << "\treference mass.................... " << atmosphere_model.total_mass(jet_delay_time) << " g" << std::endl;
+    output << "\treference density................. " << atmosphere_model.total_mass(jet_delay_time) / std::pow(atmosphere_model.inner_radius, 3) << " g/cm^3" << std::endl;
+    output << "\treference energy.................. " << atmosphere_model.total_mass(jet_delay_time) * c2 << " erg" << std::endl;
+    output << "\ttotal atmosphere mass............. " << atmosphere_model.total_mass(jet_delay_time) / solar_mass_cgs << " M_solar" << std::endl;
+    output << "\tcloud cutoff radius............... " << atmosphere_model.cloud_outer_boundary(jet_delay_time) << " cm" << std::endl;
+    output << "\tcloud velocity.................... " << atmosphere_model.velocity_at(atmosphere_model.inner_radius, jet_delay_time) << " cm/s" << std::endl;
+    output << "\tcloud four velocity............... " << atmosphere_model.gamma_beta_at(atmosphere_model.inner_radius, jet_delay_time) << std::endl;
+    output << "\tdensity at cloud base............. " << atmosphere_model.density_at(atmosphere_model.inner_radius, jet_delay_time) << " g/cm^3" << std::endl;
+    output << "\tdensity at cloud cutoff........... " << atmosphere_model.density_at(atmosphere_model.cloud_outer_boundary(jet_delay_time), jet_delay_time) << " g/cm^3" << std::endl;
     output << "\tjet mass density at base.......... " << jet_nozzle_model.density_at_base() << " g/cm^3" << std::endl;
     output << "\tjet Lorentz factor at q=0, t=0s... " << jet_nozzle_model.gamma_beta(0, 0) << std::endl;
     output << "\tjet Lorentz factor at q=0, t=1s... " << jet_nozzle_model.gamma_beta(0, 1) << std::endl;
-    output << "\texplosion E / M................... " << jet_nozzle_model.Ej / (atmosphere_model.total_mass() * c2) << std::endl;
+    output << "\texplosion E / M................... " << jet_nozzle_model.Ej / (atmosphere_model.total_mass(jet_delay_time) * c2) << std::endl;
     output << std::endl;
 }
 
