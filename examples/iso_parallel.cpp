@@ -138,13 +138,13 @@ namespace iso_mpi
 
 
     //=========================================================================
-    mara::config_template_t             create_config_template();
-    mara::config_t                      create_run_config     (int argc, const char* argv[]);
-    mpi_setup_t                         create_mpi_setup      (const mara::config_t& run_config);
-    index_tree_t                        create_domain_topology(const mara::config_t& run_config);
-    state_t                             create_state   (const mara::config_t& run_config, const mpi_setup_t& mpi_setup);
-    solution_t                          create_solution(const mara::config_t& run_config, const mpi_setup_t& mpi_setup);
-    quad_tree_t<location_2d_t>          create_vertex_blocks(const mara::config_t& run_config, const mpi_setup_t& mpi_setup);
+    mara::config_template_t     create_config_template();
+    mara::config_t              create_run_config     (int argc, const char* argv[]);
+    mpi_setup_t                 create_mpi_setup      (const mara::config_t& run_config);
+    index_tree_t                create_domain_topology(const mara::config_t& run_config);
+    state_t                     create_state   (const mara::config_t& run_config, const mpi_setup_t& mpi_setup);
+    solution_t                  create_solution(const mara::config_t& run_config, const mpi_setup_t& mpi_setup);
+    quad_tree_t<location_2d_t>  create_vertex_blocks(const mara::config_t& run_config, const mpi_setup_t& mpi_setup);
 
     solution_t  advance      (const solution_t& solution, const mpi_setup_t& mpi_setup, mara::unit_time<double> dt);
     solution_t  next_solution(const state_t& state, const mpi_setup_t& mpi_setup);
@@ -203,22 +203,22 @@ mara::config_t iso_mpi::create_run_config( int argc, const char* argv[] )
 //=============================================================================
 iso_mpi::index_tree_t iso_mpi::create_domain_topology(const mara::config_t& run_config)
 {
-    // auto centroid_radius = [] (mara::tree_index_t<2> index)
-    // {
-    //     double x = 2.0 * ((index.coordinates[0] + 0.5) / (1 << index.level) - 0.5);
-    //     double y = 2.0 * ((index.coordinates[1] + 0.5) / (1 << index.level) - 0.5);
-    //     return std::sqrt(x * x + y * y);
-    // };
-
-    // return mara::tree_with_topology<2>([centroid_radius] (auto index)
-    // {
-    //     return centroid_radius(index) < 0.25 ? (index.level < 4) : (index.level < 3);
-    // });
-    
-    return mara::tree_with_topology<2>([] (auto index)
+    auto centroid_radius = [] (mara::tree_index_t<2> index)
     {
-        return index.level < 3;
+        double x = 2.0 * ((index.coordinates[0] + 0.5) / (1 << index.level) - 0.5);
+        double y = 2.0 * ((index.coordinates[1] + 0.5) / (1 << index.level) - 0.5);
+        return std::sqrt(x * x + y * y);
+    };
+
+    return mara::tree_with_topology<2>([centroid_radius] (auto index)
+    {
+        return centroid_radius(index) < 0.25 ? (index.level < 4) : (index.level < 3);
     });
+    
+    // return mara::tree_with_topology<2>([] (auto index)
+    // {
+    //     return index.level < 3;
+    // });
 }
 
 
@@ -232,7 +232,7 @@ iso_mpi::index_tree_t iso_mpi::create_domain_topology(const mara::config_t& run_
  * @return            2D array of vertices
  */
 iso_mpi::quad_tree_t<iso_mpi::location_2d_t> iso_mpi::create_vertex_blocks(
-    const mara::config_t& run_config,
+    const mara::config_t&      run_config,
     const iso_mpi::mpi_setup_t& mpi_setup)
 {
     auto my_rank       = mpi_setup.comm.rank();
@@ -520,6 +520,123 @@ static auto extend(TreeType tree, std::size_t axis, std::size_t guard_count)
 
 
 
+//=============================================================================
+static auto correct_fluxes_xl = [] (auto fhat_tree, mara::tree_index_t<2> index)
+{
+    return [fhat_tree, index] (auto fhat)
+    {
+        if (fhat_tree.contains(index.prev_on(0)))
+            return fhat;
+
+        if (fhat_tree.contains(index.prev_on(0).parent_index()))
+            return fhat;
+
+        auto nodel = fhat_tree.node_at(index.prev_on(0));
+        auto fluxl = nodel.at({1, {1, 0}})
+        | nd::concat(nodel.at({1, {1, 1}})).on_axis(1)
+        | mara::restrict_extrinsic(1)
+        | nd::take_final_on_axis(0);
+
+        auto fluxr = fhat | nd::drop_first_on_axis(0);
+        return fluxl | nd::concat(fluxr).on_axis(0) | nd::to_shared();
+    };
+};
+
+static auto correct_fluxes_xr = [] (auto fhat_tree, mara::tree_index_t<2> index)
+{
+    return [fhat_tree, index] (auto fhat)
+    {
+        if (fhat_tree.contains(index.next_on(0)))
+            return fhat;
+
+        if (fhat_tree.contains(index.next_on(0).parent_index()))
+            return fhat;
+
+        auto noder = fhat_tree.node_at(index.next_on(0));
+        auto fluxr = noder.at({1, {0, 0}})
+        | nd::concat(noder.at({1, {0, 1}})).on_axis(1)
+        | mara::restrict_extrinsic(1)
+        | nd::take_first_on_axis(0);
+
+        auto fluxl = fhat | nd::drop_final_on_axis(0);
+        return fluxl | nd::concat(fluxr).on_axis(0) | nd::to_shared();
+    };
+};
+
+static auto correct_fluxes_yl = [] (auto fhat_tree, mara::tree_index_t<2> index)
+{
+    return [fhat_tree, index] (auto fhat)
+    {
+        if (fhat_tree.contains(index.prev_on(1)))
+            return fhat;
+
+        if (fhat_tree.contains(index.prev_on(1).parent_index()))
+            return fhat;
+
+        auto nodel = fhat_tree.node_at(index.prev_on(1));
+        auto fluxl = nodel.at({1, {0, 1}})
+        | nd::concat(nodel.at({1, {1, 1}})).on_axis(0)
+        | mara::restrict_extrinsic(0)
+        | nd::take_final_on_axis(1);
+
+        auto fluxr = fhat | nd::drop_first_on_axis(1);
+        return fluxl | nd::concat(fluxr).on_axis(1) | nd::to_shared();
+    };
+};
+
+static auto correct_fluxes_yr = [] (auto fhat_tree, mara::tree_index_t<2> index)
+{
+    return [fhat_tree, index] (auto fhat)
+    {
+        if (fhat_tree.contains(index.next_on(1)))
+            return fhat;
+
+        if (fhat_tree.contains(index.next_on(1).parent_index()))
+            return fhat;
+
+        auto noder = fhat_tree.node_at(index.next_on(1));
+        auto fluxr = noder.at({1, {0, 0}})
+        | nd::concat(noder.at({1, {1, 0}})).on_axis(0)
+        | mara::restrict_extrinsic(0)
+        | nd::take_first_on_axis(1);
+
+        auto fluxl = fhat | nd::drop_final_on_axis(1);
+        return fluxl | nd::concat(fluxr).on_axis(1) | nd::to_shared();
+    };
+};
+
+
+
+//=============================================================================
+auto correct_fluxes_x = [] (auto fhat_x)
+{
+    return [fhat_x] (mara::tree_index_t<2> index)
+    {
+        if (fhat_x.at(index).size() == 0)
+        {
+            return fhat_x.at(index);
+        }
+        return fhat_x.at(index)
+        | correct_fluxes_xl(fhat_x, index)
+        | correct_fluxes_xr(fhat_x, index);
+    };
+};
+
+auto correct_fluxes_y = [] (auto fhat_y)
+{
+    return [fhat_y] (mara::tree_index_t<2> index)
+    {
+        if (fhat_y.at(index).size() == 0)
+        {
+            return fhat_y.at(index);
+        }
+        return fhat_y.at(index)
+        | correct_fluxes_yl(fhat_y, index)
+        | correct_fluxes_yr(fhat_y, index);
+    };
+};
+
+
 
 //=============================================================================
 iso_mpi::solution_t iso_mpi::advance(const solution_t& solution, const mpi_setup_t& mpi_setup, mara::unit_time<double> dt)
@@ -631,11 +748,13 @@ iso_mpi::solution_t iso_mpi::advance(const solution_t& solution, const mpi_setup
     auto fhat   = w0.indexes().map(block_fluxes(solution, w0_ex, w0_ey));
     auto fhat_x = fhat.map([] (auto t) { return std::get<0>(t); });
     auto fhat_y = fhat.map([] (auto t) { return std::get<1>(t); });
+    // auto fhat_xc = fhat_x.indexes().map(correct_fluxes_x(fhat_x));
+    // auto fhat_yc = fhat_y.indexes().map(correct_fluxes_y(fhat_y));
 
 
     // Updated conserved densities
-    //=========================================================================
-    auto u1 = u0.indexes().map(block_update(solution, fhat_x, fhat_y, cell_areas, dt));
+        //=========================================================================
+        auto u1 = u0.indexes().map(block_update(solution, fhat_x, fhat_y, cell_areas, dt));
 
 
     // Updated solution state
@@ -676,7 +795,6 @@ mara::unit_time<double> get_timestep(const iso_mpi::solution_t& s, double cfl)
         auto vmax =  block | nd::map(std::mem_fn(&mara::iso2d::primitive_t::velocity_magnitude)) | nd::max();
         return std::max(vmax, mara::make_velocity(1.0));
     };
-
 
     auto v = s.vertices;
     auto w = s.conserved.map([] (auto U) { return U | nd::map(recover_primitive); });

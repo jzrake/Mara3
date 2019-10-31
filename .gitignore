@@ -2,6 +2,7 @@
 *.d
 *.h5
 *.mp4
+*.png
 src/app_compile_opts.hpp
 tutorial/tut1
 tutorial/tut2
