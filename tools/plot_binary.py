@@ -303,6 +303,71 @@ def time_series(args):
 
 
 
+def time_series_specific_torques(args):
+    import numpy as np
+    import h5py
+    import matplotlib.pyplot as plt
+
+
+    def smooth(f):
+        return np.array([np.mean(f[i0-1000:i0+1000]) for i0 in range(1000, len(f) - 1000)])
+
+
+    fig = plt.figure(figsize=[15, 9])
+    ax1 = fig.add_subplot(1, 1, 1)
+
+
+    for filename in args.filenames:
+        h5f = h5py.File(filename, 'r')
+        q = h5f['run_config']['mass_ratio'][()]
+        e = h5f['run_config']['eccentricity'][()]
+
+        if e != 0.0:
+           raise NotImplementedError("specific torque calculation not implemented for non-zero eccentricity")
+
+        a2 = 1 / (1 + q)
+        a1 = 1 - a2
+        M2 = q / (1 + q)
+        M1 = 1 - M2
+        L1 = M1 * a1**2
+        L2 = M2 * a2**2
+
+        time = h5f['time_series']['time']
+        La1 = L1 + h5f['time_series']['angular_momentum_accreted_on'][:,0]
+        La2 = L2 + h5f['time_series']['angular_momentum_accreted_on'][:,1]
+        Lg1 = L1 + h5f['time_series']['integrated_torque_on'][:,0]
+        Lg2 = L2 + h5f['time_series']['integrated_torque_on'][:,1]
+        Ma1 = M1 + h5f['time_series']['mass_accreted_on'][:,0]
+        Ma2 = M2 + h5f['time_series']['mass_accreted_on'][:,1]
+        Mg1 = M1 + np.zeros_like(Ma1)
+        Mg2 = M2 + np.zeros_like(Ma2)
+
+        delta_l_grav_1 = (np.diff(Lg1) * Mg1[1:] - Lg1[1:] * np.diff(Mg1)) / Mg1[1:]**2
+        delta_l_grav_2 = (np.diff(Lg2) * Mg2[1:] - Lg2[1:] * np.diff(Mg2)) / Mg2[1:]**2
+        delta_l_accr_1 = (np.diff(La1) * Ma1[1:] - La1[1:] * np.diff(Ma1)) / Ma1[1:]**2
+        delta_l_accr_2 = (np.diff(La2) * Ma2[1:] - La2[1:] * np.diff(Ma2)) / Ma2[1:]**2
+        delta_M = np.diff(Ma1 + Ma2 + Mg1 + Mg2)
+
+        orbits = time[1:] / 2 / np.pi # smooth(time / 2 / np.pi)[1:]
+        # ax1.plot(orbits, smooth(delta_l_grav_1 / delta_M), label='Grav 1')
+        # ax1.plot(orbits, smooth(delta_l_grav_2 / delta_M), label='Grav 2')
+        # ax1.plot(orbits, smooth(delta_l_accr_1 / delta_M), label='Accr 1')
+        # ax1.plot(orbits, smooth(delta_l_accr_2 / delta_M), label='Accr 2')
+
+        sat = np.where(orbits > 150)
+        plot_moving_average(ax1, orbits, delta_l_grav_1 / delta_M, window_size=args.window_size, avg_only=True, label='Grav 1 (average = {:.3f})'.format(np.mean(delta_l_grav_1[sat] / delta_M[sat])))
+        plot_moving_average(ax1, orbits, delta_l_grav_2 / delta_M, window_size=args.window_size, avg_only=True, label='Grav 2 (average = {:.3f})'.format(np.mean(delta_l_grav_2[sat] / delta_M[sat])))
+        plot_moving_average(ax1, orbits, delta_l_accr_1 / delta_M, window_size=args.window_size, avg_only=True, label='Accr 1 (average = {:.3f})'.format(np.mean(delta_l_accr_1[sat] / delta_M[sat])))
+        plot_moving_average(ax1, orbits, delta_l_accr_2 / delta_M, window_size=args.window_size, avg_only=True, label='Accr 2 (average = {:.3f})'.format(np.mean(delta_l_accr_2[sat] / delta_M[sat])))
+
+    ax1.set_xlabel("Orbits")
+    ax1.set_ylabel(r'Specific torque per accreted mass $dl / dM \ (\Omega a^2 \dot{M} / M$')
+    ax1.legend()
+    plt.show()
+
+
+
+
 def time_series_orbital_elements(args):
     fname = args.filenames[0]
     h5f = h5py.File(fname, 'r')
@@ -345,6 +410,7 @@ if __name__ == "__main__":
     parser.add_argument("--movie", action='store_true')
     parser.add_argument("--time-series", '-t', action='store_true')
     parser.add_argument("--orbital-elements", '-e', action='store_true')
+    parser.add_argument("--specific-torques", '-s', action='store_true')
     parser.add_argument("--avg-only", action='store_true')
     parser.add_argument("--show-total", action='store_true')
     parser.add_argument("--saturation-time", type=float, default=150.0)
@@ -363,6 +429,8 @@ if __name__ == "__main__":
         time_series(args)
     elif args.orbital_elements:
         time_series_orbital_elements(args)
+    elif args.specific_torques:
+        time_series_specific_torques(args)
     elif args.movie:
         make_movie(args)
     else:
