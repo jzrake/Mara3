@@ -89,6 +89,11 @@ namespace mara
     inline full_orbital_elements_t make_full_orbital_elements_with_zeros();
     inline two_body_state_t compute_two_body_state(const orbital_elements_t& params, double t);
     inline full_orbital_elements_t compute_orbital_elements(const two_body_state_t& two_body);
+
+    inline double total_energy(two_body_state_t s);
+    inline double total_mass(two_body_state_t s);
+    inline double separation(two_body_state_t s);
+    inline double delta_a_over_a(two_body_state_t s2, two_body_state_t s1);
     inline double orbital_energy(orbital_elements_t elements);
     inline double orbital_angular_momentum(orbital_elements_t elements);
 }
@@ -320,6 +325,52 @@ double mara::orbital_angular_momentum(orbital_elements_t elements)
     double L2 = -2.0 * orbital_energy(elements) * b2 * mu;
     return std::sqrt(L2);
 }
+
+double mara::total_energy(two_body_state_t s)
+{
+    double T1 = 0.5 * s.body1.mass * (s.body1.velocity_x * s.body1.velocity_x + s.body1.velocity_y * s.body1.velocity_y);
+    double T2 = 0.5 * s.body2.mass * (s.body2.velocity_x * s.body2.velocity_x + s.body2.velocity_y * s.body2.velocity_y);
+    double U12 = -s.body1.mass * s.body2.mass / separation(s);
+    return T1 + T2 + U12;
+}
+
+double mara::total_mass(two_body_state_t s)
+{
+    return s.body1.mass + s.body2.mass;
+}
+
+double mara::separation(two_body_state_t s)
+{
+    return std::sqrt(std::pow(s.body1.position_x - s.body2.position_x, 2) + std::pow(s.body1.position_y - s.body2.position_y, 2));
+}
+
+double mara::delta_a_over_a(two_body_state_t s2, two_body_state_t s1)
+{
+    double E = total_energy(s1);
+    double M1 = s1.body1.mass;
+    double M2 = s1.body2.mass;
+    double dM1 = s2.body1.mass - s1.body1.mass;
+    double dM2 = s2.body2.mass - s1.body2.mass;
+
+    double ax1 = s2.body1.velocity_x - s1.body1.velocity_x;
+    double ay1 = s2.body1.velocity_y - s1.body1.velocity_y;
+    double ax2 = s2.body2.velocity_x - s1.body2.velocity_x;
+    double ay2 = s2.body2.velocity_y - s1.body2.velocity_y;
+
+    double vx1 = s1.body1.velocity_x;
+    double vy1 = s1.body1.velocity_y;
+    double vx2 = s1.body2.velocity_x;
+    double vy2 = s1.body2.velocity_y;
+
+    double T1 = 0.5 * M1 * (vx1 * vx1 + vy1 * vy1);
+    double T2 = 0.5 * M2 * (vx2 * vx2 + vy2 * vy2);
+    double dT1 = M1 * (ax1 * vx1 + ay1 * vy1);
+    double dT2 = M2 * (ax2 * vx2 + ay2 * vy2);
+
+    return (T2 * dM1 / M1 + T1 * dM2 / M2) / E - (dT1 + dT2) / E;
+}
+
+
 
 mara::full_orbital_elements_t mara::full_orbital_elements_t::operator+(const full_orbital_elements_t& other) const
 {

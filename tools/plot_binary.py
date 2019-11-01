@@ -348,11 +348,7 @@ def time_series_specific_torques(args):
         delta_l_accr_2 = (np.diff(La2) * Ma2[1:] - La2[1:] * np.diff(Ma2)) / Ma2[1:]**2
         delta_M = np.diff(Ma1 + Ma2 + Mg1 + Mg2)
 
-        orbits = time[1:] / 2 / np.pi # smooth(time / 2 / np.pi)[1:]
-        # ax1.plot(orbits, smooth(delta_l_grav_1 / delta_M), label='Grav 1')
-        # ax1.plot(orbits, smooth(delta_l_grav_2 / delta_M), label='Grav 2')
-        # ax1.plot(orbits, smooth(delta_l_accr_1 / delta_M), label='Accr 1')
-        # ax1.plot(orbits, smooth(delta_l_accr_2 / delta_M), label='Accr 2')
+        orbits = time[1:] / 2 / np.pi
 
         sat = np.where(orbits > 150)
         plot_moving_average(ax1, orbits, delta_l_grav_1 / delta_M, window_size=args.window_size, avg_only=True, label='Grav 1 (average = {:.3f})'.format(np.mean(delta_l_grav_1[sat] / delta_M[sat])))

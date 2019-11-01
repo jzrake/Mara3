@@ -281,6 +281,26 @@ TEST_CASE("Two body model perturbation works as expected", "[model_two_body]")
         auto binary2 = mara::compute_orbital_elements(state2).elements;
         REQUIRE(binary2.separation < binary1.separation);
     }
+    SECTION("evolution of semi-major axis follows expected formula", "[mara::delta_a_over_a]")
+    {
+        auto binary1 = mara::orbital_elements_t{};
+        binary1.mass_ratio = 0.3;
+
+        auto state1 = mara::compute_two_body_state(binary1, 0.0);
+        auto state2 = state1;
+
+        state2.body1.mass       *= 1.000000001465100;
+        state2.body2.mass       *= 1.000000001465100;
+        state2.body2.velocity_x *= 1.000000002341300;
+        state2.body1.velocity_y *= 1.000000002341300;
+        state2.body2.velocity_x *= 1.000000002341300;
+        state2.body2.velocity_y *= 1.000000002341300;
+
+        auto binary2 = mara::compute_orbital_elements(state2).elements;
+        double daovera = (binary2.separation - binary1.separation) / binary1.separation;
+
+        REQUIRE(mara::delta_a_over_a(state2, state1) == Approx(daovera).epsilon(1e-5));
+    }
 }
 
 #endif // MARA_COMPILE_SUBPROGRAM_TEST
