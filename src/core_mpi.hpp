@@ -867,9 +867,19 @@ public:
     }
 
 
-    double all_reduce(double local_value, operation op)
+    template <typename T>
+    T reduce(std::size_t root, T local_value, operation op)
     {
-        double result_value;
+        T result_value;
+        MPI_Reduce(&local_value, &result_value, 1, MPI_DOUBLE, get_op(op), root, comm);
+        return result_value;
+    }
+
+
+    template <typename T>
+    T all_reduce(T local_value, operation op)
+    {
+        T result_value;
         MPI_Allreduce(&local_value, &result_value, 1, MPI_DOUBLE, get_op(op), comm);
         return result_value;
     }
