@@ -7,6 +7,9 @@
 #if MARA_COMPILE_SUBPROGRAM_BINARY
 
 
+#include "core_mpi.hpp"
+#include "app_parallel.hpp"
+#include "app_loads_dumps.hpp"
 
 
 static mara::thread_pool_t tree_launch(1);
@@ -141,6 +144,18 @@ static auto extend(TreeType tree, std::size_t axis, std::size_t guard_count)
     }, tree_launch);
 };
 
+
+template<typename TreeType>
+static auto extend(TreeType my_tree, TreeType full_tree, std::size_t axis, std::size_t guard_count)
+{
+    return my_tree.indexes().map([full_tree, axis, guard_count] (auto index)
+    {
+        auto C = full_tree.at(index);
+        auto L = mara::get_cell_block(full_tree, index.prev_on(axis), mara::compose(nd::to_shared(), nd::select_final(guard_count, axis)));
+        auto R = mara::get_cell_block(full_tree, index.next_on(axis), mara::compose(nd::to_shared(), nd::select_first(guard_count, axis)));
+        return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis) | nd::to_shared();
+    }, tree_launch);
+};
 
 
 
@@ -735,6 +750,194 @@ auto validate_q = [] (auto solution, auto solver_data)
 
 
 
+
+//=============================================================================
+//     Put all of this in `subprog_binary_parallel.cpp` when know how...
+//=============================================================================
+
+binary::rank_tree_t binary::create_rank_tree(const mara::config_t& run_config)
+{
+    return  mara::build_rank_tree<2>(create_vertices(run_config).indexes(), mpi::comm_world().size());
+}
+
+//=============================================================================
+template<typename Iterable, typename Predicate>
+auto filter(const Iterable& container, Predicate predicate)
+{
+    using value_type = std::decay_t<decltype(*container.begin())>;
+    
+    auto result = std::vector<value_type>();
+
+    for (auto i : container)
+        if (predicate(i))
+            result.push_back(i);
+
+    return result;
+}
+
+
+template<typename Iterable, typename Predicate>
+auto remove_if(const Iterable& container, Predicate predicate)
+{
+    return filter(container, [predicate] (auto v) { return ! predicate(v); });
+}
+
+
+template<typename Iterable>
+auto linked_list_from(const Iterable& container)
+{
+    using value_type = std::decay_t<decltype(*container.begin())>;
+    return mara::linked_list_t<value_type>(container.begin(), container.end());
+}
+
+
+
+//=============================================================================
+/**
+ * @return   Returns a boolean function (index) -> bool that gives
+ *           true if my process owns the index
+ */
+auto block_is_owned_by(std::size_t rank, const binary::rank_tree_t& rank_tree)
+{
+    return [rank, rank_tree] (auto index)
+    {
+        return rank_tree.at(index) == rank;
+    };
+};
+
+
+
+
+/**
+ * @brief   Return a unique vector of all the indexes my process needs in order
+ *          to update all of the blocks that I own
+ */
+auto indexes_of_nonlocal_blocks(const binary::rank_tree_t& rank_tree)
+{
+    /**
+     * @brief   Gives the index at target, it's parent, or all 4 of its children
+     */
+    auto indexes_at = [] (auto tree, auto target)
+    {
+        if (tree.contains(target))
+            return mara::linked_list_t<mara::tree_index_t<2>>().prepend(target);
+
+        if (tree.contains(target.parent_index()))
+            return mara::linked_list_t<mara::tree_index_t<2>>().prepend(target.parent_index());
+
+        return linked_list_from(tree.indexes().node_at(target));
+    };
+
+
+    /**
+     * @brief   Get all neighbor indexes to a given index
+    */ 
+    auto get_neighbors_at = [indexes_at] (auto tree, auto idx)
+    {
+        return  indexes_at(tree, idx.next_on(0))
+        .concat(indexes_at(tree, idx.prev_on(0)))
+        .concat(indexes_at(tree, idx.next_on(1)))
+        .concat(indexes_at(tree, idx.prev_on(1)));
+    };
+
+
+    // can fix this to make it more logical/efficient but I think it works for now
+    //=========================================================================
+    auto my_rank   = mpi::comm_world().rank();
+    auto indexes   = mara::linked_list_t<mara::tree_index_t<2>>();
+
+    for (auto ir : rank_tree.pair_indexes())
+    {
+        auto idx  = ir.first;
+        auto rank = ir.second;
+
+        if (rank != my_rank)
+            continue;
+
+        indexes = indexes.concat(get_neighbors_at(rank_tree, idx));
+    }
+    return remove_if(indexes.unique(), block_is_owned_by(my_rank, rank_tree));
+}
+
+
+template<typename ValueType>
+binary::quad_tree_t<ValueType> binary::mpi_fill_tree(quad_tree_t<ValueType> block_tree, const rank_tree_t& rank_tree)
+{
+    using message_type_t = std::pair<mara::tree_index_t<2>, nd::shared_array<ValueType, 2>>;
+
+    auto comm             = mpi::comm_world();
+    auto indexes_to_recv  = indexes_of_nonlocal_blocks(rank_tree);   
+    auto indexes_to_send  = comm.all_gather(indexes_to_recv);
+    auto requests         = std::vector<mpi::Request>();
+
+    for (auto rank : filter(nd::arange(comm.size()), [rank = comm.rank()] (auto r) { return r != rank; }))
+        for (auto i : filter(indexes_to_send[rank], block_is_owned_by(comm.rank(), rank_tree)))
+            requests.push_back(comm.isend(mara::dumps(std::pair(i, block_tree.at(i))), rank, 0));
+
+    for (auto index : indexes_to_recv)
+    {
+        auto [idx, block] = mara::loads<message_type_t>(comm.recv(rank_tree.at(index), 0));
+        block_tree = block_tree.insert(idx, block);
+    }
+
+    comm.barrier(); // This barrier ensures all processes have completed their
+                    // non-blocking sends before the requests go out of scope.
+
+    for (const auto& request : requests)
+        if (! request.is_ready())
+            throw std::logic_error("A send request was not completed");
+
+    return block_tree;
+}
+
+
+binary::solution_t binary::mpi_reduce_sources(const solution_t& solution)
+{
+    auto comm = mpi::comm_world();
+
+    auto global_mass_accreted_on = mara::arithmetic_sequence_t<mara::unit_mass<double>, 2>{
+        comm.all_reduce(solution.mass_accreted_on[0], mpi::operation::sum),
+        comm.all_reduce(solution.mass_accreted_on[1], mpi::operation::sum)};   
+
+    auto global_angular_momentum_accreted_on = mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2>{
+        comm.all_reduce(solution.angular_momentum_accreted_on[0], mpi::operation::sum),
+        comm.all_reduce(solution.angular_momentum_accreted_on[1], mpi::operation::sum)}; 
+
+    auto global_integrated_torque_on = mara::arithmetic_sequence_t<mara::unit_angmom<double>, 2>{
+        comm.all_reduce(solution.integrated_torque_on[0], mpi::operation::sum),
+        comm.all_reduce(solution.integrated_torque_on[1], mpi::operation::sum)}; 
+
+    auto global_work_done_on = mara::arithmetic_sequence_t<mara::unit_energy<double>, 2>{
+        comm.all_reduce(solution.work_done_on[0], mpi::operation::sum),
+        comm.all_reduce(solution.work_done_on[1], mpi::operation::sum)}; 
+
+    auto global_mass_ejected             = comm.all_reduce(solution.mass_ejected, mpi::operation::sum);
+    auto global_angular_momentum_ejected = comm.all_reduce(solution.angular_momentum_ejected, mpi::operation::sum);
+    auto global_orbital_elements_acc     = comm.all_reduce(solution.orbital_elements_acc,  mpi::operation::sum);
+    auto global_orbital_elements_grav    = comm.all_reduce(solution.orbital_elements_grav, mpi::operation::sum);
+
+    return solution_t{
+        solution.time,
+        solution.iteration,
+        solution.conserved_u,
+        solution.conserved_q,
+        global_mass_accreted_on,
+        global_angular_momentum_accreted_on,
+        global_integrated_torque_on,
+        global_work_done_on,
+        global_mass_ejected,
+        global_angular_momentum_ejected,
+        global_orbital_elements_acc,
+        global_orbital_elements_grav,
+    };
+}
+
+//=============================================================================
+//=============================================================================
+
+
+
+
 //=============================================================================
 binary::solution_t binary::advance_u(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
 {
@@ -751,25 +954,32 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
 
     // Compute pre-requisite data
     //=========================================================================
-    auto p0 = recover_primitive(solution, solver_data);
-    auto p0_ex = extend(p0, 0, 1);
-    auto p0_ey = extend(p0, 1, 1);
-    auto gx = p0_ex.pair_indexes().apply(estimate_gradient(0), tree_launch);
-    auto gy = p0_ey.pair_indexes().apply(estimate_gradient(1), tree_launch);
-    auto gx_ex = extend(gx, 0, 1);
-    auto gx_ey = extend(gx, 1, 1);
-    auto gy_ex = extend(gy, 0, 1);
-    auto gy_ey = extend(gy, 1, 1);
+    auto p0      = recover_primitive(solution, solver_data);
+    auto p0_full = binary::mpi_fill_tree(p0, solver_data.domain_decomposition);
+    auto p0_ex   = extend(p0, p0_full, 0, 1);
+    auto p0_ey   = extend(p0, p0_full, 1, 1);
+
+    auto gx      = p0_ex.pair_indexes().apply(estimate_gradient(0), tree_launch);
+    auto gy      = p0_ey.pair_indexes().apply(estimate_gradient(1), tree_launch);
+    auto gx_full = binary::mpi_fill_tree(gx, solver_data.domain_decomposition);
+    auto gy_full = binary::mpi_fill_tree(gy, solver_data.domain_decomposition);
+    auto gx_ex   = extend(gx, gx_full, 0, 1);
+    auto gx_ey   = extend(gx, gx_full, 1, 1);
+    auto gy_ex   = extend(gy, gy_full, 0, 1);
+    auto gy_ey   = extend(gy, gy_full, 1, 1);
+    
     auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
 
     auto fhat = p0
     .indexes()
     .map(block_fluxes_u(solver_data, solution, binary, p0, p0_ex, p0_ey, gx_ex, gx_ey, gy_ex, gy_ey, dt), tree_launch);
 
-    auto fhat_x = fhat.map([] (auto t) { return std::get<0>(t); });
-    auto fhat_y = fhat.map([] (auto t) { return std::get<1>(t); });
-    auto fhat_xc = fhat_x.indexes().map(correct_fluxes_x(fhat_x));
-    auto fhat_yc = fhat_y.indexes().map(correct_fluxes_y(fhat_y));
+    auto fhat_x  = fhat.map([] (auto t) { return std::get<0>(t); });
+    auto fhat_y  = fhat.map([] (auto t) { return std::get<1>(t); });
+    auto fx_full = binary::mpi_fill_tree(fhat_x, solver_data.domain_decomposition);
+    auto fy_full = binary::mpi_fill_tree(fhat_y, solver_data.domain_decomposition);
+    auto fhat_xc = fhat_x.indexes().map(correct_fluxes_x(fx_full));
+    auto fhat_yc = fhat_y.indexes().map(correct_fluxes_y(fy_full));
 
     auto block_results = p0
     .indexes()
@@ -816,7 +1026,7 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
 
     // The full updated solution state
     //=========================================================================
-    return solution_t{
+    return binary::mpi_reduce_sources(solution_t{
         solution.time + dt,
         solution.iteration + 1,
         u1,
@@ -829,7 +1039,7 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
         solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
         solution.orbital_elements_acc         + delta_E_prime_acc,
         solution.orbital_elements_grav        + delta_E_prime_grav,
-    };
+    });
 }
 
 binary::solution_t binary::advance_q(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
@@ -847,25 +1057,31 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
 
     // Compute pre-requisite data
     //=========================================================================
-    auto p0 = recover_primitive(solution, solver_data);
-    auto p0_ex = extend(p0, 0, 1);
-    auto p0_ey = extend(p0, 1, 1);
-    auto gx = p0_ex.pair_indexes().apply(estimate_gradient(0), tree_launch);
-    auto gy = p0_ey.pair_indexes().apply(estimate_gradient(1), tree_launch);
-    auto gx_ex = extend(gx, 0, 1);
-    auto gx_ey = extend(gx, 1, 1);
-    auto gy_ex = extend(gy, 0, 1);
-    auto gy_ey = extend(gy, 1, 1);
+    auto p0      = recover_primitive(solution, solver_data);
+    auto p0_full = binary::mpi_fill_tree(p0, solver_data.domain_decomposition);
+    auto p0_ex   = extend(p0, p0_full, 0, 1);
+    auto p0_ey   = extend(p0, p0_full, 1, 1);
+
+    auto gx      = p0_ex.pair_indexes().apply(estimate_gradient(0), tree_launch);
+    auto gy      = p0_ey.pair_indexes().apply(estimate_gradient(1), tree_launch);
+    auto gx_full = binary::mpi_fill_tree(gx, solver_data.domain_decomposition);
+    auto gy_full = binary::mpi_fill_tree(gy, solver_data.domain_decomposition);
+    auto gx_ex   = extend(gx, gx_full, 0, 1);
+    auto gx_ey   = extend(gx, gx_full, 1, 1);
+    auto gy_ex   = extend(gy, gy_full, 0, 1);
+    auto gy_ey   = extend(gy, gy_full, 1, 1);
     auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
 
     auto fhat = p0
     .indexes()
     .map(block_fluxes_q(solver_data, solution, binary, p0, p0_ex, p0_ey, gx_ex, gx_ey, gy_ex, gy_ey, dt), tree_launch);
 
-    auto fhat_x = fhat.map([] (auto t) { return std::get<0>(t); });
-    auto fhat_y = fhat.map([] (auto t) { return std::get<1>(t); });
-    auto fhat_xc = fhat_x.indexes().map(correct_fluxes_x(fhat_x));
-    auto fhat_yc = fhat_y.indexes().map(correct_fluxes_y(fhat_y));
+    auto fhat_x  = fhat.map([] (auto t) { return std::get<0>(t); });
+    auto fhat_y  = fhat.map([] (auto t) { return std::get<1>(t); });
+    auto fx_full = binary::mpi_fill_tree(fhat_x, solver_data.domain_decomposition);
+    auto fy_full = binary::mpi_fill_tree(fhat_y, solver_data.domain_decomposition);
+    auto fhat_xc = fhat_x.indexes().map(correct_fluxes_x(fx_full));
+    auto fhat_yc = fhat_y.indexes().map(correct_fluxes_y(fy_full));
 
     auto block_results = p0
     .indexes()
@@ -912,20 +1128,21 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
 
     // The full updated solution state
     //=========================================================================
-    return validate_q(solution_t{
-        solution.time + dt,
-        solution.iteration + 1,
-        {},
-        q1,
-        solution.mass_accreted_on             + totals.mass_accreted_on,
-        solution.angular_momentum_accreted_on + totals.angular_momentum_accreted_on,
-        solution.integrated_torque_on         + totals.integrated_torque_on,
-        solution.work_done_on,
-        solution.mass_ejected                 + totals.mass_ejected,
-        solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
-        solution.orbital_elements_acc         + delta_E_prime_acc,
-        solution.orbital_elements_grav        + delta_E_prime_grav,
-    }, solver_data);
+    return mpi_reduce_sources(
+        validate_q(solution_t{
+            solution.time + dt,
+            solution.iteration + 1,
+            {},
+            q1,
+            solution.mass_accreted_on             + totals.mass_accreted_on,
+            solution.angular_momentum_accreted_on + totals.angular_momentum_accreted_on,
+            solution.integrated_torque_on         + totals.integrated_torque_on,
+            solution.work_done_on,
+            solution.mass_ejected                 + totals.mass_ejected,
+            solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
+            solution.orbital_elements_acc         + delta_E_prime_acc,
+            solution.orbital_elements_grav        + delta_E_prime_grav,
+        }, solver_data));
 }
 
 binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)

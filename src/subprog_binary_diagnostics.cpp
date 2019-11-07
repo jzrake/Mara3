@@ -1,5 +1,6 @@
 #include "subprog_binary.hpp"
 #include "core_ndarray_ops.hpp"
+#include "core_mpi.hpp"
 #if MARA_COMPILE_SUBPROGRAM_BINARY
 
 
@@ -21,9 +22,11 @@ mara::unit_mass<double> binary::disk_mass(const solution_t& solution, const solv
     auto v0 = solver_data.vertices;
     auto dA = solver_data.cell_areas;
 
-    return solver_data.conserve_linear_p
-    ? (solution.conserved_u.map(component<0>()) * dA).map(nd::sum()).sum()
-    : (solution.conserved_q.map(component<0>()) * dA).map(nd::sum()).sum();
+    auto disk_mass = solver_data.conserve_linear_p
+        ? (solution.conserved_u.map(component<0>()) * dA).map(nd::sum()).sum()
+        : (solution.conserved_q.map(component<0>()) * dA).map(nd::sum()).sum();
+
+    return mpi::comm_world().all_reduce(disk_mass, mpi::operation::sum);
 }
 
 mara::unit_angmom<double> binary::disk_angular_momentum(const solution_t& solution, const solver_data_t& solver_data)
@@ -38,7 +41,9 @@ mara::unit_angmom<double> binary::disk_angular_momentum(const solution_t& soluti
 
         return (lz * dA).map(nd::sum()).sum();
     }
-    return (solution.conserved_q * dA).map(component<2>()).map(nd::sum()).sum();
+    auto disk_ang_mom = (solution.conserved_q * dA).map(component<2>()).map(nd::sum()).sum();
+
+    return mpi::comm_world().all_reduce(disk_ang_mom, mpi::operation::sum);
 }
 
 

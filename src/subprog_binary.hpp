@@ -52,6 +52,8 @@ namespace binary
 
     template<typename ArrayValueType>
     using quad_tree_t = mara::arithmetic_binary_tree_t<nd::shared_array<ArrayValueType, 2>, 2>;
+    using rank_tree_t = mara::arithmetic_binary_tree_t<std::size_t, 2>;
+
 
 
     //=========================================================================
@@ -97,6 +99,8 @@ namespace binary
         quad_tree_t<mara::iso2d::conserved_per_area_t>        initial_conserved_u;
         quad_tree_t<mara::iso2d::conserved_angmom_per_area_t> initial_conserved_q;
         quad_tree_t<mara::unit_rate<double>>                  buffer_rate_field;
+
+        rank_tree_t                                           domain_decomposition;
     };
 
 
@@ -179,6 +183,7 @@ namespace binary
     state_t                      create_state        (const mara::config_t& run_config);
     solver_data_t                create_solver_data  (const mara::config_t& run_config);
     primitive_field_t            create_disk_profile (const mara::config_t& run_config);
+    rank_tree_t                  create_rank_tree    (const mara::config_t& run_config);
 
     diagnostic_fields_t          diagnostic_fields    (const solution_t& solution, const mara::config_t& run_config);
     solution_t                   advance_u            (const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode=false);
@@ -191,10 +196,23 @@ namespace binary
     void prepare_filesystem    (const mara::config_t& run_config);
     void set_scheme_globals    (const mara::config_t& run_config);
     void print_run_loop_message(const state_t& state, const solver_data_t& solver_data, mara::perf_diagnostics_t perf);
-
+    
     quad_tree_t<mara::iso2d::primitive_t> recover_primitive(
         const solution_t& solution,
         const solver_data_t& solver_data);
+    
+
+    template<typename ValueType>
+    quad_tree_t<ValueType> mpi_fill_tree(quad_tree_t<ValueType> block_tree, const rank_tree_t& rank_tree);
+    solution_t             mpi_reduce_sources(const solution_t& solution);
+
+    // io
+    void write_singles  (h5::Group& group, std::string name, const binary::state_t& state);
+    void write_singles  (h5::Group& group, std::string name, const binary::solution_t& solution);
+    void write_singles  (h5::Group& group, std::string name, const binary::diagnostic_fields_t& diagnostic);
+    void write_parallels(h5::Group& group, std::string name, const binary::state_t& state);
+    void write_parallels(h5::Group& group, std::string name, const binary::solution_t& solution);
+    void write_parallels(h5::Group& group, std::string name, const binary::diagnostic_fields_t& diagnostic);
 }
 
 

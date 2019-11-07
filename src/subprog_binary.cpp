@@ -32,7 +32,9 @@
 #include "subprog_binary.hpp"
 #include "mesh_tree_operators.hpp"
 #include "core_ndarray_ops.hpp"
+#include "core_mpi.hpp"
 #include "app_serialize.hpp"
+#include "app_parallel.hpp"
 #include "app_serialize_tree.hpp"
 #include "app_subprogram.hpp"
 #include "app_filesystem.hpp"
@@ -163,16 +165,57 @@ binary::quad_tree_t<binary::location_2d_t> binary::create_vertices(const mara::c
     auto block_size    = run_config.get_int("block_size");
     auto depth         = run_config.get_int("depth");
 
+    // 1. define predicate for building topology of the grid
+    // 2. call tree_with_topology<2>(predicate) to get tree of indexes
+    // 3. from topology build rank_tree
+    // 4. function that maps tree indexes to vertex block (block_size, domain_radius)
+
+    auto centroid_radius = [] (mara::tree_index_t<2> index)
+    {
+        double x = 2.0 * ((index.coordinates[0] + 0.5) / (1 << index.level) - 0.5);
+        double y = 2.0 * ((index.coordinates[1] + 0.5) / (1 << index.level) - 0.5);
+        return std::sqrt(x * x + y * y);
+    };
+
     auto refinement_radius = [focus_factor, focus_index] (std::size_t level, double centroid_radius)
     {
         return centroid_radius < focus_factor / std::pow(level, focus_index);
     };
 
-    return mara::create_vertex_quadtree(refinement_radius, block_size, depth)
-    .map([domain_radius] (auto block)
-    {
-        return (block * domain_radius).shared();
+    auto topology = mara::tree_with_topology<2>([refinement_radius, centroid_radius, depth] (auto index) 
+    { 
+        return refinement_radius(index.level, centroid_radius(index)) && index.level < depth; 
     });
+
+
+    //=========================================================================
+    auto my_rank   = mpi::comm_world().rank();
+    auto rank_tree = mara::build_rank_tree<2>(
+        mara::ensure_valid_quadtree(topology, [] (auto i) { return i.child_indexes(); }), 
+        mpi::comm_world().size());
+
+    auto build_my_vertex_blocks = [my_rank, domain_radius, block_size] (auto ir)
+    {
+        if (ir.second == my_rank)
+        {
+            auto index = ir.first;
+            auto block_length = domain_radius / (1 << (index.level - 1));
+
+            // auto x0 = index.coordinates[0] * block_length;
+            // auto y0 = index.coordinates[1] * block_length;
+            auto x0 = index.coordinates[0] * block_length - domain_radius;
+            auto y0 = index.coordinates[1] * block_length - domain_radius;
+            auto x_points = nd::linspace(0, 1, block_size + 1) * block_length + x0;
+            auto y_points = nd::linspace(0, 1, block_size + 1) * block_length + y0;
+
+            return nd::cartesian_product(x_points, y_points)
+                | nd::apply([] (double x, double y) { return binary::location_2d_t{x, y}; })
+                | nd::to_shared();
+        }
+        return nd::shared_array<binary::location_2d_t, 2>{};
+    };
+
+    return rank_tree.pair_indexes().map(build_my_vertex_blocks);  
 }
 
 mara::orbital_elements_t binary::create_binary_params(const mara::config_t& run_config)
@@ -241,7 +284,6 @@ binary::state_t binary::create_state(const mara::config_t& run_config)
     }
     return mara::read<state_t>(h5::File(restart, "r").open_group("/"), "/").with(run_config);
 }
-
 
 
 
@@ -396,6 +438,7 @@ public:
 
     int main(int argc, const char* argv[]) override
     {
+        auto session     = mpi::Session();
         auto run_config  = binary::create_run_config(argc, argv);
         auto solver_data = binary::create_solver_data(run_config);
         auto state       = binary::create_state(run_config);
