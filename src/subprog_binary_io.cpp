@@ -218,43 +218,34 @@ void binary::write_singles(h5::Group& group, std::string name, const binary::sta
     auto location = group.require_group(name);
     binary::write_singles(location, "solution", state.solution);
 
-    if (mpi::is_master())
-    {
-        mara::write(location, "time_series", state.time_series.reverse());
-        mara::write(location, "schedule",   state.schedule);
-        mara::write(location, "run_config", state.run_config);
-    }
+    mara::write(location, "time_series", state.time_series.reverse());
+    mara::write(location, "schedule",   state.schedule);
+    mara::write(location, "run_config", state.run_config);
 }
 
 
 void binary::write_singles(h5::Group& group, std::string name, const binary::solution_t& solution)
 {
     auto location = group.require_group(name);
-    if(mpi::is_master())
-    {
-        mara::write(location, "time",                         solution.time);
-        mara::write(location, "iteration",                    solution.iteration);
-        mara::write(location, "mass_accreted_on",             solution.mass_accreted_on);
-        mara::write(location, "angular_momentum_ejected",     solution.angular_momentum_ejected);
-        mara::write(location, "integrated_torque_on",         solution.integrated_torque_on);
-        mara::write(location, "work_done_on",                 solution.work_done_on);
-        mara::write(location, "mass_ejected",                 solution.mass_ejected);
-        mara::write(location, "angular_momentum_accreted_on", solution.angular_momentum_accreted_on);
-        mara::write(location, "orbital_elements_acc",         solution.orbital_elements_acc);
-        mara::write(location, "orbital_elements_grav",        solution.orbital_elements_grav);
-    }
+    mara::write(location, "time",                         solution.time);
+    mara::write(location, "iteration",                    solution.iteration);
+    mara::write(location, "mass_accreted_on",             solution.mass_accreted_on);
+    mara::write(location, "angular_momentum_ejected",     solution.angular_momentum_ejected);
+    mara::write(location, "integrated_torque_on",         solution.integrated_torque_on);
+    mara::write(location, "work_done_on",                 solution.work_done_on);
+    mara::write(location, "mass_ejected",                 solution.mass_ejected);
+    mara::write(location, "angular_momentum_accreted_on", solution.angular_momentum_accreted_on);
+    mara::write(location, "orbital_elements_acc",         solution.orbital_elements_acc);
+    mara::write(location, "orbital_elements_grav",        solution.orbital_elements_grav);
 }
 
 void binary::write_singles(h5::Group&group, std::string name, const binary::diagnostic_fields_t& diagnostics)
 {
     auto location = group.require_group(name);
-    if(mpi::is_master())
-    {
-        mara::write(location, "run_config",        diagnostics.run_config);
-        mara::write(location, "time",              diagnostics.time);
-        mara::write(location, "position_of_mass1", diagnostics.position_of_mass1);
-        mara::write(location, "position_of_mass2", diagnostics.position_of_mass2);
-    }    
+    mara::write(location, "run_config",        diagnostics.run_config);
+    mara::write(location, "time",              diagnostics.time);
+    mara::write(location, "position_of_mass1", diagnostics.position_of_mass1);
+    mara::write(location, "position_of_mass2", diagnostics.position_of_mass2);
 }
 
 
@@ -265,6 +256,7 @@ void binary::write_parallels(h5::Group& group, std::string name, const binary::s
 }
 
 
+//=========================================================================
 void binary::write_parallels(h5::Group& group, std::string name, const binary::solution_t& solution)
 {
     auto location = group.require_group(name);

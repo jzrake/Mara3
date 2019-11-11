@@ -362,10 +362,26 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         auto outdir = state.run_config.get_string("outdir");
         auto count  = state.schedule.num_times_performed("write_checkpoint");
         auto fname  = mara::filesystem::join(outdir, mara::create_numbered_filename("chkpt", count, "h5"));
-        auto group  = h5::File(fname, "w").open_group("/");
         auto next_state = mara::complete_task_in(state, "write_checkpoint");
-        mara::write(group, "/", next_state);
-        std::printf("write checkpoint: %s\n", fname.data());
+        mpi::printf_master("write checkpoint: %s\n", fname.data());
+
+        // Write single (single global values)
+        auto group = h5::File(fname, "w").open_group("/");
+        if (mpi::is_master())
+            binary::write_singles(group, "/", next_state);
+        group.close();
+
+        // Write parallel (quantities partitioned across ranks)
+        auto comm = mpi::comm_world();
+        for(auto rank : nd::arange(comm.size()))
+        {
+            comm.barrier();
+            if (rank != comm.rank())
+                continue;
+
+            auto group = h5::File(fname, "r+").open_group("/");
+            binary::write_parallels(group, "/", next_state);
+        }
         return next_state;
     };
 
@@ -376,9 +392,26 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         auto outdir = state.run_config.get_string("outdir");
         auto count  = state.schedule.num_times_performed("write_diagnostics");
         auto fname  = mara::filesystem::join(outdir, mara::create_numbered_filename("diagnostics", count, "h5"));
+        auto diagnostic = diagnostic_fields(state.solution, state.run_config);
+        mpi::printf_master("write diagnostics: %s\n", fname.data());
+
+        // Write single quantities
         auto group  = h5::File(fname, "w").open_group("/");
-        mara::write(group, "/", diagnostic_fields(state.solution, state.run_config));
-        std::printf("write diagnostics: %s\n", fname.data());
+        if (mpi::is_master())
+            binary::write_singles(group, "/", diagnostic);
+        group.close();
+
+        // Write parallel blocks
+        auto comm = mpi::comm_world();
+        for(auto rank : nd::arange(comm.size()))
+        {
+            comm.barrier();
+            if (rank != comm.rank())
+                continue;
+
+            auto group = h5::File(fname, "r+").open_group("/");
+            binary::write_parallels(group, "/", diagnostic);
+        }
         return mara::complete_task_in(state, "write_diagnostics");
     };
 
