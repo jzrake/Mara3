@@ -249,29 +249,31 @@ void binary::write_singles(h5::Group&group, std::string name, const binary::diag
 }
 
 
-void binary::write_parallels(h5::Group& group, std::string name, const binary::state_t& state)
+void binary::write_parallels(h5::Group& group, std::string name, const binary::state_t& state,  const std::function<bool(mara::tree_index_t<2>)>& is_my_block)
 {
     auto location = group.require_group(name);
-    binary::write_parallels(location, "solution", state.solution);
+    binary::write_parallels(location, "solution", state.solution, is_my_block);
 }
 
 
 //=========================================================================
-void binary::write_parallels(h5::Group& group, std::string name, const binary::solution_t& solution)
+void binary::write_parallels(h5::Group& group, std::string name, const binary::solution_t& solution,  const std::function<bool(mara::tree_index_t<2>)>& is_my_block)
 {
+    // Need to somehow determine which one to write... (or how to write both anyways...)
+    
     auto location = group.require_group(name);
-    mara::write(location, "conserved_u", solution.conserved_u);
-    mara::write(location, "conserved_q", solution.conserved_q);
+    // mara::write(location, "conserved_u", solution.conserved_u, is_my_block);
+    mara::write(location, "conserved_q", solution.conserved_q, is_my_block);
 }
 
 
-void binary::write_parallels(h5::Group&group, std::string name, const binary::diagnostic_fields_t& diagnostics)
+void binary::write_parallels(h5::Group&group, std::string name, const binary::diagnostic_fields_t& diagnostics, const std::function<bool(mara::tree_index_t<2>)>& is_my_block)
 {
     auto location = group.require_group(name);
-    mara::write(location, "vertices",          diagnostics.vertices);
-    mara::write(location, "sigma",             diagnostics.sigma);
-    mara::write(location, "radial_velocity",   diagnostics.radial_velocity);
-    mara::write(location, "phi_velocity",      diagnostics.phi_velocity);
+    mara::write(location, "vertices",        diagnostics.vertices,        is_my_block);
+    mara::write(location, "sigma",           diagnostics.sigma,           is_my_block);
+    mara::write(location, "radial_velocity", diagnostics.radial_velocity, is_my_block);
+    mara::write(location, "phi_velocity",    diagnostics.phi_velocity,    is_my_block);
 }
 
 

@@ -148,15 +148,18 @@ static auto extend(TreeType tree, std::size_t axis, std::size_t guard_count)
 template<typename TreeType>
 static auto extend(TreeType my_tree, TreeType full_tree, std::size_t axis, std::size_t guard_count)
 {
-    return my_tree.indexes().map([full_tree, axis, guard_count] (auto index)
+    return my_tree.indexes().map([=] (auto index)
     {
+        auto block = my_tree.at(index);
+        if (block.size() == 0)
+            return block | nd::to_shared();
+
         auto C = full_tree.at(index);
         auto L = mara::get_cell_block(full_tree, index.prev_on(axis), mara::compose(nd::to_shared(), nd::select_final(guard_count, axis)));
         auto R = mara::get_cell_block(full_tree, index.next_on(axis), mara::compose(nd::to_shared(), nd::select_first(guard_count, axis)));
         return L | nd::concat(C).on_axis(axis) | nd::concat(R).on_axis(axis) | nd::to_shared();
     }, tree_launch);
 };
-
 
 
 //=============================================================================
@@ -480,6 +483,12 @@ static auto block_fluxes_u = [] (
 {
     return [=] (auto tree_index)
     {
+        if (solution.conserved_u.at(tree_index).size() == 0)
+        {
+            auto flux = nd::shared_array<mara::iso2d::flux_t, 2>() * mara::make_length(1.0) | nd::to_shared();
+            return std::make_tuple(flux, flux);
+        }
+
         auto u0 = solution.conserved_u.at(tree_index);
         auto xv = solver_data.vertices.at(tree_index);
         auto xc = solver_data.cell_centers.at(tree_index);
@@ -526,6 +535,12 @@ static auto block_fluxes_q = [] (
 {
     return [=] (auto tree_index)
     {
+        if (solution.conserved_q.at(tree_index).size() == 0)
+        {
+            auto flux = nd::shared_array<mara::iso2d::flux_angmom_t, 2>() * mara::make_length(1.0) | nd::to_shared();
+            return std::make_tuple(flux, flux);
+        }
+
         auto q0 = solution.conserved_q.at(tree_index);
         auto xv = solver_data.vertices.at(tree_index);
         auto xc = solver_data.cell_centers.at(tree_index);
@@ -574,10 +589,14 @@ static auto block_update_u = [] (
     {
         auto dA = solver_data.cell_areas.at(tree_index);
         auto u0 = solution.conserved_u.at(tree_index);
+
+        if (u0.size() == 0)
+        {
+            return std::make_pair(u0.shared(), binary::source_term_total_t());
+        }
         auto lx = fhat_x.at(tree_index) | nd::difference_on_axis(0);
         auto ly = fhat_y.at(tree_index) | nd::difference_on_axis(1);
-
-        auto s = source_terms_u(solver_data, solution, binary, p0, tree_index, dt);
+        auto s  = source_terms_u(solver_data, solution, binary, p0, tree_index, dt);
         return std::make_pair((u0 - (lx + ly) * dt / dA + s.first) | nd::to_shared(), s.second);
     };
 };
@@ -595,10 +614,14 @@ static auto block_update_q = [] (
     {
         auto dA = solver_data.cell_areas.at(tree_index);
         auto q0 = solution.conserved_q.at(tree_index);
+
+        if (q0.size() == 0)
+        {
+            return std::make_pair(q0.shared(), binary::source_term_total_t());
+        }
         auto lx = fhat_x.at(tree_index) | nd::difference_on_axis(0);
         auto ly = fhat_y.at(tree_index) | nd::difference_on_axis(1);
-
-        auto s = source_terms_q(solver_data, solution, binary, p0, tree_index, dt);
+        auto s  = source_terms_q(solver_data, solution, binary, p0, tree_index, dt);
         return std::make_pair((q0 - (lx + ly) * dt / dA + s.first) | nd::to_shared(), s.second);
     };
 };
@@ -1044,6 +1067,7 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
 
 binary::solution_t binary::advance_q(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
 {
+
     auto th = safe_mode ? 0.0 : solver_data.plm_theta;
     auto spacing_at_root = 2.0 * solver_data.domain_radius.value / solver_data.block_size;
     auto estimate_gradient = [th, spacing_at_root] (std::size_t axis)
@@ -1054,6 +1078,7 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
             return (estimate_plm_difference(p, axis, th) / spacing) | nd::to_shared();
         };
     };
+
 
     // Compute pre-requisite data
     //=========================================================================

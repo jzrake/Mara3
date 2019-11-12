@@ -182,9 +182,13 @@ binary::quad_tree_t<binary::location_2d_t> binary::create_vertices(const mara::c
         return centroid_radius < focus_factor / std::pow(level, focus_index);
     };
 
-    auto topology = mara::tree_with_topology<2>([refinement_radius, centroid_radius, depth] (auto index) 
-    { 
-        return refinement_radius(index.level, centroid_radius(index)) && index.level < depth; 
+    // auto topology = mara::tree_with_topology<2>([refinement_radius, centroid_radius, depth] (auto index) 
+    // { 
+    //     return refinement_radius(index.level, centroid_radius(index)) && index.level < depth; 
+    // });
+    auto topology = mara::tree_with_topology<2>([] (auto index)
+    {
+        return index.level < 3;
     });
 
 
@@ -232,6 +236,13 @@ binary::solution_t binary::create_solution(const mara::config_t& run_config)
 {
     auto conserved_u = create_vertices(run_config).map([&run_config] (auto block)
     {
+        if (block.size() == 0)
+        {
+            return block | nd::map(create_disk_profile(run_config)) 
+            | nd::map([] (auto p) { return p.to_conserved_per_area(); }) 
+            | nd::to_shared();
+        }
+        
         auto cell_centers = block | nd::midpoint_on_axis(0) | nd::midpoint_on_axis(1);
         auto primitive = cell_centers | nd::map(create_disk_profile(run_config));
         return primitive
@@ -241,6 +252,14 @@ binary::solution_t binary::create_solution(const mara::config_t& run_config)
 
     auto conserved_q = create_vertices(run_config).map([&run_config] (auto block)
     {
+        if (block.size() == 0)
+        {
+            auto prim = block | nd::map(create_disk_profile(run_config));
+            return nd::zip(block, prim) 
+            | nd::apply([] (auto x, auto p) { return p.to_conserved_angmom_per_area(x); })
+            | nd::to_shared();
+        }
+
         auto cell_centers = block | nd::midpoint_on_axis(0) | nd::midpoint_on_axis(1);
         auto primitive = cell_centers | nd::map(create_disk_profile(run_config));
         return nd::zip(cell_centers, primitive)
@@ -354,10 +373,16 @@ auto binary::simulation_should_continue(const state_t& state)
 //=============================================================================
 auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
 {
-
+    auto comm        = mpi::comm_world();
+    auto my_rank     = comm.rank();
+    auto rank_tree   = solver_data.domain_decomposition;
+    auto is_my_block = [rank_tree, my_rank] (auto idx)
+    {
+        return rank_tree.at(idx) == my_rank;
+    };
 
     //=========================================================================
-    auto write_checkpoint  = [] (const state_t& state)
+    auto write_checkpoint  = [rank_tree, is_my_block, &comm] (const state_t& state)
     {
         auto outdir = state.run_config.get_string("outdir");
         auto count  = state.schedule.num_times_performed("write_checkpoint");
@@ -366,13 +391,14 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         mpi::printf_master("write checkpoint: %s\n", fname.data());
 
         // Write single (single global values)
-        auto group = h5::File(fname, "w").open_group("/");
         if (mpi::is_master())
+        {
+            auto group = h5::File(fname, "w").open_group("/");
             binary::write_singles(group, "/", next_state);
-        group.close();
+        }
+        comm.barrier();
 
         // Write parallel (quantities partitioned across ranks)
-        auto comm = mpi::comm_world();
         for(auto rank : nd::arange(comm.size()))
         {
             comm.barrier();
@@ -380,14 +406,14 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
                 continue;
 
             auto group = h5::File(fname, "r+").open_group("/");
-            binary::write_parallels(group, "/", next_state);
+            binary::write_parallels(group, "/", next_state, is_my_block);
         }
         return next_state;
     };
 
 
     //=========================================================================
-    auto write_diagnostics = [] (const state_t& state)
+    auto write_diagnostics = [rank_tree, is_my_block, &comm] (const state_t& state)
     {
         auto outdir = state.run_config.get_string("outdir");
         auto count  = state.schedule.num_times_performed("write_diagnostics");
@@ -396,13 +422,14 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         mpi::printf_master("write diagnostics: %s\n", fname.data());
 
         // Write single quantities
-        auto group  = h5::File(fname, "w").open_group("/");
         if (mpi::is_master())
+        {
+            auto group = h5::File(fname, "w").open_group("/");
             binary::write_singles(group, "/", diagnostic);
-        group.close();
+        }
+        comm.barrier();
 
         // Write parallel blocks
-        auto comm = mpi::comm_world();
         for(auto rank : nd::arange(comm.size()))
         {
             comm.barrier();
@@ -410,7 +437,7 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
                 continue;
 
             auto group = h5::File(fname, "r+").open_group("/");
-            binary::write_parallels(group, "/", diagnostic);
+            binary::write_parallels(group, "/", diagnostic, is_my_block);
         }
         return mara::complete_task_in(state, "write_diagnostics");
     };
@@ -441,6 +468,8 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         {"write_diagnostics", write_diagnostics},
         {"record_time_series", record_time_series},
         {"write_checkpoint",  write_checkpoint}});
+    
+    // return mara::run_scheduled_tasks(state, {});
 }
 
 void binary::prepare_filesystem(const mara::config_t& run_config)
@@ -451,11 +480,12 @@ void binary::prepare_filesystem(const mara::config_t& run_config)
 
 void binary::print_run_loop_message(const state_t& state, const solver_data_t& solver_data, mara::perf_diagnostics_t perf)
 {
+    // how calc this in parallel?
     auto kzps = solver_data.cell_centers
     .map([] (auto&& block) { return block.size(); })
     .sum() / perf.execution_time_ms;
 
-    std::printf("[%04d] orbits=%3.7lf kzps=%3.2lf\n",
+    mpi::printf_master("[%04d] orbits=%3.7lf kzps=%3.2lf\n",
         state.solution.iteration.as_integral(),
         state.solution.time.value / (2 * M_PI), kzps);
     std::fflush(stdout);
@@ -481,9 +511,13 @@ public:
 
         binary::prepare_filesystem(run_config);
         binary::set_scheme_globals(run_config);
-        mara::pretty_print(std::cout, "config", run_config);
+        
+        if (mpi::is_master())
+        {
+            mara::pretty_print(std::cout, "config", run_config);
+        }
+        
         state = tasks(state);
-
         while (binary::simulation_should_continue(state))
         {
             std::tie(state, perf) = mara::time_execution(mara::compose(tasks, next), state);

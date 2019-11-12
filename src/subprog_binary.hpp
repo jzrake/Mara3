@@ -210,9 +210,9 @@ namespace binary
     void write_singles  (h5::Group& group, std::string name, const binary::state_t& state);
     void write_singles  (h5::Group& group, std::string name, const binary::solution_t& solution);
     void write_singles  (h5::Group& group, std::string name, const binary::diagnostic_fields_t& diagnostic);
-    void write_parallels(h5::Group& group, std::string name, const binary::state_t& state);
-    void write_parallels(h5::Group& group, std::string name, const binary::solution_t& solution);
-    void write_parallels(h5::Group& group, std::string name, const binary::diagnostic_fields_t& diagnostic);
+    void write_parallels(h5::Group& group, std::string name, const binary::state_t& state,  const std::function<bool(mara::tree_index_t<2>)>& is_my_block);
+    void write_parallels(h5::Group& group, std::string name, const binary::solution_t& solution,  const std::function<bool(mara::tree_index_t<2>)>& is_my_block);
+    void write_parallels(h5::Group& group, std::string name, const binary::diagnostic_fields_t& diagnostic, const std::function<bool(mara::tree_index_t<2>)>& is_my_block);
 }
 
 
