@@ -258,11 +258,9 @@ void binary::write_parallels(h5::Group& group, std::string name, const binary::s
 
 //=========================================================================
 void binary::write_parallels(h5::Group& group, std::string name, const binary::solution_t& solution,  const std::function<bool(mara::tree_index_t<2>)>& is_my_block)
-{
-    // Need to somehow determine which one to write... (or how to write both anyways...)
-    
+{   
     auto location = group.require_group(name);
-    // mara::write(location, "conserved_u", solution.conserved_u, is_my_block);
+    mara::write(location, "conserved_u", solution.conserved_u, is_my_block);
     mara::write(location, "conserved_q", solution.conserved_q, is_my_block);
 }
 
