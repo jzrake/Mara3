@@ -715,26 +715,34 @@ static auto correct_fluxes_yr = [] (auto fhat_tree, mara::tree_index_t<2> index)
 };
 
 
-
-
 //=============================================================================
-auto correct_fluxes_x = [] (auto fhat_x)
+auto correct_fluxes_x = [] (auto fx_full)
 {
-    return [fhat_x] (mara::tree_index_t<2> index)
+    return [fx_full] (auto index_block_pair)
     {
-        return fhat_x.at(index)
-        | correct_fluxes_xl(fhat_x, index)
-        | correct_fluxes_xr(fhat_x, index);
+        auto [index, flux_block] = index_block_pair;
+
+        if (flux_block.size() == 0)
+            return flux_block;
+
+        return flux_block
+        | correct_fluxes_xl(fx_full, index)
+        | correct_fluxes_xr(fx_full, index);
     };
 };
 
-auto correct_fluxes_y = [] (auto fhat_y)
+auto correct_fluxes_y = [] (auto fy_full)
 {
-    return [fhat_y] (mara::tree_index_t<2> index)
+    return [fy_full] (auto index_block_pair)
     {
-        return fhat_y.at(index)
-        | correct_fluxes_yl(fhat_y, index)
-        | correct_fluxes_yr(fhat_y, index);
+        auto [index, flux_block] = index_block_pair;
+
+        if (flux_block.size() == 0)
+            return flux_block;
+
+        return flux_block
+        | correct_fluxes_yl(fy_full, index)
+        | correct_fluxes_yr(fy_full, index);
     };
 };
 
@@ -1001,8 +1009,8 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
     auto fhat_y  = fhat.map([] (auto t) { return std::get<1>(t); });
     auto fx_full = binary::mpi_fill_tree(fhat_x, solver_data.domain_decomposition);
     auto fy_full = binary::mpi_fill_tree(fhat_y, solver_data.domain_decomposition);
-    auto fhat_xc = fhat_x.indexes().map(correct_fluxes_x(fx_full));
-    auto fhat_yc = fhat_y.indexes().map(correct_fluxes_y(fy_full));
+    auto fhat_xc = fhat_x.pair_indexes().map(correct_fluxes_x(fx_full));
+    auto fhat_yc = fhat_y.pair_indexes().map(correct_fluxes_y(fy_full));
 
     auto block_results = p0
     .indexes()
@@ -1105,8 +1113,8 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
     auto fhat_y  = fhat.map([] (auto t) { return std::get<1>(t); });
     auto fx_full = binary::mpi_fill_tree(fhat_x, solver_data.domain_decomposition);
     auto fy_full = binary::mpi_fill_tree(fhat_y, solver_data.domain_decomposition);
-    auto fhat_xc = fhat_x.indexes().map(correct_fluxes_x(fx_full));
-    auto fhat_yc = fhat_y.indexes().map(correct_fluxes_y(fy_full));
+    auto fhat_xc = fhat_x.pair_indexes().map(correct_fluxes_x(fx_full));
+    auto fhat_yc = fhat_y.pair_indexes().map(correct_fluxes_y(fy_full));
 
     auto block_results = p0
     .indexes()

@@ -182,14 +182,14 @@ binary::quad_tree_t<binary::location_2d_t> binary::create_vertices(const mara::c
         return centroid_radius < focus_factor / std::pow(level, focus_index);
     };
 
-    // auto topology = mara::tree_with_topology<2>([refinement_radius, centroid_radius, depth] (auto index) 
-    // { 
-    //     return refinement_radius(index.level, centroid_radius(index)) && index.level < depth; 
-    // });
-    auto topology = mara::tree_with_topology<2>([] (auto index)
-    {
-        return index.level < 3;
+    auto topology = mara::tree_with_topology<2>([refinement_radius, centroid_radius, depth] (auto index) 
+    { 
+        return refinement_radius(index.level, centroid_radius(index)) && index.level < depth; 
     });
+    // auto topology = mara::tree_with_topology<2>([] (auto index)
+    // {
+    //     return index.level < 3;
+    // });
 
 
     //=========================================================================
@@ -377,9 +377,13 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
     auto my_rank     = comm.rank();
     auto rank_tree   = solver_data.domain_decomposition;
     auto is_my_block = [rank_tree, my_rank] (auto idx)
-    {
-        return rank_tree.at(idx) == my_rank;
+    { 
+        if (! rank_tree.node_at(idx).has_value())
+            return false;
+
+        return rank_tree.at(idx) == my_rank; 
     };
+
 
     //=========================================================================
     auto write_checkpoint  = [rank_tree, is_my_block, &comm] (const state_t& state)
@@ -388,9 +392,8 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         auto count  = state.schedule.num_times_performed("write_checkpoint");
         auto fname  = mara::filesystem::join(outdir, mara::create_numbered_filename("chkpt", count, "h5"));
         auto next_state = mara::complete_task_in(state, "write_checkpoint");
-        mpi::printf_master("write checkpoint: %s\n", fname.data());
 
-        // Write single (single global values)
+        mpi::printf_master("write checkpoint: %s\n", fname.data());
         if (mpi::is_master())
         {
             auto group = h5::File(fname, "w").open_group("/");
@@ -398,7 +401,6 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         }
         comm.barrier();
 
-        // Write parallel (quantities partitioned across ranks)
         for(auto rank : nd::arange(comm.size()))
         {
             comm.barrier();
@@ -419,9 +421,8 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         auto count  = state.schedule.num_times_performed("write_diagnostics");
         auto fname  = mara::filesystem::join(outdir, mara::create_numbered_filename("diagnostics", count, "h5"));
         auto diagnostic = diagnostic_fields(state.solution, state.run_config);
-        mpi::printf_master("write diagnostics: %s\n", fname.data());
 
-        // Write single quantities
+        mpi::printf_master("write diagnostics: %s\n", fname.data());
         if (mpi::is_master())
         {
             auto group = h5::File(fname, "w").open_group("/");
@@ -429,7 +430,6 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         }
         comm.barrier();
 
-        // Write parallel blocks
         for(auto rank : nd::arange(comm.size()))
         {
             comm.barrier();
@@ -468,8 +468,6 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         {"write_diagnostics", write_diagnostics},
         {"record_time_series", record_time_series},
         {"write_checkpoint",  write_checkpoint}});
-    
-    // return mara::run_scheduled_tasks(state, {});
 }
 
 void binary::prepare_filesystem(const mara::config_t& run_config)
