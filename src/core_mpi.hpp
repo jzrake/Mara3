@@ -867,7 +867,9 @@ public:
     }
 
 
-    template <typename T>
+    // Need to template these around an mpi_type object
+    // ========================================================================
+    template<typename T>
     T reduce(std::size_t root, T local_value, operation op)
     {
         T result_value;
@@ -875,12 +877,18 @@ public:
         return result_value;
     }
 
-
-    template <typename T>
+    template<typename T>
     T all_reduce(T local_value, operation op)
     {
         T result_value;
         MPI_Allreduce(&local_value, &result_value, 1, MPI_DOUBLE, get_op(op), comm);
+        return result_value;
+    }
+
+    bool all_reduce(bool local_value, operation op)
+    {
+        bool result_value;
+        MPI_Allreduce(&local_value, &result_value, 1, MPI_INT, get_op(op), comm);
         return result_value;
     }
 
