@@ -74,6 +74,7 @@ auto nd::select_first(std::size_t count, std::size_t axis)
 {
     return [count, axis] (auto array)
     {
+
         auto shape = array.shape();
         auto start = nd::make_uniform_index<shape.size()>(0);
         auto final = shape.last_index();
@@ -122,6 +123,12 @@ auto nd::midpoint_on_axis(std::size_t axis)
 {
     return [axis] (auto array)
     {
+        if (array.size() == 0)
+        {
+            auto a = array | nd::select_axis(axis).from(0).to(0);
+            return (a + a) * 0.5;
+        }
+
         return (
         (array | nd::select_axis(axis).from(0).to(1).from_the_end()) +
         (array | nd::select_axis(axis).from(1).to(0).from_the_end())) * 0.5;
@@ -132,8 +139,14 @@ auto nd::difference_on_axis(std::size_t axis)
 {
     return [axis] (auto array)
     {
+        if (array.size() == 0)
+        { 
+            auto a = array | nd::select_axis(axis).from(0).to(0);
+            return a - a;
+        }
+
         return (
-        (array | nd::select_axis(axis).from(1).to(0).from_the_end()) -
+        (array | nd::select_axis(axis).from(1).to(0).from_the_end()) - 
         (array | nd::select_axis(axis).from(0).to(1).from_the_end()));
     };
 }
@@ -142,6 +155,12 @@ auto nd::zip_adjacent2_on_axis(std::size_t axis)
 {
     return [axis] (auto array)
     {
+        if (array.size() == 0)
+        {
+            auto a = array | nd::select_axis(axis).from(0).to(0);
+            return nd::zip(a, a);
+        }
+
         return nd::zip(
         array | nd::select_axis(axis).from(0).to(1).from_the_end(),
         array | nd::select_axis(axis).from(1).to(0).from_the_end());
@@ -152,6 +171,12 @@ auto nd::zip_adjacent3_on_axis(std::size_t axis)
 {
     return [axis] (auto array)
     {
+        if (array.size() == 0)
+        {
+            auto a = array | nd::select_axis(axis).from(0).to(0);
+            return nd::zip(a, a, a);
+        }
+
         return nd::zip(
         array | nd::select_axis(axis).from(0).to(2).from_the_end(),
         array | nd::select_axis(axis).from(1).to(1).from_the_end(),
