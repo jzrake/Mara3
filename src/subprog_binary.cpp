@@ -32,7 +32,6 @@
 #include "subprog_binary.hpp"
 #include "mesh_tree_operators.hpp"
 #include "core_ndarray_ops.hpp"
-#include "core_mpi.hpp"
 #include "app_serialize.hpp"
 #include "app_parallel.hpp"
 #include "app_serialize_tree.hpp"

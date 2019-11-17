@@ -1,6 +1,5 @@
 #include "subprog_binary.hpp"
 #include "app_serialize_tree.hpp"
-#include "core_mpi.hpp"
 #if MARA_COMPILE_SUBPROGRAM_BINARY
 
 

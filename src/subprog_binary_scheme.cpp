@@ -7,7 +7,6 @@
 #if MARA_COMPILE_SUBPROGRAM_BINARY
 
 
-#include "core_mpi.hpp"
 #include "app_parallel.hpp"
 #include "app_loads_dumps.hpp"
 

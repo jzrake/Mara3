@@ -1,6 +1,5 @@
 #include "subprog_binary.hpp"
 #include "core_ndarray_ops.hpp"
-#include "core_mpi.hpp"
 #if MARA_COMPILE_SUBPROGRAM_BINARY
 
 

@@ -32,6 +32,7 @@
 #include "core_ndarray.hpp"
 #include "core_rational.hpp"
 #include "core_tree.hpp"
+#include "core_mpi.hpp"
 #include "model_two_body.hpp"
 #include "physics_iso2d.hpp"
 
