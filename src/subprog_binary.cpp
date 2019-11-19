@@ -329,28 +329,27 @@ auto binary::next_solution(const solution_t& solution, const solver_data_t& solv
         throw std::invalid_argument("binary::next_solution");
     };
 
-    return can_fail(solution, solver_data, solver_data.recommended_time_step, false);
-
     //Going to break the functional rules to make this work in parallel for now...
-    // bool safe = false;
-    // solution_t next_solution;
-    // try {
-    //     next_solution = can_fail(solution, solver_data, solver_data.recommended_time_step, false);
-    // }
-    // catch (const std::exception& e)
-    // {
-    //     std::cout << e.what() << std::endl;
-    //     safe = true;
-    //     // return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true);
-    // }
+    int safe_mode = false;
+    solution_t next_solution;
+    try 
+    {
+        next_solution = can_fail(solution, solver_data, solver_data.recommended_time_step, false);
+    }
+    catch (const std::exception& e)
+    {
+        std::cout << e.what() << std::endl;
+        safe_mode = true;
+        // return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true);
+    }
 
-    // bool use_safe_mode = mpi::comm_world().all_reduce(safe, mpi::operation::lor);
-    // if (use_safe_mode)
-    // {
-    //     mpi::printf_master("%s\n", "safe mode");
-    //     return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true); 
-    // }
-    // return next_solution;
+    auto use_safe_mode = mpi::comm_world().all_reduce(safe_mode, mpi::operation::lor);
+    if (use_safe_mode)
+    {
+        mpi::printf_master("%s\n", "Safe mode");
+        return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true); 
+    }
+    return next_solution;
 }
 
 auto binary::next_schedule(const state_t& state)
