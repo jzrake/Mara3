@@ -1160,8 +1160,8 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
 
     // The full updated solution state
     //=========================================================================
-    return mpi_reduce_sources(
-        validate_q(solution_t{
+    return validate_q(
+        mpi_reduce_sources(solution_t{
             solution.time + dt,
             solution.iteration + 1,
             {},
@@ -1174,7 +1174,8 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
             solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
             solution.orbital_elements_acc         + delta_E_prime_acc,
             solution.orbital_elements_grav        + delta_E_prime_grav,
-        }, solver_data));
+        })
+    , solver_data);
 }
 
 binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)

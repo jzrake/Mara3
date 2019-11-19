@@ -885,9 +885,9 @@ public:
         return result_value;
     }
 
-    bool all_reduce(bool local_value, operation op)
+    int all_reduce(int local_value, operation op)
     {
-        bool result_value;
+        int result_value;
         MPI_Allreduce(&local_value, &result_value, 1, MPI_INT, get_op(op), comm);
         return result_value;
     }
