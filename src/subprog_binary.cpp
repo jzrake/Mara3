@@ -305,6 +305,7 @@ binary::state_t binary::create_state(const mara::config_t& run_config)
 
 
 
+
 //=============================================================================
 /**
  * @brief      Wrap a function that may throw an exception, so that its
@@ -328,28 +329,30 @@ binary::state_t binary::create_state(const mara::config_t& run_config)
 template<typename FunctionType, typename ReducerType>
 auto cooperatively_throwing(FunctionType function, const ReducerType& reduce)
 {
-    auto comm = mpi::comm_world();
-
     return [function, &reduce] (auto... args)
     {
+        struct remote_exception_t {};
+
         try {
             auto result = std::invoke(function, args...);
-            // std::printf("(%d) got result...\n", mpi::comm_world().rank());
 
             if (reduce(false))
             {
-                // std::printf("reduce failed\n");
-                throw std::exception();
+                throw remote_exception_t();
             }
             return std::move(result);
         }
-        catch (const std::exception& e) {
-            // printf("\t cooperatively_throwing : caught error\n");
+        catch (remote_exception_t) {
+            throw std::exception();
+        }
+        catch (const std::exception&) {
             reduce(true);
             throw;
         }
     };
 }
+
+
 
 
 /**
@@ -376,10 +379,11 @@ auto apply_fallback(FunctionType&& f, ArgumentTuple&& args, ArgumentTuple&& safe
         return std::apply(std::forward<FunctionType>(f), std::forward<ArgumentTuple>(args));
     }
     catch (const std::exception&) {
-        // std::printf("\t apply_fallback : caught error\n");
         return std::apply(std::forward<FunctionType>(f), std::forward<ArgumentTuple>(safe_args));
     }
 }
+
+
 
 
 //=============================================================================
@@ -387,104 +391,38 @@ auto binary::next_solution(const solution_t& solution, const solver_data_t& solv
 {
     auto can_fail = [] (const solution_t& solution, const solver_data_t& solver_data, auto dt, bool safe_mode)
     {
+        auto reducer = [] (int threw)
+        {
+            return mpi::comm_world().all_reduce(threw, mpi::operation::lor); 
+        };
+        auto safe_advance = cooperatively_throwing(advance, reducer);
         auto s0 = solution;
 
         switch (solver_data.rk_order)
         {
             case 1:
             {
-                return advance(s0, solver_data, dt, safe_mode);
+                return safe_advance(s0, solver_data, dt, safe_mode);
             }
             case 2:
             {
                 auto b0 = mara::make_rational(1, 2);
-                auto s1 = advance(s0, solver_data, dt, safe_mode);
-                auto s2 = advance(s1, solver_data, dt, safe_mode);
+                auto s1 = safe_advance(s0, solver_data, dt, safe_mode);
+                auto s2 = safe_advance(s1, solver_data, dt, safe_mode);
                 return s0 * b0 + s2 * (1 - b0);
             }
         }
         throw std::invalid_argument("binary::next_solution");
     };
 
-    auto reducer = [] (int threw)
-    {
-        // std::printf("(%d) In reducer\n", mpi::comm_world().rank());
-        auto result = mpi::comm_world().all_reduce(threw, mpi::operation::lor); 
-        return result;
-    };
-
-
     auto aggr_args = std::tuple(solution, solver_data, solver_data.recommended_time_step, false);
     auto safe_args = std::tuple(solution, solver_data, solver_data.recommended_time_step * 0.5, true);
-    try
-    {
-        return apply_fallback(cooperatively_throwing(can_fail, reducer), aggr_args, safe_args);
-    }
-    catch (const std::exception& e)
-    {
-        std::cout << "Still broke" << std::endl; 
-        //then what?
-    }
+
+    return apply_fallback(can_fail, aggr_args, safe_args);
 }
 
 
-// auto binary::next_solution(const solution_t& solution, const solver_data_t& solver_data)
-// {
-//     auto can_fail = [] (const solution_t& solution, const solver_data_t& solver_data, auto dt, bool safe_mode)
-//     {
-//         auto s0 = solution;
 
-//         switch (solver_data.rk_order)
-//         {
-//             case 1:
-//             {
-//                 return advance(s0, solver_data, dt, safe_mode);
-//             }
-//             case 2:
-//             {
-//                 auto b0 = mara::make_rational(1, 2);
-//                 auto s1 = advance(s0, solver_data, dt, safe_mode);
-//                 auto s2 = advance(s1, solver_data, dt, safe_mode);
-//                 return s0 * b0 + s2 * (1 - b0);
-//             }
-//         }
-//         throw std::invalid_argument("binary::next_solution");
-//     };
-
-//     //Going to break the functional rules to make this work in parallel for now...
-//     int safe_mode = false;
-//     solution_t next_solution;
-//     try 
-//     {
-//         next_solution = can_fail(solution, solver_data, solver_data.recommended_time_step, false);
-//     }
-//     catch (const std::exception& e)
-//     {
-//         std::cout << e.what() << std::endl;
-//         safe_mode = true;
-//         // return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true);
-//     }
-
-//     // auto use_safe_mode = false;
-//     auto use_safe_mode = mpi::comm_world().all_reduce(safe_mode, mpi::operation::lor);
-
-//     if (use_safe_mode)
-//     {
-//         // try{
-//         //     mpi::printf_master("%s\n", "Safe mode");
-//         //     next_solution = can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true); 
-//         //     safe_mode = false;
-//         // }
-//         // catch (const std::exception& e)
-//         // {
-//         //     std::cout << e.what() << std::endl;
-//         // }
-//         mpi::printf_master("%s\n", "Safe mode");
-//         next_solution = can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true);
-//     }
-
-//     return next_solution;
-// }
 
 auto binary::next_schedule(const state_t& state)
 {
@@ -540,6 +478,7 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         auto next_state = mara::complete_task_in(state, "write_checkpoint");
 
         mpi::printf_master("write checkpoint: %s\n", fname.data());
+
         if (mpi::is_master())
         {
             auto group = h5::File(fname, "w").open_group("/");
@@ -550,6 +489,7 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         for(auto rank : nd::arange(comm.size()))
         {
             comm.barrier();
+
             if (rank != comm.rank())
                 continue;
 
