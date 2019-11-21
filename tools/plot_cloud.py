@@ -66,8 +66,7 @@ def plot_single_file(args, fig, filename):
 
 
 
-def plot_radial_profile(args, filename):
-    fig = plt.figure(figsize=[12, 8])
+def plot_radial_profile(args, fig, filename):
     ax1 = fig.add_subplot(4, 1, 1)
     ax2 = fig.add_subplot(4, 1, 2)
     ax3 = fig.add_subplot(4, 1, 3)
@@ -86,42 +85,71 @@ def plot_radial_profile(args, filename):
 
     rva = h5f['radial_vertices'][...] / 1e10
     u0a = h5f['radial_gamma_beta'][:,ja]
-    L0a = h5f['radial_energy_flow'][:,ja] / st[ja]
+    L0a = h5f['radial_energy_flow'][:,ja] / dO[ja]
     p0a = h5f['gas_pressure'][:,ja]
     d0a = h5f['mass_density'][:,ja]
 
     rvb = h5f['radial_vertices'][...] / 1e10
     u0b = h5f['radial_gamma_beta'][:,jb]
-    L0b = h5f['radial_energy_flow'][:,jb] / st[jb]
+    L0b = h5f['radial_energy_flow'][:,jb] / dO[jb]
     p0b = h5f['gas_pressure'][:,jb]
     d0b = h5f['mass_density'][:,jb]
 
     rvc = h5f['radial_vertices'][...] / 1e10
     u0c = h5f['radial_gamma_beta'][:,jc]
-    L0c = h5f['radial_energy_flow'][:,jc] / st[jc]
+    L0c = h5f['radial_energy_flow'][:,jc] / dO[jc]
     p0c = h5f['gas_pressure'][:,jc]
     d0c = h5f['mass_density'][:,jc]
 
-    ax1.plot(rva[1:], u0a, lw=2.0, label=r'$\theta=0.0$')
-    ax2.plot(rva[1:], L0a, lw=2.0, label=r'$\theta=0.0$')
-    ax3.plot(rva[1:], p0a, lw=2.0, label=r'$\theta=0.0$')
-    ax4.plot(rva[1:], d0a, lw=2.0, label=r'$\theta=0.0$')
+    # ax1.plot(rva[1:], u0a, lw=2.0, c='r', label=r'$\theta=0.0$')
+    # ax2.plot(rva[1:], L0a, lw=2.0, c='r', label=r'$\theta=0.0$')
+    # ax3.plot(rva[1:], p0a, lw=2.0, c='r', label=r'$\theta=0.0$')
+    # ax4.plot(rva[1:], d0a, lw=2.0, c='r', label=r'$\theta=0.0$')
 
-    ax1.plot(rvb[1:], u0b, lw=2.0, label=r'$\theta=0.1$')
-    ax2.plot(rvb[1:], L0b, lw=2.0, label=r'$\theta=0.1$')
-    ax3.plot(rvb[1:], p0b, lw=2.0, label=r'$\theta=0.1$')
-    ax4.plot(rvb[1:], d0b, lw=2.0, label=r'$\theta=0.1$')
+    # ax1.plot(rvb[1:], u0b, lw=2.0, c='g', label=r'$\theta=0.1$')
+    # ax2.plot(rvb[1:], L0b, lw=2.0, c='g', label=r'$\theta=0.1$')
+    # ax3.plot(rvb[1:], p0b, lw=2.0, c='g', label=r'$\theta=0.1$')
+    # ax4.plot(rvb[1:], d0b, lw=2.0, c='g', label=r'$\theta=0.1$')
 
-    ax1.plot(rvc[1:], u0c, lw=2.0, label=r'$\theta=0.2$')
-    ax2.plot(rvc[1:], L0c, lw=2.0, label=r'$\theta=0.2$')
-    ax3.plot(rvc[1:], p0c, lw=2.0, label=r'$\theta=0.2$')
-    ax4.plot(rvc[1:], d0a, lw=2.0, label=r'$\theta=0.2$')
+    # ax1.plot(rvc[1:], u0c, lw=2.0, c='b', label=r'$\theta=0.2$')
+    # ax2.plot(rvc[1:], L0c, lw=2.0, c='b', label=r'$\theta=0.2$')
+    # ax3.plot(rvc[1:], p0c, lw=2.0, c='b', label=r'$\theta=0.2$')
+    # ax4.plot(rvc[1:], d0c, lw=2.0, c='b', label=r'$\theta=0.2$')
+
+    ax1.plot(rva[1:], u0a, lw=2.0, c='r', label=r'$\theta=0.0$')
+    ax2.plot(rva[1:], L0a, lw=2.0, c='r', label=r'$\theta=0.0$')
+    ax3.plot(rva[1:], p0a/d0a**(1.)/1e21, lw=2.0, c='r', label=r'$\theta=0.0$')
+    ax4.plot(rva[1:], d0a, lw=2.0, c='r', label=r'$\theta=0.0$')
+
+    ax1.plot(rvb[1:], u0b, lw=2.0, c='g', label=r'$\theta=0.1$')
+    ax2.plot(rvb[1:], L0b, lw=2.0, c='g', label=r'$\theta=0.1$')
+    ax3.plot(rvb[1:], p0b/d0b**(1.)/1e21, lw=2.0, c='g', label=r'$\theta=0.1$')
+    ax4.plot(rvb[1:], d0b, lw=2.0, c='g', label=r'$\theta=0.1$')
+
+    ax1.plot(rvc[1:], u0c, lw=2.0, c='b', label=r'$\theta=0.2$')
+    ax2.plot(rvc[1:], L0c, lw=2.0, c='b', label=r'$\theta=0.2$')
+    ax3.plot(rvc[1:], p0c/d0c**(1.)/1e21, lw=2.0, c='b', label=r'$\theta=0.2$')
+    ax4.plot(rvc[1:], d0c, lw=2.0, c='b', label=r'$\theta=0.2$')
+
+    r2 = h5f['shock_midpoint_radius'][...] / 1e10
+    r3 = h5f['shock_pressure_radius'][...] / 1e10
+    r4 = h5f['shock_luminosity_radius'][...] / 1e10
+
+    ax2.axvline(r4[ja], ls='--', c='r', lw=1.0)
+    ax2.axvline(r4[jb], ls='--', c='g', lw=1.0)
+    ax2.axvline(r4[jc], ls='--', c='b', lw=1.0)
 
     if args.log:
         ax1.set_xscale('log')
         ax2.set_xscale('log')
         ax3.set_xscale('log')
         ax4.set_xscale('log')
+
+    ax1.set_ylim(0.1, 80.0)
+    ax2.set_ylim(1e44, 1e52)
+    # ax3.set_ylim(1e5, 1e15)
+    ax3.set_ylim(1e-7, 1e0)
+    ax4.set_ylim(1e-6, 1e2)
 
     ax1.set_yscale('log')
     ax2.set_yscale('log')
@@ -130,7 +158,8 @@ def plot_radial_profile(args, filename):
 
     ax1.set_ylabel(r'$\Gamma \beta_r$')
     ax2.set_ylabel(r'$dL / d\Omega {\rm (erg/s/Sr)}$')
-    ax3.set_ylabel(r'Gas Pressure ${\rm (erg/cm^3)}$')
+    # ax3.set_ylabel(r'Gas Pressure ${\rm (erg/cm^3)}$')
+    ax3.set_ylabel(r'$p / \rho c^2$')
     ax4.set_ylabel(r'Mass Density ${\rm (g/cm^3)}$')
     ax4.set_xlabel(r'Radius ${\rm (10^{{10}} cm)}$')
 
@@ -154,7 +183,8 @@ def make_movie(args):
     with writer.saving(fig, args.output, dpi):
         for filename in args.filenames:
             print(filename)
-            plot_single_file(args, fig, filename)
+            # plot_single_file(args, fig, filename)
+            plot_radial_profile(args, fig, filename)
             writer.grab_frame()
             fig.clf()
 
@@ -173,8 +203,10 @@ if __name__ == "__main__":
     if args.movie:
         make_movie(args)
     elif args.radial:
+        fig = plt.figure(figsize=[12, 8])
+
         for filename in args.filenames:
-            plot_radial_profile(args, filename)
+            plot_radial_profile(args, fig, filename)
         plt.show()
     else:
         for filename in args.filenames:
