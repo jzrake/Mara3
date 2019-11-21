@@ -334,7 +334,7 @@ auto cooperatively_throwing(FunctionType function, const ReducerType& reduce)
     {
         try {
             auto result = std::invoke(function, args...);
-            std::printf("(%d) got result...\n", mpi::comm_world().rank());
+            // std::printf("(%d) got result...\n", mpi::comm_world().rank());
 
             if (reduce(false))
             {
