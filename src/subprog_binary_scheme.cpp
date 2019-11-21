@@ -772,7 +772,10 @@ auto validate_q = [] (auto solution, auto solver_data)
 
     if (any_failures)
     {
-        throw std::runtime_error("negative density in updated state");
+        // std::printf("\t rank (%d) throwing error!\n", mpi::comm_world().rank());
+        // std::printf("\t throwing error!\n");
+        auto error_string = "negative density in updated state " + std::to_string(mpi::comm_world().rank());
+        throw std::runtime_error(error_string);
     }
     return solution;
 };
@@ -1158,10 +1161,10 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
     auto delta_E_prime_acc   = mara::compute_orbital_elements({body1_acc,  body2_acc})  - E0;
     auto delta_E_prime_grav  = mara::compute_orbital_elements({body1_grav, body2_grav}) - E0;
 
+
     // The full updated solution state
     //=========================================================================
-    return validate_q(
-        mpi_reduce_sources(solution_t{
+    auto full_solution = mpi_reduce_sources(solution_t{
             solution.time + dt,
             solution.iteration + 1,
             {},
@@ -1173,9 +1176,12 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
             solution.mass_ejected                 + totals.mass_ejected,
             solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
             solution.orbital_elements_acc         + delta_E_prime_acc,
-            solution.orbital_elements_grav        + delta_E_prime_grav,
-        })
-    , solver_data);
+            solution.orbital_elements_grav        + delta_E_prime_grav
+    });
+    mpi::comm_world().barrier();
+    // auto validated_solution = validate_q(full_solution, solver_data);
+
+    return validate_q(full_solution, solver_data);
 }
 
 binary::solution_t binary::advance(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)

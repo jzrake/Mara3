@@ -306,6 +306,83 @@ binary::state_t binary::create_state(const mara::config_t& run_config)
 
 
 //=============================================================================
+/**
+ * @brief      Wrap a function that may throw an exception, so that its
+ *             invocation only succeeds if all invocations have succeeded.
+ *
+ * @param[in]  function      The function to wrap
+ * @param      reduce        The reducer function: must return true if invoked
+ *                           with true by any of the workers (probably wraps
+ *                           MPI_Allreduce with a logical-or operation).
+ *
+ * @tparam     FunctionType  The type of the function to wrap
+ * @tparam     ReducerType   The type of the reducer function
+ *
+ * @return     A new function that throws an exception if any of the invocations
+ *             have thrown.
+ *
+ * @note       The exception type is preserved only by the invocation that
+ *             threw. The invocations that succeeded will throw an instance of
+ *             std::exception.
+ */
+template<typename FunctionType, typename ReducerType>
+auto cooperatively_throwing(FunctionType function, const ReducerType& reduce)
+{
+    auto comm = mpi::comm_world();
+
+    return [function, &reduce] (auto... args)
+    {
+        try {
+            auto result = std::invoke(function, args...);
+            std::printf("(%d) got result...\n", mpi::comm_world().rank());
+
+            if (reduce(false))
+            {
+                // std::printf("reduce failed\n");
+                throw std::exception();
+            }
+            return std::move(result);
+        }
+        catch (const std::exception& e) {
+            // printf("\t cooperatively_throwing : caught error\n");
+            reduce(true);
+            throw;
+        }
+    };
+}
+
+
+/**
+ * @brief      Apply a function that could throw an exception to a tuple of
+ *             default arguments, and then try again with a tuple of 'safe' or
+ *             fallback arguments if the first apply fails.
+ *
+ * @param      f              The function to call
+ * @param      args           The default arguments
+ * @param      safe_args      The fallback arguments
+ *
+ * @tparam     FunctionType   The type of the function
+ * @tparam     ArgumentTuple  The type of the argument tuple
+ *
+ * @return     f(args) if that succeeds, otherwise f(safe_args) if that
+ *             succeeds.
+ *
+ * @note       This function can still throw! If f(safe_args) also fails...
+ */
+template<typename FunctionType, typename ArgumentTuple>
+auto apply_fallback(FunctionType&& f, ArgumentTuple&& args, ArgumentTuple&& safe_args)
+{
+    try {
+        return std::apply(std::forward<FunctionType>(f), std::forward<ArgumentTuple>(args));
+    }
+    catch (const std::exception&) {
+        // std::printf("\t apply_fallback : caught error\n");
+        return std::apply(std::forward<FunctionType>(f), std::forward<ArgumentTuple>(safe_args));
+    }
+}
+
+
+//=============================================================================
 auto binary::next_solution(const solution_t& solution, const solver_data_t& solver_data)
 {
     auto can_fail = [] (const solution_t& solution, const solver_data_t& solver_data, auto dt, bool safe_mode)
@@ -329,28 +406,85 @@ auto binary::next_solution(const solution_t& solution, const solver_data_t& solv
         throw std::invalid_argument("binary::next_solution");
     };
 
-    //Going to break the functional rules to make this work in parallel for now...
-    int safe_mode = false;
-    solution_t next_solution;
-    try 
+    auto reducer = [] (int threw)
     {
-        next_solution = can_fail(solution, solver_data, solver_data.recommended_time_step, false);
+        // std::printf("(%d) In reducer\n", mpi::comm_world().rank());
+        auto result = mpi::comm_world().all_reduce(threw, mpi::operation::lor); 
+        return result;
+    };
+
+
+    auto aggr_args = std::tuple(solution, solver_data, solver_data.recommended_time_step, false);
+    auto safe_args = std::tuple(solution, solver_data, solver_data.recommended_time_step * 0.5, true);
+    try
+    {
+        return apply_fallback(cooperatively_throwing(can_fail, reducer), aggr_args, safe_args);
     }
     catch (const std::exception& e)
     {
-        std::cout << e.what() << std::endl;
-        safe_mode = true;
-        // return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true);
+        std::cout << "Still broke" << std::endl; 
+        //then what?
     }
-
-    auto use_safe_mode = mpi::comm_world().all_reduce(safe_mode, mpi::operation::lor);
-    if (use_safe_mode)
-    {
-        mpi::printf_master("%s\n", "Safe mode");
-        return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true); 
-    }
-    return next_solution;
 }
+
+
+// auto binary::next_solution(const solution_t& solution, const solver_data_t& solver_data)
+// {
+//     auto can_fail = [] (const solution_t& solution, const solver_data_t& solver_data, auto dt, bool safe_mode)
+//     {
+//         auto s0 = solution;
+
+//         switch (solver_data.rk_order)
+//         {
+//             case 1:
+//             {
+//                 return advance(s0, solver_data, dt, safe_mode);
+//             }
+//             case 2:
+//             {
+//                 auto b0 = mara::make_rational(1, 2);
+//                 auto s1 = advance(s0, solver_data, dt, safe_mode);
+//                 auto s2 = advance(s1, solver_data, dt, safe_mode);
+//                 return s0 * b0 + s2 * (1 - b0);
+//             }
+//         }
+//         throw std::invalid_argument("binary::next_solution");
+//     };
+
+//     //Going to break the functional rules to make this work in parallel for now...
+//     int safe_mode = false;
+//     solution_t next_solution;
+//     try 
+//     {
+//         next_solution = can_fail(solution, solver_data, solver_data.recommended_time_step, false);
+//     }
+//     catch (const std::exception& e)
+//     {
+//         std::cout << e.what() << std::endl;
+//         safe_mode = true;
+//         // return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true);
+//     }
+
+//     // auto use_safe_mode = false;
+//     auto use_safe_mode = mpi::comm_world().all_reduce(safe_mode, mpi::operation::lor);
+
+//     if (use_safe_mode)
+//     {
+//         // try{
+//         //     mpi::printf_master("%s\n", "Safe mode");
+//         //     next_solution = can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true); 
+//         //     safe_mode = false;
+//         // }
+//         // catch (const std::exception& e)
+//         // {
+//         //     std::cout << e.what() << std::endl;
+//         // }
+//         mpi::printf_master("%s\n", "Safe mode");
+//         next_solution = can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true);
+//     }
+
+//     return next_solution;
+// }
 
 auto binary::next_schedule(const state_t& state)
 {
