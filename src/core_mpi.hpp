@@ -443,7 +443,10 @@ public:
     {
         if (! is_null())
         {
-            MPI_Comm_free(&comm);
+            if (owned)
+            {
+                MPI_Comm_free(&comm);
+            }
             comm = MPI_COMM_NULL;
         }
     }
@@ -897,6 +900,7 @@ private:
     // ========================================================================
     friend Communicator comm_world();
     MPI_Comm comm = MPI_COMM_NULL;
+    bool owned = true;
 };
 
 
@@ -906,6 +910,7 @@ private:
 mpi::Communicator mpi::comm_world()
 {
     Communicator res;
-    MPI_Comm_dup(MPI_COMM_WORLD, &res.comm);
+    res.comm = MPI_COMM_WORLD;
+    res.owned = false;
     return res;
 }
