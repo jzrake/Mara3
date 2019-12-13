@@ -180,6 +180,7 @@ TEST_CASE("Two body model works as expected", "[model_two_body]")
     CHECK(state0.body2.position_x * state0.body2.velocity_y - state0.body2.position_y * state0.body2.velocity_x ==
           state2.body2.position_x * state2.body2.velocity_y - state2.body2.position_y * state2.body2.velocity_x);
 }
+
 TEST_CASE("Two body model perturbation works as expected", "[model_two_body]")
 {
     SECTION("for a circular orbit")
@@ -189,9 +190,9 @@ TEST_CASE("Two body model perturbation works as expected", "[model_two_body]")
         auto state1 = mara::compute_two_body_state(binary, 0.1);
         auto state2 = mara::compute_two_body_state(binary, 0.2);
 
-        auto binary0 = mara::compute_orbital_elements(state0);
-        auto binary1 = mara::compute_orbital_elements(state1);
-        auto binary2 = mara::compute_orbital_elements(state2);
+        auto binary0 = mara::compute_orbital_elements(state0, 0.0);
+        auto binary1 = mara::compute_orbital_elements(state1, 0.0);
+        auto binary2 = mara::compute_orbital_elements(state2, 0.0);
 
         REQUIRE(binary0.cm_position_x == 0.0);
         REQUIRE(binary0.cm_position_y == 0.0);
@@ -218,7 +219,7 @@ TEST_CASE("Two body model perturbation works as expected", "[model_two_body]")
         binary.eccentricity = 0.3;
 
         auto state1 = mara::compute_two_body_state(binary, 0.1);
-        auto binary1 = mara::compute_orbital_elements(state1);
+        auto binary1 = mara::compute_orbital_elements(state1, 0.0);
 
         REQUIRE(std::fabs(binary1.cm_position_x) < 1e-12);
         REQUIRE(std::fabs(binary1.cm_position_y) < 1e-12);
@@ -239,7 +240,7 @@ TEST_CASE("Two body model perturbation works as expected", "[model_two_body]")
         state1.body1.velocity_x += 0.1;
         state1.body2.velocity_x += 0.1;
 
-        auto binary1 = mara::compute_orbital_elements(state1);
+        auto binary1 = mara::compute_orbital_elements(state1, 0.0);
 
         REQUIRE(mara::orbital_energy(binary1.elements) == Approx(mara::orbital_energy(binary)));
         REQUIRE(mara::orbital_angular_momentum(binary1.elements) == Approx(mara::orbital_angular_momentum(binary)));
@@ -265,7 +266,7 @@ TEST_CASE("Two body model perturbation works as expected", "[model_two_body]")
             REQUIRE(state1.body2.velocity_y < 0.0);
         }
 
-        auto binary1 = mara::compute_orbital_elements(state1);
+        auto binary1 = mara::compute_orbital_elements(state1, 0.0);
         REQUIRE(mara::orbital_energy(binary1.elements) > mara::orbital_energy(binary));
         REQUIRE(binary1.elements.eccentricity > binary.eccentricity);
         REQUIRE(std::fabs(binary1.cm_velocity_x) < 1e-12);
@@ -278,7 +279,7 @@ TEST_CASE("Two body model perturbation works as expected", "[model_two_body]")
         auto state2 = state1;
         state2.body1.mass += 0.01;
         state2.body2.mass += 0.01;
-        auto binary2 = mara::compute_orbital_elements(state2).elements;
+        auto binary2 = mara::compute_orbital_elements(state2, 0.0).elements;
         REQUIRE(binary2.separation < binary1.separation);
     }
     SECTION("evolution of semi-major axis follows expected formula", "[mara::delta_a_over_a]")
@@ -296,7 +297,7 @@ TEST_CASE("Two body model perturbation works as expected", "[model_two_body]")
         state2.body2.velocity_x *= 1.000000002341300;
         state2.body2.velocity_y *= 1.000000002341300;
 
-        auto binary2 = mara::compute_orbital_elements(state2).elements;
+        auto binary2 = mara::compute_orbital_elements(state2, 0.0).elements;
         double daovera = (binary2.separation - binary1.separation) / binary1.separation;
 
         REQUIRE(mara::delta_a_over_a(state2, state1) == Approx(daovera).epsilon(1e-5));

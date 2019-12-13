@@ -73,7 +73,7 @@ struct h5::hdf5_type_info<mara::full_orbital_elements_t>
     {
         return h5::Datatype::compound<native_type>({
             h5_compound_type_member(native_type, pomega),
-            h5_compound_type_member(native_type, phi),
+            h5_compound_type_member(native_type, tau),
             h5_compound_type_member(native_type, cm_position_x),
             h5_compound_type_member(native_type, cm_position_y),
             h5_compound_type_member(native_type, cm_velocity_x),

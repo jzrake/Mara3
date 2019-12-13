@@ -52,8 +52,8 @@ namespace mara
     //=========================================================================
     struct full_orbital_elements_t
     {
-        double pomega = 0.0;
-        double phi = 0.0; // true anomoly + pi
+        double pomega        = 0.0; // argument of periapse
+        double tau           = 0.0; // time of last periapse
         double cm_position_x = 0.0;
         double cm_position_y = 0.0;
         double cm_velocity_x = 0.0;
@@ -88,12 +88,15 @@ namespace mara
     //=========================================================================
     inline full_orbital_elements_t make_full_orbital_elements_with_zeros();
     inline two_body_state_t compute_two_body_state(const orbital_elements_t& params, double t);
-    inline full_orbital_elements_t compute_orbital_elements(const two_body_state_t& two_body);
 
     inline double total_energy(two_body_state_t s);
     inline double total_mass(two_body_state_t s);
     inline double separation(two_body_state_t s);
     inline double delta_a_over_a(two_body_state_t s2, two_body_state_t s1);
+
+    inline two_body_state_t compute_two_body_state(const full_orbital_elements_t& params, double t);
+    inline full_orbital_elements_t compute_orbital_elements(const two_body_state_t& two_body, double t);
+
     inline double orbital_energy(orbital_elements_t elements);
     inline double orbital_angular_momentum(orbital_elements_t elements);
 }
@@ -188,8 +191,8 @@ mara::two_body_state_t mara::compute_two_body_state(const orbital_elements_t& pa
         auto M = omega * t; // mean anomoly
         auto anomoly_equation   = [e, M] (double E) { return E - e * std::sin(E) - M; };
         auto anomoly_derivative = [e]    (double E) { return 1 - e * std::cos(E); };
-
         double E = two_body::detail::solve_newton_rapheson(anomoly_equation, anomoly_derivative, M);
+
         return make_result_from_E_and_a(E, a);
     }
     else
@@ -198,6 +201,61 @@ mara::two_body_state_t mara::compute_two_body_state(const orbital_elements_t& pa
         double a = params.separation;
         return make_result_from_E_and_a(E, a);
     }
+}
+
+mara::two_body_state_t mara::compute_two_body_state(const full_orbital_elements_t& params, double t)
+{
+    auto local = compute_two_body_state(params.elements, t - params.tau);
+
+    auto x1 = local.body1.position_x;
+    auto y1 = local.body1.position_y;
+    auto x2 = local.body2.position_x;
+    auto y2 = local.body2.position_y;
+
+    auto vx1 = local.body1.velocity_x;
+    auto vy1 = local.body1.velocity_y;
+    auto vx2 = local.body2.velocity_x;
+    auto vy2 = local.body2.velocity_y;
+
+    auto c = std::cos(-params.pomega);
+    auto s = std::sin(-params.pomega);
+
+    auto x1_rot = +x1 * c + y1 * s;
+    auto y1_rot = -x1 * s + y1 * c;
+    auto x2_rot = +x2 * c + y2 * s;
+    auto y2_rot = -x2 * s + y2 * c;
+
+    auto vx1_rot = +vx1 * c + vy1 * s;
+    auto vy1_rot = -vx1 * s + vy1 * c;
+    auto vx2_rot = +vx2 * c + vy2 * s;
+    auto vy2_rot = -vx2 * s + vy2 * c;
+
+    auto x1_rot_trans = x1_rot + params.cm_position_x;
+    auto y1_rot_trans = y1_rot + params.cm_position_y;
+    auto x2_rot_trans = x2_rot + params.cm_position_x;
+    auto y2_rot_trans = y2_rot + params.cm_position_y;
+
+    auto vx1_rot_trans = vx1_rot + params.cm_velocity_x;
+    auto vy1_rot_trans = vy1_rot + params.cm_velocity_y;
+    auto vx2_rot_trans = vx2_rot + params.cm_velocity_x;
+    auto vy2_rot_trans = vy2_rot + params.cm_velocity_y;
+
+    return {
+        {
+            local.body1.mass,
+            x1_rot_trans,
+            y1_rot_trans,
+            vx1_rot_trans,
+            vy1_rot_trans,
+        },
+        {
+            local.body2.mass,
+            x2_rot_trans,
+            y2_rot_trans,
+            vx2_rot_trans,
+            vy2_rot_trans, 
+        },
+    };
 }
 
 
@@ -217,8 +275,10 @@ mara::full_orbital_elements_t mara::make_full_orbital_elements_with_zeros()
 
 
 //=============================================================================
-mara::full_orbital_elements_t mara::compute_orbital_elements(const two_body_state_t& two_body)
+mara::full_orbital_elements_t mara::compute_orbital_elements(const two_body_state_t& two_body, double t)
 {
+    using two_body::detail::clamp;
+
     auto c1 = two_body.body1;
     auto c2 = two_body.body2;
 
@@ -264,23 +324,30 @@ mara::full_orbital_elements_t mara::compute_orbital_elements(const two_body_stat
     // Semi-major, semi-minor axes; eccentricity, apsides
     double a = -0.5 * M1 * M2 / E;
     double b = std::sqrt(-0.5 * L * L / E * (M1 + M2) / (M1 * M2));
-    double e = std::sqrt(1.0 - std::min(1.0, b * b / a / a));
-    // double rmin = a - std::sqrt(a * a - b * b);
-    // double rmax = a + std::sqrt(a * a - b * b);
+    double e = std::sqrt(1.0 - b * b / a / a);
+    double omega = std::sqrt(M / a / a / a);
+
+
+    // True anomoly (nu)
+    double a1 = a * q / (1.0 + q);
+    double ca = (1.0 - r1 / a1) / e;
+    double cn = a1 / r1 * (ca - e);
+    double sa = std::sqrt(1.0 - ca * ca);
+    double cE = (e + cn) / (1.0 + e * cn);
+    double EE = std::acos(cE);
+    double MM = EE - e * std::sin(EE);
+    double tau = t - MM / omega;
 
 
     // Argument of periapsis (pomega)
-    double a2 = a / (1.0 + q);
-    double b2 = b / (1.0 + q);
-    double cf = e == 0.0 ? -1.0 : -(a2 - r2) / (a2 * e);
-    double delta = std::atan2(b2 * std::sqrt(std::max(0.0, 1.0 - cf * cf)), a2 * (e + cf));
-    double pomega = std::atan2(y2, x2) - delta;
+    double ax = +(ca - e) * x1 + sa * std::sqrt(1.0 - e * e) * y1; // denominator is omitted
+    double ay = +(ca - e) * y1 - sa * std::sqrt(1.0 - e * e) * x1;
+    double pomega = std::atan2(ay, ax);
 
 
-    // Store results
-    auto P = full_orbital_elements_t();
-    P.phi = std::acos(two_body::detail::clamp(-1.0, 1.0, cf));
-    P.pomega = two_body::detail::wrap(0.0, 2 * M_PI, pomega);
+    auto P   = full_orbital_elements_t();
+    P.tau    = tau;
+    P.pomega = pomega;
     P.cm_position_x = x_cm;
     P.cm_position_y = y_cm;
     P.cm_velocity_x = vx_cm;
@@ -375,16 +442,16 @@ double mara::delta_a_over_a(two_body_state_t s2, two_body_state_t s1)
 mara::full_orbital_elements_t mara::full_orbital_elements_t::operator+(const full_orbital_elements_t& other) const
 {
     return {
-        pomega + other.pomega,
-        phi + other.phi,
+        pomega        + other.pomega,
+        tau           + other.tau,
         cm_position_x + other.cm_position_x,
         cm_position_y + other.cm_position_y,
         cm_velocity_x + other.cm_velocity_x,
         cm_velocity_y + other.cm_velocity_y,
         {
-            elements.separation + other.elements.separation,
-            elements.total_mass + other.elements.total_mass,
-            elements.mass_ratio + other.elements.mass_ratio,
+            elements.separation   + other.elements.separation,
+            elements.total_mass   + other.elements.total_mass,
+            elements.mass_ratio   + other.elements.mass_ratio,
             elements.eccentricity + other.elements.eccentricity,
         },
     };
@@ -394,15 +461,15 @@ mara::full_orbital_elements_t mara::full_orbital_elements_t::operator-(const ful
 {
     return {
         pomega - other.pomega,
-        phi - other.phi,
+        tau    - other.tau,
         cm_position_x - other.cm_position_x,
         cm_position_y - other.cm_position_y,
         cm_velocity_x - other.cm_velocity_x,
         cm_velocity_y - other.cm_velocity_y,
         {
-            elements.separation - other.elements.separation,
-            elements.total_mass - other.elements.total_mass,
-            elements.mass_ratio - other.elements.mass_ratio,
+            elements.separation   - other.elements.separation,
+            elements.total_mass   - other.elements.total_mass,
+            elements.mass_ratio   - other.elements.mass_ratio,
             elements.eccentricity - other.elements.eccentricity,
         },
     };
@@ -412,15 +479,15 @@ mara::full_orbital_elements_t mara::full_orbital_elements_t::operator*(double sc
 {
     return {
         pomega * scale,
-        phi * scale,
+        tau    * scale,
         cm_position_x * scale,
         cm_position_y * scale,
         cm_velocity_x * scale,
         cm_velocity_y * scale,
         {
-            elements.separation * scale,
-            elements.total_mass * scale,
-            elements.mass_ratio * scale,
+            elements.separation   * scale,
+            elements.total_mass   * scale,
+            elements.mass_ratio   * scale,
             elements.eccentricity * scale,
         },
     };

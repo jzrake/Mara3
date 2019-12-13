@@ -825,9 +825,9 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
         binary.body2.velocity_y + totals.integrated_force_y_on[1].value / binary.body2.mass,
     };
 
-    auto E0                  = mara::compute_orbital_elements(binary);
-    auto delta_E_prime_acc   = mara::compute_orbital_elements({body1_acc,  body2_acc})  - E0;
-    auto delta_E_prime_grav  = mara::compute_orbital_elements({body1_grav, body2_grav}) - E0;
+    auto E0                  = mara::compute_orbital_elements(binary, solution.time.value);
+    auto delta_E_prime_acc   = mara::compute_orbital_elements({body1_acc,  body2_acc},  solution.time.value) - E0;
+    auto delta_E_prime_grav  = mara::compute_orbital_elements({body1_grav, body2_grav}, solution.time.value) - E0;
 
 
     // The full updated solution state
@@ -936,9 +936,9 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
         binary.body2.velocity_y + totals.integrated_force_y_on[1].value / binary.body2.mass,
     };
 
-    auto E0                  = mara::compute_orbital_elements(binary);
-    auto delta_E_prime_acc   = mara::compute_orbital_elements({body1_acc,  body2_acc})  - E0;
-    auto delta_E_prime_grav  = mara::compute_orbital_elements({body1_grav, body2_grav}) - E0;
+    auto E0                  = mara::compute_orbital_elements(binary, solution.time.value);
+    auto delta_E_prime_acc   = mara::compute_orbital_elements({body1_acc,  body2_acc},  solution.time.value) - E0;
+    auto delta_E_prime_grav  = mara::compute_orbital_elements({body1_grav, body2_grav}, solution.time.value) - E0;
 
     // The full updated solution state
     //=========================================================================
