@@ -112,7 +112,7 @@ namespace mara::two_body::detail
         Function f,
         Derivative g,
         double starting_guess,
-        double tolerance=1e-8);
+        double tolerance=1e-10);
 
     inline double wrap(double x0, double x1, double x);
     inline double clamp(double x0, double x1, double x);
@@ -205,6 +205,10 @@ mara::two_body_state_t mara::compute_two_body_state(const orbital_elements_t& pa
 
 mara::two_body_state_t mara::compute_two_body_state(const full_orbital_elements_t& params, double t)
 {
+    if (t < params.tau)
+    {
+        throw std::invalid_argument("mara::compute_two_body_state (t < tau)");
+    }
     auto local = compute_two_body_state(params.elements, t - params.tau);
 
     auto x1 = local.body1.position_x;
@@ -327,24 +331,66 @@ mara::full_orbital_elements_t mara::compute_orbital_elements(const two_body_stat
     double e = std::sqrt(1.0 - b * b / a / a);
     double omega = std::sqrt(M / a / a / a);
 
-
-    // True anomoly (nu)
     double a1 = a * q / (1.0 + q);
-    double ca = (1.0 - r1 / a1) / e;
-    double cn = a1 / r1 * (ca - e);
-    double sa = std::sqrt(1.0 - ca * ca);
-    double cE = (e + cn) / (1.0 + e * cn);
-    double EE = std::acos(cE);
-    double MM = EE - e * std::sin(EE);
-    double tau = t - MM / omega;
+    double cn = (1.0 - r1 / a1) / e; // cosine nu
 
 
-    // Argument of periapsis (pomega)
-    double ax = +(ca - e) * x1 + sa * std::sqrt(1.0 - e * e) * y1; // denominator is omitted
-    double ay = +(ca - e) * y1 - sa * std::sqrt(1.0 - e * e) * x1;
-    double pomega = std::atan2(ay, ax);
+    //=========================================================================
+    auto compute_ax_ay = [=] (double sign)
+    {
+        double sn = std::sqrt(1.0 - cn * cn) * sign;
+        double ax = +(cn - e) * x1 + sn * std::sqrt(1.0 - e * e) * y1;
+        double ay = +(cn - e) * y1 - sn * std::sqrt(1.0 - e * e) * x1;
+        double bx = -ay * std::sqrt(1.0 - e * e);
+        double by = +ax * std::sqrt(1.0 - e * e);
+
+        return std::tuple(ax, ay, bx, by, sn, cn);
+    };
 
 
+    //=========================================================================
+    auto compute_tau_and_pomega_from = [=] (double sn, double ax, double ay, double sign)
+    {
+        double cf = a1 / r1 * (cn - e);
+        double cE = clamp(-1.0, 1.0, (e + cf) / (1.0 + e * cf));
+        double EE = std::acos(cE);
+        double MM = sign * (EE - e * std::sin(EE)) + (sign == -1.0 ? 2 * M_PI : 0.0);
+        double tau = t - MM / omega;
+        double pomega = std::atan2(ay, ax);
+
+        return std::pair(tau, pomega);
+    };
+
+
+    //=========================================================================
+    auto compute_tau_and_pomega = [=] ()
+    {
+        if (std::abs(e) > 1e-12)
+        {
+            auto [ax, ay, bx, by, sn, cn] = compute_ax_ay(+1.0);
+
+            if (std::abs(vx1 * (-sn * ay + cn * by) - vy1 * (-sn * ax + cn * bx)) < 1e-12)
+            {
+                return compute_tau_and_pomega_from(sn, ax, ay, +1.0);
+            }
+            else
+            {
+                auto [ax, ay, bx, by, sn, cn] = compute_ax_ay(-1.0);
+                return compute_tau_and_pomega_from(sn, ax, ay, -1.0);
+            }
+        }
+        else
+        {
+            double MM = std::atan2(y1, x1);
+            double tau = t - MM / omega;
+            double pomega = 0.0;
+            return std::pair(tau, pomega);
+        }
+    };
+
+
+    //=========================================================================
+    auto [tau, pomega] = compute_tau_and_pomega();
     auto P   = full_orbital_elements_t();
     P.tau    = tau;
     P.pomega = pomega;
