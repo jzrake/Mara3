@@ -99,6 +99,7 @@ namespace mara
 
     inline double orbital_energy(orbital_elements_t elements);
     inline double orbital_angular_momentum(orbital_elements_t elements);
+    inline full_orbital_elements_t diff(const full_orbital_elements_t& a, const full_orbital_elements_t& b);
 }
 
 
@@ -483,7 +484,43 @@ double mara::delta_a_over_a(two_body_state_t s2, two_body_state_t s1)
     return (T2 * dM1 / M1 + T1 * dM2 / M2) / E - (dT1 + dT2) / E;
 }
 
+mara::full_orbital_elements_t mara::diff(const full_orbital_elements_t& a, const full_orbital_elements_t& b)
+{
+    auto wrap = [] (auto delta, auto period)
+    {
+        auto a = delta;
+        auto b = delta + period;
+        auto c = delta - period;
 
+        if (std::abs(a) < std::min(std::abs(b), std::abs(c)))
+            return a;
+        if (std::abs(b) < std::abs(c))
+            return b;
+        return c;
+    };
+
+    auto period = [] (const full_orbital_elements_t& E)
+    {
+        auto M = E.elements.total_mass;
+        auto a = E.elements.separation;
+        return std::sqrt(M / a / a / a);
+    };
+
+    return {
+        wrap(b.pomega - a.pomega, 2 * M_PI),
+        wrap(b.tau    - a.tau,    2 * M_PI / period(b)),
+        b.cm_position_x - a.cm_position_x,
+        b.cm_position_y - a.cm_position_y,
+        b.cm_velocity_x - a.cm_velocity_x,
+        b.cm_velocity_y - a.cm_velocity_y,
+        {
+            b.elements.separation   - a.elements.separation,
+            b.elements.total_mass   - a.elements.total_mass,
+            b.elements.mass_ratio   - a.elements.mass_ratio,
+            b.elements.eccentricity - a.elements.eccentricity,
+        },
+    };
+}
 
 mara::full_orbital_elements_t mara::full_orbital_elements_t::operator+(const full_orbital_elements_t& other) const
 {
