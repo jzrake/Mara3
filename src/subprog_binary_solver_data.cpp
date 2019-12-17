@@ -102,9 +102,7 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     result.vertices              = vertices;
     result.initial_conserved_u   = create_solution(run_config).conserved_u;
     result.initial_conserved_q   = create_solution(run_config).conserved_q;
-
-    if      (run_config.get_string("riemann") == "hlle") result.riemann_solver = riemann_solver_t::hlle;
-    else throw std::invalid_argument("invalid riemann solver '" + run_config.get_string("riemann") + "', must be hlle");
+    result.riemann_solver        = riemann_solver_t::hlle;
 
     if      (run_config.get_string("reconstruct_method") == "pcm") result.reconstruct_method = reconstruct_method_t::pcm;
     else if (run_config.get_string("reconstruct_method") == "plm") result.reconstruct_method = reconstruct_method_t::plm;

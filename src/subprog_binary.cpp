@@ -65,7 +65,7 @@ mara::config_template_t binary::create_config_template()
     .item("tfinal",               1.0)          // simulation stop time (orbits)
     .item("cfl_number",           0.4)          // the Courant number to use
     .item("depth",                  4)
-    .item("conserve_linear_p",      0)          // set to true to use linear momentum conserving variables
+    .item("conserve_linear_p",      1)          // set to true to use linear momentum conserving variables
     .item("block_size",            24)
     .item("focus_factor",        2.00)
     .item("focus_index",         2.00)
@@ -73,13 +73,12 @@ mara::config_template_t binary::create_config_template()
     .item("rk_order",               2)          // time-stepping Runge-Kutta order: 1 or 2
     .item("reconstruct_method", "plm")          // zone extrapolation method: pcm or plm
     .item("plm_theta",            1.8)          // plm theta parameter: [1.0, 2.0]
-    .item("riemann",           "hlle")          // riemann solver to use: hlle only (hllc disabled until further testing)
-    .item("softening_radius",    0.05)          // gravitational softening radius
     .item("source_term_softening", 1.)          // number of cells within which the Sr source term is suppressed
+    .item("softening_radius",    0.05)          // gravitational softening radius
     .item("sink_radius",         0.05)          // radius of mass (and momentum) subtraction region
-    .item("sink_rate",           50.0)          // sink rate at the point masses (orbital angular frequency)
+    .item("sink_rate",            1.0)          // sink rate at the point masses (orbital angular frequency)
     .item("buffer_damping_rate", 10.0)          // maximum rate of buffer zone, where solution is driven to initial state
-    .item("domain_radius",       24.0)          // half-size of square domain
+    .item("domain_radius",       12.0)          // half-size of square domain
     .item("disk_radius",          2.0)          // characteristic disk radius (in units of binary separation)
     .item("disk_mass",           1e-3)          // total disk mass (in units of the binary mass)
     .item("ambient_density",     1e-4)          // surface density beyond torus (relative to mas sigma)
@@ -87,10 +86,10 @@ mara::config_template_t binary::create_config_template()
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)
     .item("counter_rotate",         0)          // retrograde disk option: 0 or 1
-    .item("mach_number",         40.0)          // disk mach number; for locally isothermal EOS
-    .item("axisymmetric_cs2",       1)          // if true then cs2 = GM / r / Mach^2; otherwise cs2 = -phi / Mach^2
+    .item("mach_number",         10.0)          // disk mach number; for locally isothermal EOS
+    .item("axisymmetric_cs2",       0)          // if true then cs2 = GM / r / Mach^2; otherwise cs2 = -phi / Mach^2
     .item("alpha_cutoff_radius",  0.0)          // radius inside of which viscosity is set to zero
-    .item("alpha",                0.0)          // viscous alpha coefficient (if nu == 0 then alpha-viscosity is used)
+    .item("alpha",                0.1)          // viscous alpha coefficient (if nu == 0 then alpha-viscosity is used)
     .item("nu",                   0.0);         // kinematic viscosity coefficient (if nu > 0 then constant-nu is used)
 }
 

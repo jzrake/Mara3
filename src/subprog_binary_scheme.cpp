@@ -121,7 +121,7 @@ static auto sink_rate_field(const binary::solver_data_t& solver_data, binary::lo
         auto dr = field_point - sink_location;
         auto s2 = sink_radius * sink_radius;
         auto a2 = (dr * dr).sum() / s2 / 2.0;
-        return sink_rate * 0.5 * std::exp(-a2);
+        return sink_rate * std::exp(-a2);
     };
 }
 
