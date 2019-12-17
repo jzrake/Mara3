@@ -704,6 +704,38 @@ auto correct_fluxes_y = [] (auto fhat_y)
 
 
 //=============================================================================
+auto validate_u = [] (auto solution, auto solver_data)
+{
+    bool any_failures = false;
+
+    solution.conserved_u.indexes().sink([&any_failures, solution, solver_data] (auto index)
+    {
+        auto XQ = nd::zip(solver_data.cell_centers.at(index), solution.conserved_u.at(index));
+
+        for (auto xq : XQ)
+        {
+            const auto& x = std::get<0>(xq);
+            const auto& u = std::get<1>(xq);
+
+            if (mara::get<0>(u) < 0.0)
+            {                
+                std::printf("negative density %3.2e (at position [%+3.2lf %+3.2lf])\n", mara::get<0>(u).value, x[0].value, x[1].value);
+                any_failures = true;
+            }
+        }
+    });
+
+    if (any_failures)
+    {
+        throw std::runtime_error("negative density in updated state");
+    }
+    return solution;
+};
+
+
+
+
+//=============================================================================
 auto validate_q = [] (auto solution, auto solver_data)
 {
     bool any_failures = false;
@@ -832,7 +864,7 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
 
     // The full updated solution state
     //=========================================================================
-    return solution_t{
+    return validate_u(solution_t{
         solution.time + dt,
         solution.iteration + 1,
         u1,
@@ -845,7 +877,7 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
         solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
         solution.orbital_elements_acc         + delta_E_prime_acc,
         solution.orbital_elements_grav        + delta_E_prime_grav,
-    };
+    }, solver_data);
 }
 
 binary::solution_t binary::advance_q(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
