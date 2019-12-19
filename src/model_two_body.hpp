@@ -208,9 +208,9 @@ mara::two_body_state_t mara::compute_two_body_state(const orbital_elements_t& pa
 
 mara::two_body_state_t mara::compute_two_body_state(const full_orbital_elements_t& params, double t)
 {
-    if (t < params.tau)
+    while (t < params.tau)
     {
-        throw std::invalid_argument("mara::compute_two_body_state (t < tau)");
+        t += orbital_period(params.elements);
     }
     auto local = compute_two_body_state(params.elements, t - params.tau);
 
@@ -373,6 +373,8 @@ mara::full_orbital_elements_t mara::compute_orbital_elements(const two_body_stat
 
 
     // cartesian components of semi-major axis, and the argument of periapse
+    // double ax = -x1 - y1 * sf / cf;
+    // double ay = -y1 + x1 * sf / cf;
     double ax = +(cn - e) * x1 + sn * std::sqrt(1.0 - e * e) * y1;
     double ay = +(cn - e) * y1 - sn * std::sqrt(1.0 - e * e) * x1;
     double pomega = std::atan2(ay, ax);
@@ -412,7 +414,7 @@ double mara::orbital_period(orbital_elements_t elements)
 {    
     auto M = elements.total_mass;
     auto a = elements.separation;
-    return std::sqrt(M / a / a / a);
+    return 2 * M_PI / std::sqrt(M / a / a / a);
 }
 
 double mara::orbital_angular_momentum(orbital_elements_t elements)
@@ -490,7 +492,7 @@ mara::full_orbital_elements_t mara::diff(const full_orbital_elements_t& a, const
 
     return {
         wrap(b.pomega - a.pomega, 2 * M_PI),
-        wrap(b.tau    - a.tau,    2 * M_PI / orbital_period(b.elements)),
+        wrap(b.tau    - a.tau, orbital_period(b.elements)),
         b.cm_position_x - a.cm_position_x,
         b.cm_position_y - a.cm_position_y,
         b.cm_velocity_x - a.cm_velocity_x,
