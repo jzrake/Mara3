@@ -102,6 +102,7 @@ namespace mara
     inline double orbital_period(orbital_elements_t elements);
     inline double orbital_angular_momentum(orbital_elements_t elements);
     inline full_orbital_elements_t diff(const full_orbital_elements_t& a, const full_orbital_elements_t& b);
+    inline full_orbital_elements_t diff_cm(const full_orbital_elements_t& a, double dt);
 }
 
 
@@ -504,6 +505,14 @@ mara::full_orbital_elements_t mara::diff(const full_orbital_elements_t& a, const
             b.elements.eccentricity - a.elements.eccentricity,
         },
     };
+}
+
+mara::full_orbital_elements_t mara::diff_cm(const full_orbital_elements_t& a, double dt)
+{
+    auto result = make_full_orbital_elements_with_zeros();
+    result.cm_position_x = a.cm_velocity_x * dt;
+    result.cm_position_y = a.cm_velocity_y * dt;
+    return result;
 }
 
 mara::full_orbital_elements_t mara::full_orbital_elements_t::operator+(const full_orbital_elements_t& other) const
