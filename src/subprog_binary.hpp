@@ -87,10 +87,10 @@ namespace binary
         int                                                   rk_order;
         bool                                                  axisymmetric_cs2;
         bool                                                  conserve_linear_p;
+        bool                                                  live_binary;
         std::size_t                                           block_size;
         reconstruct_method_t                                  reconstruct_method;
         riemann_solver_t                                      riemann_solver;
-        mara::orbital_elements_t                              binary_params;
         quad_tree_t<location_2d_t>                            vertices;
         quad_tree_t<location_2d_t>                            cell_centers;
         quad_tree_t<mara::unit_area<double>>                  cell_areas;
@@ -116,7 +116,7 @@ namespace binary
         mara::unit_angmom<double>                                 angular_momentum_ejected = {};
         mara::full_orbital_elements_t                             orbital_elements_acc;
         mara::full_orbital_elements_t                             orbital_elements_grav;
-
+        mara::full_orbital_elements_t                             orbital_elements;
         solution_t operator+(const solution_t& other) const;
         solution_t operator*(mara::rational_number_t scale) const;
     };

@@ -65,6 +65,7 @@ mara::config_template_t binary::create_config_template()
     .item("tfinal",               1.0)          // simulation stop time (orbits)
     .item("cfl_number",           0.4)          // the Courant number to use
     .item("depth",                  4)
+    .item("live_binary",            0)          // set to true to update the binary orbital elements
     .item("conserve_linear_p",      1)          // set to true to use linear momentum conserving variables
     .item("block_size",            24)
     .item("focus_factor",        2.00)
@@ -213,6 +214,7 @@ binary::solution_t binary::create_solution(const mara::config_t& run_config)
         {}, {}, {}, {}, {}, {},
         mara::make_full_orbital_elements_with_zeros(),
         mara::make_full_orbital_elements_with_zeros(),
+        mara::make_full_orbital_elements(create_binary_params(run_config)),
     };
 }
 

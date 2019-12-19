@@ -48,7 +48,7 @@ mara::unit_angmom<double> binary::disk_angular_momentum(const solution_t& soluti
 binary::diagnostic_fields_t binary::diagnostic_fields(const solution_t& solution, const mara::config_t& run_config)
 {
     auto solver_data = create_solver_data(run_config);
-    auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
+    auto binary = mara::compute_two_body_state(solution.orbital_elements, solution.time.value);
 
     auto v0 = solver_data.vertices;
     auto c0 = solver_data.cell_centers;

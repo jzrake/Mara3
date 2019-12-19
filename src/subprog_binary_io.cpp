@@ -141,6 +141,7 @@ void mara::write<binary::solution_t>(h5::Group& group, std::string name, const b
     mara::write(location, "angular_momentum_accreted_on", solution.angular_momentum_accreted_on);
     mara::write(location, "orbital_elements_acc",  solution.orbital_elements_acc);
     mara::write(location, "orbital_elements_grav", solution.orbital_elements_grav);
+    mara::write(location, "orbital_elements",      solution.orbital_elements);
 }
 
 template<>
@@ -183,6 +184,7 @@ void mara::read<binary::solution_t>(h5::Group& group, std::string name, binary::
     mara::read(location, "angular_momentum_accreted_on", solution.angular_momentum_accreted_on);
     mara::read(location, "orbital_elements_acc",  solution.orbital_elements_acc);
     mara::read(location, "orbital_elements_grav", solution.orbital_elements_grav);
+    mara::read(location, "orbital_elements",      solution.orbital_elements);
 }
 
 template<>

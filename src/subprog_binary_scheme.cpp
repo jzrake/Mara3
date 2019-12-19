@@ -792,7 +792,7 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
     auto gx_ey = extend(gx, 1, 1);
     auto gy_ex = extend(gy, 0, 1);
     auto gy_ey = extend(gy, 1, 1);
-    auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
+    auto binary = mara::compute_two_body_state(solution.orbital_elements, solution.time.value);
 
     auto fhat = p0
     .indexes()
@@ -841,7 +841,7 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
         binary.body2.velocity_y + dvy2,
     };
 
-    auto body1_grav = mara::point_mass_t{
+    auto body1_grv = mara::point_mass_t{
         binary.body1.mass,
         binary.body1.position_x,
         binary.body1.position_y,
@@ -849,7 +849,7 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
         binary.body1.velocity_y + totals.integrated_force_y_on[0].value / binary.body1.mass,
     };
 
-    auto body2_grav = mara::point_mass_t{
+    auto body2_grv = mara::point_mass_t{
         binary.body2.mass,
         binary.body2.position_x,
         binary.body2.position_y,
@@ -857,10 +857,10 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
         binary.body2.velocity_y + totals.integrated_force_y_on[1].value / binary.body2.mass,
     };
 
-    auto E0                  = mara::compute_orbital_elements(binary, solution.time.value);
-    auto delta_E_prime_acc   = mara::compute_orbital_elements({body1_acc,  body2_acc},  solution.time.value) - E0;
-    auto delta_E_prime_grav  = mara::compute_orbital_elements({body1_grav, body2_grav}, solution.time.value) - E0;
-
+    auto live  = solver_data.live_binary;
+    auto E0    = solution.orbital_elements;
+    auto E_acc = mara::compute_orbital_elements({body1_acc, body2_acc}, solution.time.value);
+    auto E_grv = mara::compute_orbital_elements({body1_grv, body2_grv}, solution.time.value);
 
     // The full updated solution state
     //=========================================================================
@@ -875,8 +875,9 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
         solution.work_done_on,
         solution.mass_ejected                 + totals.mass_ejected,
         solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
-        solution.orbital_elements_acc         + delta_E_prime_acc,
-        solution.orbital_elements_grav        + delta_E_prime_grav,
+        solution.orbital_elements_acc         + mara::diff(E0, E_acc),
+        solution.orbital_elements_grav        + mara::diff(E0, E_grv),
+        solution.orbital_elements             + (mara::diff(E0, E_acc) + mara::diff(E0, E_grv) + mara::diff_cm(E0, dt.value)) * live,
     }, solver_data);
 }
 
@@ -904,7 +905,7 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
     auto gx_ey = extend(gx, 1, 1);
     auto gy_ex = extend(gy, 0, 1);
     auto gy_ey = extend(gy, 1, 1);
-    auto binary = mara::compute_two_body_state(solver_data.binary_params, solution.time.value);
+    auto binary = mara::compute_two_body_state(solution.orbital_elements, solution.time.value);
 
     auto fhat = p0
     .indexes()
@@ -952,7 +953,7 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
         binary.body2.velocity_y + dvy2,
     };
 
-    auto body1_grav = mara::point_mass_t{
+    auto body1_grv = mara::point_mass_t{
         binary.body1.mass,
         binary.body1.position_x,
         binary.body1.position_y,
@@ -960,7 +961,7 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
         binary.body1.velocity_y + totals.integrated_force_y_on[0].value / binary.body1.mass,
     };
 
-    auto body2_grav = mara::point_mass_t{
+    auto body2_grv = mara::point_mass_t{
         binary.body2.mass,
         binary.body2.position_x,
         binary.body2.position_y,
@@ -968,9 +969,10 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
         binary.body2.velocity_y + totals.integrated_force_y_on[1].value / binary.body2.mass,
     };
 
-    auto E0                  = mara::compute_orbital_elements(binary, solution.time.value);
-    auto delta_E_prime_acc   = mara::compute_orbital_elements({body1_acc,  body2_acc},  solution.time.value) - E0;
-    auto delta_E_prime_grav  = mara::compute_orbital_elements({body1_grav, body2_grav}, solution.time.value) - E0;
+    auto live  = solver_data.live_binary;
+    auto E0    = solution.orbital_elements;
+    auto E_acc = mara::compute_orbital_elements({body1_acc, body2_acc}, solution.time.value);
+    auto E_grv = mara::compute_orbital_elements({body1_grv, body2_grv}, solution.time.value);
 
     // The full updated solution state
     //=========================================================================
@@ -985,8 +987,9 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
         solution.work_done_on,
         solution.mass_ejected                 + totals.mass_ejected,
         solution.angular_momentum_ejected     + totals.angular_momentum_ejected,
-        solution.orbital_elements_acc         + delta_E_prime_acc,
-        solution.orbital_elements_grav        + delta_E_prime_grav,
+        solution.orbital_elements_acc         + mara::diff(E0, E_acc),
+        solution.orbital_elements_grav        + mara::diff(E0, E_grv),
+        solution.orbital_elements             + (mara::diff(E0, E_acc) + mara::diff(E0, E_grv) + mara::diff_cm(E0, dt.value)) * live,
     }, solver_data);
 }
 

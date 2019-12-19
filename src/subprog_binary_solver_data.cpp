@@ -94,8 +94,8 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     result.conserve_linear_p     = run_config.get_int("conserve_linear_p");
     result.rk_order              = run_config.get_int("rk_order");
     result.block_size            = run_config.get_int("block_size");
+    result.live_binary           = run_config.get_int("live_binary");
     result.recommended_time_step = std::min(min_dx, min_dy) / max_velocity * run_config.get_double("cfl_number");
-    result.binary_params         = create_binary_params(run_config);
     result.buffer_rate_field     = buffer_rate_field.map(nd::to_shared());
     result.cell_centers          = cell_centers.map(nd::to_shared());
     result.cell_areas            = cell_areas.map(nd::to_shared());
@@ -103,7 +103,6 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     result.initial_conserved_u   = create_solution(run_config).conserved_u;
     result.initial_conserved_q   = create_solution(run_config).conserved_q;
     result.riemann_solver        = riemann_solver_t::hlle;
-
     if      (run_config.get_string("reconstruct_method") == "pcm") result.reconstruct_method = reconstruct_method_t::pcm;
     else if (run_config.get_string("reconstruct_method") == "plm") result.reconstruct_method = reconstruct_method_t::plm;
     else throw std::invalid_argument("invalid reconstruct_method '" + run_config.get_string("reconstruct_method") + "', must be plm or pcm");
