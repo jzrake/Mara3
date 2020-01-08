@@ -345,6 +345,7 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
     //=========================================================================
     auto record_time_series = [&solver_data] (state_t state)
     {
+        auto binary = mara::compute_two_body_state(state.solution.orbital_elements, state.solution.time.value);
         auto sample = time_series_sample_t();
         sample.time                         = state.solution.time;
         sample.mass_accreted_on             = state.solution.mass_accreted_on;
@@ -357,6 +358,9 @@ auto binary::run_tasks(const state_t& state, const solver_data_t& solver_data)
         sample.disk_angular_momentum        = disk_angular_momentum(state.solution, solver_data);
         sample.orbital_elements_acc         = state.solution.orbital_elements_acc;
         sample.orbital_elements_grav        = state.solution.orbital_elements_grav;
+        sample.orbital_elements             = state.solution.orbital_elements;
+        sample.position_of_mass1            = {binary.body1.position_x, binary.body1.position_y};
+        sample.position_of_mass2            = {binary.body2.position_x, binary.body2.position_y};
 
         state.time_series = state.time_series.prepend(sample);
         return mara::complete_task_in(state, "record_time_series");

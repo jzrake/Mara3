@@ -400,12 +400,55 @@ def time_series_orbital_elements(args):
 
 
 
+def time_series_orbital_elements_live(args):
+    fname = args.filenames[0]
+    h5f = h5py.File(fname, 'r')
+    ts = unzip_time_series(h5f['time_series'])
+
+    fig = plt.figure(figsize=[15, 9])
+    ax1 = fig.add_subplot(3, 1, 1)
+    ax2 = fig.add_subplot(3, 1, 2)
+    ax3 = fig.add_subplot(3, 1, 3)
+
+    orbits = h5f['time_series']['time'] / 2 / np.pi
+    a = h5f['time_series']['orbital_elements']['elements']['separation']
+    e = h5f['time_series']['orbital_elements']['elements']['eccentricity']
+    pomega = h5f['time_series']['orbital_elements']['pomega']
+    tau    = h5f['time_series']['orbital_elements']['tau']
+    x1 = h5f['time_series']['position_of_mass1']
+    x2 = h5f['time_series']['position_of_mass2']
+
+    def clean_tau(t):
+        d = np.zeros_like(t)
+
+        for i in range(len(t) - 1):
+            d[i + 1] = d[i] + (t[i + 1] - t[i] if t[i + 1] - t[i] > 1.0 else 0.0)
+
+        d[len(t) - 1] = d[len(t) - 2]
+
+        return t - d
+
+    tau = clean_tau(tau)
+
+    ax1.plot(orbits, a, label='')
+    ax2.plot(orbits, e, label='')
+    ax3.plot(orbits, tau, label='')
+    ax1.set_ylabel(r'$a$')
+    ax2.set_ylabel(r'$e$')
+    ax3.set_ylabel(r'$\tau$')
+    ax3.set_xlabel("Orbits")
+    plt.show()
+
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("filenames", nargs='+')
     parser.add_argument("--movie", action='store_true')
     parser.add_argument("--time-series", '-t', action='store_true')
     parser.add_argument("--orbital-elements", '-e', action='store_true')
+    parser.add_argument("--orbital-elements-live", '-l', action='store_true')
     parser.add_argument("--specific-torques", '-s', action='store_true')
     parser.add_argument("--avg-only", action='store_true')
     parser.add_argument("--show-total", action='store_true')
@@ -425,6 +468,8 @@ if __name__ == "__main__":
         time_series(args)
     elif args.orbital_elements:
         time_series_orbital_elements(args)
+    elif args.orbital_elements_live:
+        time_series_orbital_elements_live(args)
     elif args.specific_torques:
         time_series_specific_torques(args)
     elif args.movie:

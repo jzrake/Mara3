@@ -94,6 +94,7 @@ namespace mara
     inline double total_mass(two_body_state_t s);
     inline double separation(two_body_state_t s);
     inline double delta_a_over_a(two_body_state_t s2, two_body_state_t s1);
+    inline double mean_anomaly(const full_orbital_elements_t& params, double t);
 
     inline two_body_state_t compute_two_body_state(const full_orbital_elements_t& params, double t);
     inline full_orbital_elements_t compute_orbital_elements(const two_body_state_t& two_body, double t);
@@ -474,6 +475,18 @@ double mara::delta_a_over_a(two_body_state_t s2, two_body_state_t s1)
     double dT2 = M2 * (ax2 * vx2 + ay2 * vy2);
 
     return (T2 * dM1 / M1 + T1 * dM2 / M2) / E - (dT1 + dT2) / E;
+}
+
+double mara::mean_anomaly(const full_orbital_elements_t& params, double t)
+{
+    auto P = orbital_period(params.elements);
+
+    while (t < params.tau)
+    {
+        t += P;
+    }
+    auto omega = 2 * M_PI / P;
+    return omega * t;
 }
 
 mara::full_orbital_elements_t mara::diff(const full_orbital_elements_t& a, const full_orbital_elements_t& b)

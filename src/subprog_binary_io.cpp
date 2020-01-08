@@ -111,6 +111,9 @@ struct h5::hdf5_type_info<binary::time_series_sample_t>
             h5_compound_type_member(native_type, angular_momentum_ejected),
             h5_compound_type_member(native_type, orbital_elements_acc),
             h5_compound_type_member(native_type, orbital_elements_grav),
+            h5_compound_type_member(native_type, orbital_elements),
+            h5_compound_type_member(native_type, position_of_mass1),
+            h5_compound_type_member(native_type, position_of_mass2),
         });
     }
     static auto make_dataspace_for(const native_type& value) { return Dataspace::scalar(); }

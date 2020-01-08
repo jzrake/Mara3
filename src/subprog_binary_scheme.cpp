@@ -1019,6 +1019,7 @@ binary::solution_t binary::solution_t::operator+(const solution_t& other) const
         angular_momentum_ejected       + other.angular_momentum_ejected,
         orbital_elements_acc           + other.orbital_elements_acc,
         orbital_elements_grav          + other.orbital_elements_grav,
+        orbital_elements               + other.orbital_elements,
     };
 }
 
@@ -1037,6 +1038,7 @@ binary::solution_t binary::solution_t::operator*(mara::rational_number_t scale) 
         angular_momentum_ejected       * scale.as_double(),
         orbital_elements_acc           * scale.as_double(),
         orbital_elements_grav          * scale.as_double(),
+        orbital_elements               * scale.as_double(),
     };
 }
 

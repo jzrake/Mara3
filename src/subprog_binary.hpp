@@ -151,6 +151,9 @@ namespace binary
         mara::arithmetic_sequence_t<mara::unit_energy<double>, 2> work_done_on = {};
         mara::full_orbital_elements_t                             orbital_elements_acc;
         mara::full_orbital_elements_t                             orbital_elements_grav;
+        mara::full_orbital_elements_t                             orbital_elements;
+        location_2d_t                                             position_of_mass1;
+        location_2d_t                                             position_of_mass2;
     };
 
 
