@@ -65,7 +65,7 @@ mara::config_template_t binary::create_config_template()
     .item("tfinal",               1.0)          // simulation stop time (orbits)
     .item("cfl_number",           0.4)          // the Courant number to use
     .item("depth",                  4)
-    .item("live_binary",            0)          // set to true to update the binary orbital elements
+    .item("begin_live_binary",    1e6)          // time (in orbits) to begin evolution of the binary orbital elements
     .item("conserve_linear_p",      1)          // set to true to use linear momentum conserving variables
     .item("block_size",            24)
     .item("focus_factor",        2.00)
@@ -276,7 +276,7 @@ auto binary::next_solution(const solution_t& solution, const solver_data_t& solv
     catch (const std::exception& e)
     {
         std::cout << e.what() << std::endl;
-        return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.5, true);
+        return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.01, true);
     }
 }
 

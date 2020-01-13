@@ -84,10 +84,10 @@ namespace binary
         double                                                alpha_cutoff_radius;
         double                                                nu;
         double                                                plm_theta;
+        double                                                begin_live_binary;
         int                                                   rk_order;
         bool                                                  axisymmetric_cs2;
         bool                                                  conserve_linear_p;
-        bool                                                  live_binary;
         std::size_t                                           block_size;
         reconstruct_method_t                                  reconstruct_method;
         riemann_solver_t                                      riemann_solver;

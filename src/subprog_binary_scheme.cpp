@@ -857,7 +857,7 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
         binary.body2.velocity_y + totals.integrated_force_y_on[1].value / binary.body2.mass,
     };
 
-    auto live  = solver_data.live_binary;
+    auto live  = solution.time > solver_data.begin_live_binary;
     auto E0    = solution.orbital_elements;
     auto E_acc = mara::compute_orbital_elements({body1_acc, body2_acc}, solution.time.value);
     auto E_grv = mara::compute_orbital_elements({body1_grv, body2_grv}, solution.time.value);
@@ -969,7 +969,7 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
         binary.body2.velocity_y + totals.integrated_force_y_on[1].value / binary.body2.mass,
     };
 
-    auto live  = solver_data.live_binary;
+    auto live  = solution.time > solver_data.begin_live_binary;
     auto E0    = solution.orbital_elements;
     auto E_acc = mara::compute_orbital_elements({body1_acc, body2_acc}, solution.time.value);
     auto E_grv = mara::compute_orbital_elements({body1_grv, body2_grv}, solution.time.value);

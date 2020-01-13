@@ -401,38 +401,39 @@ def time_series_orbital_elements(args):
 
 
 def time_series_orbital_elements_live(args):
-    fname = args.filenames[0]
-    h5f = h5py.File(fname, 'r')
-    ts = unzip_time_series(h5f['time_series'])
-
     fig = plt.figure(figsize=[15, 9])
     ax1 = fig.add_subplot(3, 1, 1)
     ax2 = fig.add_subplot(3, 1, 2)
     ax3 = fig.add_subplot(3, 1, 3)
 
-    orbits = h5f['time_series']['time'] / 2 / np.pi
-    a = h5f['time_series']['orbital_elements']['elements']['separation']
-    e = h5f['time_series']['orbital_elements']['elements']['eccentricity']
-    pomega = h5f['time_series']['orbital_elements']['pomega']
-    tau    = h5f['time_series']['orbital_elements']['tau']
-    x1 = h5f['time_series']['position_of_mass1']
-    x2 = h5f['time_series']['position_of_mass2']
+    for fname in args.filenames:
+        h5f = h5py.File(fname, 'r')
+        ts = unzip_time_series(h5f['time_series'])
 
-    def clean_tau(t):
-        d = np.zeros_like(t)
+        orbits = h5f['time_series']['time'] / 2 / np.pi
+        a = h5f['time_series']['orbital_elements']['elements']['separation']
+        e = h5f['time_series']['orbital_elements']['elements']['eccentricity']
+        pomega = h5f['time_series']['orbital_elements']['pomega']
+        tau    = h5f['time_series']['orbital_elements']['tau']
+        x1 = h5f['time_series']['position_of_mass1']
+        x2 = h5f['time_series']['position_of_mass2']
 
-        for i in range(len(t) - 1):
-            d[i + 1] = d[i] + (t[i + 1] - t[i] if t[i + 1] - t[i] > 1.0 else 0.0)
+        def remove_jumps(t, threshold=1.0):
+            d = np.zeros_like(t)
 
-        d[len(t) - 1] = d[len(t) - 2]
+            for i in range(len(t) - 1):
+                d[i + 1] = d[i] + (t[i + 1] - t[i] if t[i + 1] - t[i] > threshold else 0.0)
 
-        return t - d
+            d[len(t) - 1] = d[len(t) - 2]
 
-    tau = clean_tau(tau)
+            return t - d
 
-    ax1.plot(orbits, a, label='')
-    ax2.plot(orbits, e, label='')
-    ax3.plot(orbits, tau, label='')
+        tau = remove_jumps(tau)
+
+        ax1.plot(orbits, a, label='')
+        ax2.plot(orbits, e, label='')
+        ax3.plot(orbits, tau, label='')
+
     ax1.set_ylabel(r'$a$')
     ax2.set_ylabel(r'$e$')
     ax3.set_ylabel(r'$\tau$')
