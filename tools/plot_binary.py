@@ -400,6 +400,14 @@ def time_series_orbital_elements(args):
 
 
 
+def scaled_plot(ax, scale, x, y, *args, **kwargs):
+    dy = (y - y[0]) * scale
+    ys = y[0] + dy
+    ax.plot(x, ys, *args, **kwargs)
+
+
+
+
 def time_series_orbital_elements_live(args):
     fig = plt.figure(figsize=[15, 9])
     ax1 = fig.add_subplot(3, 1, 1)
@@ -410,9 +418,12 @@ def time_series_orbital_elements_live(args):
         h5f = h5py.File(fname, 'r')
         ts = unzip_time_series(h5f['time_series'])
 
+        mdisk = h5f['run_config']['disk_mass'][()]
+        begin = h5f['run_config']['begin_live_binary'][()]
         orbits = h5f['time_series']['time'] / 2 / np.pi
         a = h5f['time_series']['orbital_elements']['elements']['separation']
         e = h5f['time_series']['orbital_elements']['elements']['eccentricity']
+        M = h5f['time_series']['orbital_elements']['elements']['total_mass']
         pomega = h5f['time_series']['orbital_elements']['pomega']
         tau    = h5f['time_series']['orbital_elements']['tau']
         x1 = h5f['time_series']['position_of_mass1']
@@ -429,15 +440,39 @@ def time_series_orbital_elements_live(args):
             return t - d
 
         tau = remove_jumps(tau)
+        scale = 1. / mdisk if args.scale_by_disk_mass else 1.0
 
-        ax1.plot(orbits, a, label='')
-        ax2.plot(orbits, e, label='')
-        ax3.plot(orbits, tau, label='')
+        scaled_plot(ax1, scale, orbits, a,      label=r'$M_{{\rm disk}} / M = {}$'.format(mdisk))
+        scaled_plot(ax2, scale, orbits, e,      label=r'$M_{{\rm disk}} / M = {}$'.format(mdisk))
+        scaled_plot(ax3, scale, orbits, pomega, label=r'$M_{{\rm disk}} / M = {}$'.format(mdisk))
 
     ax1.set_ylabel(r'$a$')
     ax2.set_ylabel(r'$e$')
-    ax3.set_ylabel(r'$\tau$')
+    ax3.set_ylabel(r'$\varpi$')
     ax3.set_xlabel("Orbits")
+    ax1.legend()
+
+    for ax in [ax1, ax2, ax3]:
+        ax.set_xlim(begin / 2 / np.pi, orbits[-1])
+
+    plt.show()
+
+
+
+
+def time_series_cm_position(args):
+
+    fig = plt.figure(figsize=[15, 9])
+    ax1 = fig.add_subplot(1, 1, 1)
+
+    fname = args.filenames[0]
+
+    h5f = h5py.File(fname, 'r')
+    dx = h5f['time_series']['orbital_elements']['cm_position_x']
+    dy = h5f['time_series']['orbital_elements']['cm_position_y']
+
+    ax1.plot(dx, dy)
+    ax1.set_aspect('equal')
     plt.show()
 
 
@@ -450,7 +485,9 @@ if __name__ == "__main__":
     parser.add_argument("--time-series", '-t', action='store_true')
     parser.add_argument("--orbital-elements", '-e', action='store_true')
     parser.add_argument("--orbital-elements-live", '-l', action='store_true')
+    parser.add_argument("--center-of-mass", '-c', action='store_true')
     parser.add_argument("--specific-torques", '-s', action='store_true')
+    parser.add_argument("--scale-by-disk-mass", action='store_true')
     parser.add_argument("--avg-only", action='store_true')
     parser.add_argument("--show-total", action='store_true')
     parser.add_argument("--saturation-time", type=float, default=150.0)
@@ -473,6 +510,8 @@ if __name__ == "__main__":
         time_series_orbital_elements_live(args)
     elif args.specific_torques:
         time_series_specific_torques(args)
+    elif args.center_of_mass:
+        time_series_cm_position(args)
     elif args.movie:
         make_movie(args)
     else:
