@@ -276,7 +276,7 @@ auto binary::next_solution(const solution_t& solution, const solver_data_t& solv
     catch (const std::exception& e)
     {
         std::cout << e.what() << std::endl;
-        return can_fail(solution, solver_data, solver_data.recommended_time_step * 0.01, true);
+        return can_fail(solution, solver_data, solver_data.recommended_time_step, true);
     }
 }
 
