@@ -79,6 +79,7 @@ namespace binary
         mara::unit_length<double>                             gst_suppr_radius;
         mara::unit_length<double>                             domain_radius;
         mara::unit_length<double>                             sink_radius;
+        mara::dimensional_value_t<-2, 1, 0, double>           density_floor;
         double                                                mach_number;
         double                                                alpha;
         double                                                alpha_cutoff_radius;

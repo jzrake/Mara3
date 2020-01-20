@@ -83,6 +83,7 @@ mara::config_template_t binary::create_config_template()
     .item("disk_radius",          2.0)          // characteristic disk radius (in units of binary separation)
     .item("disk_mass",           1e-3)          // total disk mass (in units of the binary mass)
     .item("ambient_density",     1e-4)          // surface density beyond torus (relative to mas sigma)
+    .item("density_floor",        0.0)          // surface density below which 'fake' mass is added to avoid negative density errors
     .item("separation",           1.0)          // binary separation: 0.0 or 1.0 (zero emulates a single body)
     .item("mass_ratio",           1.0)          // binary mass ratio M2 / M1: (0.0, 1.0]
     .item("eccentricity",         0.0)          // orbital eccentricity: [0.0, 1.0)

@@ -369,6 +369,10 @@ static auto source_terms_u = [] (auto solver_data, auto solution, auto binary, a
     auto s_sink_1 = -u0 * (xc | nd::map(sink_rate_field(solver_data, body1_pos))) * dt | nd::to_shared();
     auto s_sink_2 = -u0 * (xc | nd::map(sink_rate_field(solver_data, body2_pos))) * dt | nd::to_shared();
     auto s_buffer = (solver_data.initial_conserved_u.at(tree_index) - u0) * br * dt | nd::to_shared();
+    auto s_floor  = u0 | nd::map([floor=solver_data.density_floor] (auto u)
+    {
+        return u * 1e-2 * (mara::get<0>(u) < floor);
+    });
 
     auto totals = binary::source_term_total_t();
     totals.mass_accreted_on[0]             = -(s_sink_1    | component<0>() | nd::multiply(dA) | nd::sum());
@@ -388,7 +392,7 @@ static auto source_terms_u = [] (auto solver_data, auto solution, auto binary, a
     totals.momentum_y_accreted_on[0]       = -(s_sink_1    | component<2>() | nd::multiply(dA) | nd::sum());
     totals.momentum_y_accreted_on[1]       = -(s_sink_2    | component<2>() | nd::multiply(dA) | nd::sum());
 
-    return std::make_pair((s_grav_1 + s_grav_2 + s_sink_1 + s_sink_2 + s_buffer) | nd::to_shared(), totals);
+    return std::make_pair((s_grav_1 + s_grav_2 + s_sink_1 + s_sink_2 + s_buffer + s_floor) | nd::to_shared(), totals);
 };
 
 
@@ -731,7 +735,7 @@ auto validate_u = [] (auto solution, auto solver_data, bool safe_mode)
         {
             throw std::runtime_error("negative density in updated state");
         }
-        std::printf("using aggressive fallback!\n");
+        std::printf("using aggressive fallback (replace cell conserved with average of neighbors)!\n");
 
         solution.conserved_u = solution.conserved_u.map([] (auto block)
         {
@@ -740,7 +744,7 @@ auto validate_u = [] (auto solution, auto solver_data, bool safe_mode)
             return nd::index_array(block.shape())
             | nd::map([block, sigma] (auto index)
             {
-                if (sigma(index) <= 0.0)
+                if (mara::get<0>(block(index)) <= 0.0)
                 {
                     auto M = block.shape(0);
                     auto N = block.shape(1);
