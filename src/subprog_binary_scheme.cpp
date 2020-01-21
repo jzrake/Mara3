@@ -1119,4 +1119,29 @@ binary::quad_tree_t<mara::iso2d::primitive_t> binary::recover_primitive(
     .apply(recover_primitive_q, tree_launch);
 }
 
+
+
+
+//=============================================================================
+double binary::maximum_timestep(const solution_t& solution,
+                                const solver_data_t& solver_data)
+{
+    auto primitive = recover_primitive(solution, solver_data);
+    auto binary = mara::compute_two_body_state(solution.orbital_elements, solution.time.value);
+    auto spacing_at_root = 2.0 * solver_data.domain_radius.value / solver_data.block_size;
+
+    return solution.conserved_u.indexes().map([&] (auto index)
+    {
+        auto xc = solver_data.cell_centers.at(index);
+        auto pc = primitive.at(index);
+        auto spacing = spacing_at_root / (1 << index.level);
+
+        auto max_wavespeed = nd::zip(pc, xc)
+        | nd::apply([&] (auto p, auto x) { return p.max_wavespeed(cs2_at_position(x, binary, solver_data)); })
+        | nd::max();
+
+        return spacing / max_wavespeed;
+    }).min();
+}
+
 #endif // MARA_COMPILE_SUBPROGRAM_BINARY

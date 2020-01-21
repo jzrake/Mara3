@@ -271,13 +271,16 @@ auto binary::next_solution(const solution_t& solution, const solver_data_t& solv
         throw std::invalid_argument("binary::next_solution");
     };
 
+    auto dt = solver_data.cfl_number * binary::maximum_timestep(solution, solver_data);
+    // std::printf("computed: %lf recommended: %lf\n", dt, solver_data.recommended_time_step.value);
+
     try {
-        return can_fail(solution, solver_data, solver_data.recommended_time_step, false);
+        return can_fail(solution, solver_data, dt, false);
     }
     catch (const std::exception& e)
     {
         std::cout << e.what() << std::endl;
-        return can_fail(solution, solver_data, solver_data.recommended_time_step, true);
+        return can_fail(solution, solver_data, dt, true);
     }
 }
 

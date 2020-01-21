@@ -96,8 +96,9 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     result.rk_order              = run_config.get_int("rk_order");
     result.block_size            = run_config.get_int("block_size");
     result.density_floor         = run_config.get_double("density_floor");
-    result.buffer_rate_field     = buffer_rate_field.map(nd::to_shared());
+    result.cfl_number            = run_config.get_double("cfl_number");
     result.recommended_time_step = std::min(min_dx, min_dy) / max_velocity * run_config.get_double("cfl_number");
+    result.buffer_rate_field     = buffer_rate_field.map(nd::to_shared());
     result.cell_centers          = cell_centers.map(nd::to_shared());
     result.cell_areas            = cell_areas.map(nd::to_shared());
     result.vertices              = vertices;

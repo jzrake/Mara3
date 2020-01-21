@@ -85,6 +85,7 @@ namespace binary
         double                                                alpha_cutoff_radius;
         double                                                nu;
         double                                                plm_theta;
+        double                                                cfl_number;
         double                                                begin_live_binary;
         int                                                   rk_order;
         bool                                                  axisymmetric_cs2;
@@ -197,6 +198,10 @@ namespace binary
     void print_run_loop_message(const state_t& state, const solver_data_t& solver_data, mara::perf_diagnostics_t perf);
 
     quad_tree_t<mara::iso2d::primitive_t> recover_primitive(
+        const solution_t& solution,
+        const solver_data_t& solver_data);
+
+    double maximum_timestep(
         const solution_t& solution,
         const solver_data_t& solver_data);
 }

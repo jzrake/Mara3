@@ -326,6 +326,15 @@ struct mara::iso2d::primitive_t : public mara::derivable_sequence_t<double, 3, p
             make_velocity(vn + cs),
         };
     }
+
+    double max_wavespeed(double sound_speed_squared) const
+    {
+        auto ax = wavespeeds(unit_vector_t::on_axis_1(), sound_speed_squared);
+        auto ay = wavespeeds(unit_vector_t::on_axis_2(), sound_speed_squared);
+        auto vx = std::max(std::abs(ax.m.value), std::abs(ax.p.value));
+        auto vy = std::max(std::abs(ay.m.value), std::abs(ay.p.value));
+        return std::max(vx, vy);
+    }
 };
 
 
