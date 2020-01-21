@@ -708,7 +708,7 @@ auto correct_fluxes_y = [] (auto fhat_y)
 
 
 //=============================================================================
-auto validate_u = [] (auto solution, auto solver_data, bool safe_mode)
+auto validate_u = [] (auto solution, auto solver_data)
 {
     bool any_failures = false;
 
@@ -731,48 +731,7 @@ auto validate_u = [] (auto solution, auto solver_data, bool safe_mode)
 
     if (any_failures)
     {
-        if (! safe_mode)
-        {
-            throw std::runtime_error("negative density in updated state");
-        }
-        std::printf("using aggressive fallback (replace cell conserved with average of neighbors)!\n");
-
-        solution.conserved_u = solution.conserved_u.map([] (auto block)
-        {
-            auto sigma = block | nd::map([] (auto u) { return mara::get<0>(u); });
-
-            return nd::index_array(block.shape())
-            | nd::map([block, sigma] (auto index)
-            {
-                if (mara::get<0>(block(index)) <= 0.0)
-                {
-                    auto M = block.shape(0);
-                    auto N = block.shape(1);
-                    auto i = index[0];
-                    auto j = index[1];
-
-                    auto u = mara::iso2d::conserved_per_area_t();
-                    auto n = 0;
-
-                    if (i > 0     && j > 0     && sigma(i - 1, j - 1) > 0.0) { u = u + block(i - 1, j - 1); n += 1; }
-                    if (i > 0                  && sigma(i - 1, j + 0) > 0.0) { u = u + block(i - 1, j + 0); n += 1; }
-                    if (i > 0     && j < N - 1 && sigma(i - 1, j + 1) > 0.0) { u = u + block(i - 1, j + 1); n += 1; }
-                    if (             j > 0     && sigma(i + 0, j - 1) > 0.0) { u = u + block(i + 0, j - 1); n += 1; }
-                    if (             j < N - 1 && sigma(i + 0, j + 1) > 0.0) { u = u + block(i + 0, j + 1); n += 1; }
-                    if (i < M - 1 && j > 0     && sigma(i + 1, j - 1) > 0.0) { u = u + block(i + 1, j - 1); n += 1; }
-                    if (i < M - 1              && sigma(i + 1, j + 0) > 0.0) { u = u + block(i + 1, j + 0); n += 1; }
-                    if (i < M - 1 && j < N - 1 && sigma(i + 1, j + 1) > 0.0) { u = u + block(i + 1, j + 1); n += 1; }
-
-                    if (mara::get<0>(u) <= 0.0)
-                    {
-                        throw std::runtime_error("negative density despite use of aggressive fallback");
-                    }
-                    return u / n;
-                }
-                return block(index);
-            })
-            | nd::to_shared();
-        });
+        throw std::runtime_error("negative density in updated state");
     }
     return solution;
 };
@@ -923,7 +882,7 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
         solution.orbital_elements_acc         + mara::diff(E0, E_acc),
         solution.orbital_elements_grav        + mara::diff(E0, E_grv),
         solution.orbital_elements             + (mara::diff(E0, E_acc) + mara::diff(E0, E_grv) + mara::diff_cm(E0, dt.value)) * live,
-    }, solver_data, safe_mode);
+    }, solver_data);
 }
 
 binary::solution_t binary::advance_q(const solution_t& solution, const solver_data_t& solver_data, mara::unit_time<double> dt, bool safe_mode)
