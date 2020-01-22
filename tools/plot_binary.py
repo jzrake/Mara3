@@ -182,12 +182,21 @@ def make_movie_impl(args, plot_fn, figsize=[16, 6]):
 
 
 def raise_figure_windows_impl(args, plot_fn, figsize=[16, 6]):
-    for filename in args.filenames:
-        print(filename)
+    if args.save:
         fig = plt.figure(figsize=figsize)
-        plot_fn(fig, filename, edges=args.edges, depth=args.depth, **get_ranges(args))
-        fig.suptitle(filename)
-    plt.show()
+        for filename in args.filenames:
+            print(filename)
+            plot_fn(fig, filename, edges=args.edges, depth=args.depth, **get_ranges(args))
+            fig.suptitle(filename)
+            fig.savefig(filename.replace('.h5', '.png'))
+            fig.clf()
+    else:
+        for filename in args.filenames:
+            print(filename)
+            fig = plt.figure(figsize=figsize)
+            plot_fn(fig, filename, edges=args.edges, depth=args.depth, **get_ranges(args))
+            fig.suptitle(filename)
+        plt.show()
 
 
 
@@ -365,29 +374,28 @@ def time_series_specific_torques(args):
 
 
 def time_series_orbital_elements(args):
-    fname = args.filenames[0]
-    h5f = h5py.File(fname, 'r')
-    ts = unzip_time_series(h5f['time_series'])
-
-
     fig = plt.figure(figsize=[15, 9])
     ax1 = fig.add_subplot(2, 1, 1)
     ax2 = fig.add_subplot(2, 1, 2)
 
-    orbits = h5f['time_series']['time'] / 2 / np.pi
-    a_acc  = h5f['time_series']['orbital_elements_acc' ]['elements']['separation']
-    a_grav = h5f['time_series']['orbital_elements_grav']['elements']['separation']
-    e_acc  = h5f['time_series']['orbital_elements_acc' ]['elements']['eccentricity']
-    e_grav = h5f['time_series']['orbital_elements_grav']['elements']['eccentricity']
-    M_disk = h5f['time_series']['disk_mass']
+    for fname in args.filenames:
+        h5f = h5py.File(fname, 'r')
+        ts = unzip_time_series(h5f['time_series'])
 
-    # dx_acc  = h5f['time_series']['orbital_elements_acc' ]['cm_position_x']
-    # dx_grav = h5f['time_series']['orbital_elements_grav']['cm_position_x']
+        orbits = h5f['time_series']['time'] / 2 / np.pi
+        a_acc  = h5f['time_series']['orbital_elements_acc' ]['elements']['separation']
+        a_grav = h5f['time_series']['orbital_elements_grav']['elements']['separation']
+        e_acc  = h5f['time_series']['orbital_elements_acc' ]['elements']['eccentricity']
+        e_grav = h5f['time_series']['orbital_elements_grav']['elements']['eccentricity']
+        M_disk = h5f['time_series']['disk_mass']
 
-    ax1.plot(orbits, a_acc  / M_disk * M_disk[0], label='Accretion')
-    ax1.plot(orbits, a_grav / M_disk * M_disk[0], label='Gravitational')
-    ax2.plot(orbits, e_acc  / M_disk * M_disk[0], label='Accretion')
-    ax2.plot(orbits, e_grav / M_disk * M_disk[0], label='Gravitational')
+        # dx_acc  = h5f['time_series']['orbital_elements_acc' ]['cm_position_x']
+        # dx_grav = h5f['time_series']['orbital_elements_grav']['cm_position_x']
+
+        ax1.plot(orbits, a_acc  / M_disk * M_disk[0], label='Accretion')
+        ax1.plot(orbits, a_grav / M_disk * M_disk[0], label='Gravitational')
+        ax2.plot(orbits, e_acc  / M_disk * M_disk[0], label='Accretion')
+        ax2.plot(orbits, e_grav / M_disk * M_disk[0], label='Gravitational')
     # ax2.plot(orbits, 0.0008 * orbits**0.5, c='k', ls='--')
     # ax2.set_xscale('log')
     # ax2.set_yscale('log')
@@ -482,6 +490,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("filenames", nargs='+')
     parser.add_argument("--movie", action='store_true')
+    parser.add_argument("--save", action='store_true')
     parser.add_argument("--time-series", '-t', action='store_true')
     parser.add_argument("--orbital-elements", '-e', action='store_true')
     parser.add_argument("--orbital-elements-live", '-l', action='store_true')
@@ -501,6 +510,9 @@ if __name__ == "__main__":
     parser.add_argument("--vp", default="default", type=str)
 
     args = parser.parse_args()
+
+    if args.save:
+        plt.switch_backend('agg')
 
     if args.time_series:
         time_series(args)
