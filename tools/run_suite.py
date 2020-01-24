@@ -58,12 +58,18 @@ def load_machine(machine_file):
 
 
 
+def latest_checkpoint(directory):
+    return os.path.join(directory, sorted([item for item in os.listdir(directory) if item.startswith('chkpt')])[-1])
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('suite_file', help="Python file defining a 'suite' variable")
     parser.add_argument('--machine-file', default='machine.py', help="Python file defining a 'machine' variable")
-    parser.add_argument('--submit', action='store_true', help="Also launch jobs")
+    parser.add_argument('--submit', '-s', action='store_true', help="Also launch jobs")
     parser.add_argument('--quiet', '-q', action='store_true', help="Suppress printing of submit script contents to the terminal")
+    parser.add_argument('--restart', '-r', action='store_true', help="Generate submit scripts to restart from the latest checkpoint")
     args = parser.parse_args()
 
     suite = load_suite(args.suite_file)
@@ -71,13 +77,14 @@ if __name__ == "__main__":
 
     for runid in suite['runs']:
 
-        suite_name          = suite.get('name', pathlib.Path(args.suite_file).stem)
-        suite_dir           = suite.get('root_dir', pathlib.Path(args.suite_file).parent)
-        mara_opts           = copy.deepcopy(suite.get('mara_opts', dict()))
-        run_dir             = os.path.join(str(suite_dir), suite_name, runid)
-        submit_file         = os.path.join(run_dir, 'submit.sh')
-        readme_file         = os.path.join(run_dir, 'README')
-        mara_opts['outdir'] = run_dir
+        suite_name           = suite.get('name', pathlib.Path(args.suite_file).stem)
+        suite_dir            = suite.get('root_dir', pathlib.Path(args.suite_file).parent)
+        mara_opts            = copy.deepcopy(suite.get('mara_opts', dict()))
+        run_dir              = os.path.join(str(suite_dir), suite_name, runid)
+        submit_file          = os.path.join(run_dir, 'submit.sh')
+        readme_file          = os.path.join(run_dir, 'README')
+        mara_opts['outdir']  = run_dir
+        mara_opts['restart'] = latest_checkpoint(run_dir) if args.restart else ''
         mara_opts.update(suite['runs'][runid])
 
         submit_content = run_script(
