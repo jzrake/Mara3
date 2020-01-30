@@ -14,6 +14,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('directories', nargs='+')
     parser.add_argument('--destination', '-d', default='.')
+    parser.add_argument('--groups', default=None)
     args = parser.parse_args()
 
     os.makedirs(args.destination, exist_ok=True)
@@ -25,10 +26,18 @@ if __name__ == "__main__":
 
             if chkpts:
                 old_name = chkpts[-1]
-                new_name = old_name.replace('chkpt', os.path.split(directory)[-1])
+                new_name = old_name.replace('chkpt', os.path.split(os.path.normpath(directory))[-1])
 
                 src = os.path.join(directory, old_name)
                 dst = os.path.join(args.destination, new_name)
 
-                print('cp {} {}'.format(src, dst))
-                shutil.copyfile(src, dst)
+                if args.groups:
+                    for group in args.groups.split(','):
+
+                        cmd = 'h5copy -i {} -o {} -s /{} -d /{}'.format(src, dst, group, group)
+                        print(cmd)
+                        os.system(cmd)
+
+                else:
+                    print('cp {} {}'.format(src, dst))
+                    shutil.copyfile(src, dst)
