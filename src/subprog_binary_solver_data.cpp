@@ -93,6 +93,7 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     result.begin_live_binary     = run_config.get_double("begin_live_binary");
     result.axisymmetric_cs2      = run_config.get_int("axisymmetric_cs2");
     result.conserve_linear_p     = run_config.get_int("conserve_linear_p");
+    result.fixed_dt              = run_config.get_int("fixed_dt");
     result.rk_order              = run_config.get_int("rk_order");
     result.block_size            = run_config.get_int("block_size");
     result.density_floor         = run_config.get_double("density_floor") * run_config.get_double("disk_mass");

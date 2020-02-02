@@ -64,6 +64,7 @@ mara::config_template_t binary::create_config_template()
     .item("tsi",                 2e-3)          // time series interval (orbits)
     .item("tfinal",               1.0)          // simulation stop time (orbits)
     .item("cfl_number",           0.4)          // the Courant number to use
+    .item("fixed_dt",               0)          // use an approximated time step size instead of computing (may be ~10% higher kzps)
     .item("depth",                  4)
     .item("begin_live_binary",    1e6)          // time (in orbits) to begin evolution of the binary orbital elements
     .item("conserve_linear_p",      1)          // set to true to use linear momentum conserving variables
@@ -271,7 +272,9 @@ auto binary::next_solution(const solution_t& solution, const solver_data_t& solv
         throw std::invalid_argument("binary::next_solution");
     };
 
-    auto dt = solver_data.cfl_number * binary::maximum_timestep(solution, solver_data);
+    auto dt = solver_data.fixed_dt
+    ? solver_data.recommended_time_step
+    : solver_data.cfl_number * binary::maximum_timestep(solution, solver_data);
 
     try {
         return can_fail(solution, solver_data, dt, false);

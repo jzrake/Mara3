@@ -90,6 +90,7 @@ namespace binary
         int                                                   rk_order;
         bool                                                  axisymmetric_cs2;
         bool                                                  conserve_linear_p;
+        bool                                                  fixed_dt;
         std::size_t                                           block_size;
         reconstruct_method_t                                  reconstruct_method;
         riemann_solver_t                                      riemann_solver;
