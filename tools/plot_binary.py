@@ -359,7 +359,7 @@ def time_series_specific_torques(args):
 
         orbits = time[1:] / 2 / np.pi
 
-        sat = np.where(orbits > 150)
+        sat = np.where(orbits > 200)
         plot_moving_average(ax1, orbits, delta_l_grav_1 / delta_M, window_size=args.window_size, avg_only=True, label='Grav 1 (average = {:.3f})'.format(np.mean(delta_l_grav_1[sat] / delta_M[sat])))
         plot_moving_average(ax1, orbits, delta_l_grav_2 / delta_M, window_size=args.window_size, avg_only=True, label='Grav 2 (average = {:.3f})'.format(np.mean(delta_l_grav_2[sat] / delta_M[sat])))
         plot_moving_average(ax1, orbits, delta_l_accr_1 / delta_M, window_size=args.window_size, avg_only=True, label='Accr 1 (average = {:.3f})'.format(np.mean(delta_l_accr_1[sat] / delta_M[sat])))
