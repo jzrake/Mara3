@@ -96,6 +96,7 @@ binary::solver_data_t binary::create_solver_data(const mara::config_t& run_confi
     result.fixed_dt              = run_config.get_int("fixed_dt");
     result.rk_order              = run_config.get_int("rk_order");
     result.block_size            = run_config.get_int("block_size");
+    result.no_accretion_force    = run_config.get_int("no_accretion_force");
     result.density_floor         = run_config.get_double("density_floor") * run_config.get_double("disk_mass");
     result.cfl_number            = run_config.get_double("cfl_number");
     result.recommended_time_step = std::min(min_dx, min_dy) / max_velocity * run_config.get_double("cfl_number");

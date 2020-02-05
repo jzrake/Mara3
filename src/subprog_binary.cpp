@@ -91,6 +91,7 @@ mara::config_template_t binary::create_config_template()
     .item("counter_rotate",         0)          // retrograde disk option: 0 or 1
     .item("mach_number",         10.0)          // disk mach number; for locally isothermal EOS
     .item("axisymmetric_cs2",       0)          // if true then cs2 = GM / r / Mach^2; otherwise cs2 = -phi / Mach^2
+    .item("no_accretion_force",     0)          // include only mass deposition term in orbital element accretion perturbation
     .item("alpha_cutoff_radius",  0.0)          // radius inside of which viscosity is set to zero
     .item("alpha",                0.1)          // viscous alpha coefficient (if nu == 0 then alpha-viscosity is used)
     .item("nu",                   0.0);         // kinematic viscosity coefficient (if nu > 0 then constant-nu is used)

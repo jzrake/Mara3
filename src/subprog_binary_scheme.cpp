@@ -836,16 +836,16 @@ binary::solution_t binary::advance_u(const solution_t& solution, const solver_da
         binary.body1.mass + dM1,
         binary.body1.position_x,
         binary.body1.position_y,
-        vx1,
-        vy1,
+        solver_data.no_accretion_force ? binary.body1.velocity_x : vx1,
+        solver_data.no_accretion_force ? binary.body1.velocity_y : vy1,
     };
 
     auto body2_acc = mara::point_mass_t{
         binary.body2.mass + dM2,
         binary.body2.position_x,
         binary.body2.position_y,
-        vx2,
-        vy2,
+        solver_data.no_accretion_force ? binary.body2.velocity_x : vx2,
+        solver_data.no_accretion_force ? binary.body2.velocity_y : vy2,
     };
 
     auto body1_grv = mara::point_mass_t{
@@ -952,16 +952,16 @@ binary::solution_t binary::advance_q(const solution_t& solution, const solver_da
         binary.body1.mass + dM1,
         binary.body1.position_x,
         binary.body1.position_y,
-        vx1,
-        vy1,
+        solver_data.no_accretion_force ? binary.body1.velocity_x : vx1,
+        solver_data.no_accretion_force ? binary.body1.velocity_y : vy1,
     };
 
     auto body2_acc = mara::point_mass_t{
         binary.body2.mass + dM2,
         binary.body2.position_x,
         binary.body2.position_y,
-        vx2,
-        vy2,
+        solver_data.no_accretion_force ? binary.body2.velocity_x : vx2,
+        solver_data.no_accretion_force ? binary.body2.velocity_y : vy2,
     };
 
     auto body1_grv = mara::point_mass_t{

@@ -332,7 +332,7 @@ def time_series_specific_torques(args):
         e = h5f['run_config']['eccentricity'][()]
 
         if e != 0.0:
-           raise NotImplementedError("specific torque calculation not implemented for non-zero eccentricity")
+            print("Warning: specific torque calculation is only accurate for zero eccentricity")
 
         a2 = 1 / (1 + q)
         a1 = 1 - a2
