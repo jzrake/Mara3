@@ -360,6 +360,19 @@ static auto source_terms_u = [] (auto solver_data, auto solution, auto binary, a
         });
     };
 
+    auto work = [] (auto u, auto du)
+    {
+        auto S0  = mara::get<0>(u);
+        auto px0 = mara::get<1>(u);
+        auto py0 = mara::get<2>(u);
+
+        auto S1  = S0  + mara::get<0>(du);
+        auto px1 = px0 + mara::get<1>(du);
+        auto py1 = py0 + mara::get<2>(du);
+
+        return ((px1 * px1 + py1 * py1) / S1 - (px0 * px0 + py0 * py0) / S0) * 0.5;
+    };
+
     auto sigma = u0 | component<0>();
     auto fg1 = (xc | nd::map(grav_vdot_field(solver_data, body1_pos, binary.body1.mass))) * sigma | nd::to_shared();
     auto fg2 = (xc | nd::map(grav_vdot_field(solver_data, body2_pos, binary.body2.mass))) * sigma | nd::to_shared();
@@ -391,6 +404,8 @@ static auto source_terms_u = [] (auto solver_data, auto solution, auto binary, a
     totals.momentum_x_accreted_on[1]       = -(s_sink_2    | component<1>() | nd::multiply(dA) | nd::sum());
     totals.momentum_y_accreted_on[0]       = -(s_sink_1    | component<2>() | nd::multiply(dA) | nd::sum());
     totals.momentum_y_accreted_on[1]       = -(s_sink_2    | component<2>() | nd::multiply(dA) | nd::sum());
+    totals.work_done_on[0]                 = -(nd::zip(u0, s_sink_1) | nd::apply(work) | nd::multiply(dA) | nd::sum());
+    totals.work_done_on[1]                 = -(nd::zip(u0, s_sink_2) | nd::apply(work) | nd::multiply(dA) | nd::sum());
 
     return std::make_pair((s_grav_1 + s_grav_2 + s_sink_1 + s_sink_2 + s_buffer + s_floor) | nd::to_shared(), totals);
 };
