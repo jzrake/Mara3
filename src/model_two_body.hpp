@@ -413,7 +413,7 @@ double mara::orbital_energy(orbital_elements_t elements)
 }
 
 double mara::orbital_period(orbital_elements_t elements)
-{    
+{
     auto M = elements.total_mass;
     auto a = elements.separation;
     return 2 * M_PI / std::sqrt(M / a / a / a);
