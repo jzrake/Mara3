@@ -15,6 +15,7 @@ if __name__ == "__main__":
     parser.add_argument('directories', nargs='+')
     parser.add_argument('--destination', '-d', default='.')
     parser.add_argument('--prefix', default='chkpt')
+    parser.add_argument('--count', default=None, type=int)
     parser.add_argument('--groups', default=None)
     args = parser.parse_args()
 
@@ -27,7 +28,7 @@ if __name__ == "__main__":
             chkpts = sorted([item for item in os.listdir(directory) if item.startswith(args.prefix)])
 
             if chkpts:
-                old_name = chkpts[-1]
+                old_name = chkpts[-1] if not args.count else chkpts[args.count]
                 new_name = old_name.replace(args.prefix, os.path.split(os.path.normpath(directory))[-1] + out_prefix)
 
                 src = os.path.join(directory, old_name)

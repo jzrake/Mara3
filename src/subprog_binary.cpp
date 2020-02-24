@@ -94,7 +94,8 @@ mara::config_template_t binary::create_config_template()
     .item("no_accretion_force",     0)          // include only mass deposition term in orbital element accretion perturbation
     .item("alpha_cutoff_radius",  0.0)          // radius inside of which viscosity is set to zero
     .item("alpha",                0.1)          // viscous alpha coefficient (if nu == 0 then alpha-viscosity is used)
-    .item("nu",                   0.0);         // kinematic viscosity coefficient (if nu > 0 then constant-nu is used)
+    .item("nu",                   0.0)          // kinematic viscosity coefficient (if nu > 0 then constant-nu is used)
+    .item("mdot",                 0.0);         // mass accretion rate (controls inward drift)
 }
 
 
@@ -108,6 +109,7 @@ binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_
     auto mach_number       = run_config.get_double("mach_number");
     auto disk_mass         = run_config.get_double("disk_mass");
     auto ambient_density   = run_config.get_double("ambient_density");
+    auto mdot              = run_config.get_double("mdot");
     auto counter_rotate    = run_config.get_int("counter_rotate");
     auto rc = disk_radius;
     auto s0 = disk_mass / (17.0618 * rc * rc); // see mathematica notebook
@@ -137,8 +139,11 @@ binary::primitive_field_t binary::create_disk_profile(const mara::config_t& run_
         auto rs             = softening_radius;
         auto GM             = 1.0;
         auto vp             = std::sqrt(GM / (r + rs) + dp_dr(r)) * (counter_rotate ? -1 : 1);
-        auto vx             = vp * (-y / r);
-        auto vy             = vp * ( x / r);
+        auto vr             = -mdot / (sigma(r) * 2 * M_PI * r) * (r > 2.0);
+        auto vx             = vr * (x / r) + vp * (-y / r);
+        auto vy             = vr * (y / r) + vp * ( x / r);
+
+        // std::printf("r=%lf %lf %lf\n", r, vr, vp);
 
         return mara::iso2d::primitive_t()
             .with_sigma(sigma(r))
